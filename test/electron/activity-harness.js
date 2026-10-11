@@ -17,7 +17,23 @@ const path = require('node:path');
 const ROOT = path.join(__dirname, '..', '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'contextdeck-act-'));
 app.setPath('userData', tmp);
-const outDir = process.env.HARNESS_OUT || tmp;
+// The report must outlive the throwaway profile (which is deleted at the end): without HARNESS_OUT it goes to a fixed folder.
+const outDir = process.env.HARNESS_OUT || path.join(os.tmpdir(), 'contextdeck-harness-out');
+fs.mkdirSync(outDir, { recursive: true });
+// Exit codes (a harness that did not run must never look like a pass): 0 every check passed; 1 a check failed or an error was
+// recorded; 2 too few checks ran (it stopped early); 3 timeout; 77 SKIPPED with a stated reason (no network to chatgpt.com).
+const EXPECTED_MIN_CHECKS = 20;
+let current = null;
+const finishWith = (code, extra = {}) => {
+  const r = Object.assign(current || { steps: {}, checks: [], errors: [] }, extra, { exitCode: code });
+  try { fs.writeFileSync(path.join(outDir, 'activity-report.json'), JSON.stringify(r, null, 2)); } catch { /* Diagnostics only. */ }
+  const failed = (r.checks || []).filter((c) => !c.ok).map((c) => c.name);
+  console.log(`activity-harness: exit ${code}; ${(r.checks || []).length - failed.length}/${(r.checks || []).length} checks passed${r.skipped ? '; SKIPPED: ' + r.skipped : ''}${r.fatal ? '; FATAL: ' + r.fatal : ''}; report: ${path.join(outDir, 'activity-report.json')}`);
+  for (const f of failed) console.log(`  FAILED: ${f}`);
+  try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* Best effort. */ }
+  app.exit(code);
+};
+setTimeout(() => finishWith(3, { fatal: 'timeout: the harness did not finish in 9 minutes' }), 9 * 60 * 1000).unref();
 
 const { createWindowController } = require(path.join(ROOT, 'src/main/window'));
 const { registerIpc } = require(path.join(ROOT, 'src/main/ipc'));
@@ -42,6 +58,11 @@ process.on('uncaughtException', (e) => progress(`UNCAUGHT ${(e && e.stack) || e}
 app.on('window-all-closed', () => {});
 app.whenReady().then(async () => {
   const report = { electron: process.versions.electron, steps: {}, checks: [], errors: [] };
+  current = report;
+  try {
+    const probe = await electron.net.fetch('https://chatgpt.com/', { method: 'HEAD', signal: AbortSignal.timeout(10000) });
+    report.networkProbe = probe.status;
+  } catch (e) { return finishWith(77, { skipped: `chatgpt.com is not reachable from this machine (${e && e.message}); the harness needs it to load real pages` }); }
   const check = (name, ok, detail) => { report.checks.push({ name, ok: Boolean(ok), detail }); progress(`${ok ? 'ok  ' : 'FAIL'} ${name}${ok ? '' : ' :: ' + detail}`); };
   process.on('unhandledRejection', (e) => { report.errors.push(String((e && e.stack) || e)); progress(`UNHANDLED ${e}`); });
 
@@ -254,6 +275,5 @@ app.whenReady().then(async () => {
   check('closing the window closes every page', chatPages().length === 0);
   report.errors = report.errors.filter((e) => !/UnknownVizError|Autofill/.test(e));
   report.failed = report.checks.filter((c) => !c.ok).map((c) => c.name);
-  fs.writeFileSync(path.join(outDir, 'activity-report.json'), JSON.stringify(report, null, 2));
-  setTimeout(() => { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* Best effort. */ } app.quit(); }, 500);
-});
+  finishWith(report.failed.length || report.errors.length ? 1 : (report.checks.length < EXPECTED_MIN_CHECKS ? 2 : 0));
+}).catch((e) => finishWith(1, { fatal: String((e && e.stack) || e) }));

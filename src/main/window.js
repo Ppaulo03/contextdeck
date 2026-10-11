@@ -7,6 +7,7 @@ const { createChatView } = require('./chat-view');
 const { CHAT_HOME } = require('./persistence/identity');
 const { createChatViewManager } = require('./chat-views/manager');
 const { createChatNavigator } = require('./chat-views/navigator');
+const { createObservationHub } = require('./chat-views/observation');
 const { startChatObservation } = require('./chat');
 const { createOverlay } = require('./overlay');
 const { createShortcutHandler } = require('./shortcuts');
@@ -26,7 +27,7 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
   let manager;
   let navigator;
   let initialViewId = null;
-  let chatObservation = null;   // experimental, off unless CONTEXTDECK_CHAT_OBSERVER=1 (see chat/index.js)
+  let hub = null;               // per-view status observation (see chat-views/observation.js)
   let overlay;
   let lastChatBounds = null;
   let activeMode = 'terminal';
@@ -83,15 +84,11 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     setBounds: () => resizeChat()
   };
 
-  // The experimental I3P observer is bound to the application's initial page only (diagnostic; see chat/index.js).
-  let observerShown = false;
-  function syncObserverVisibility() {
-    if (!chatObservation || !manager) return;
-    const shown = initialViewId !== null && manager.isVisible(initialViewId);
-    if (shown === observerShown) return;
-    observerShown = shown;
-    chatObservation.setVisible(shown);
-    if (shown) chatObservation.markViewed();
+  // Can the user look at the window right now? Not minimized, shown and focused. A response that ends while this is
+  // false is "not seen", even if its view is the attached one.
+  function updatePresence() {
+    if (!hub) return;
+    hub.setInteractive(alive() && mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused());
   }
 
   function focusChat() {
@@ -100,7 +97,8 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     else if (alive()) mainWindow.webContents.focus();   // empty state: the strip and its buttons need the keyboard
   }
 
-  function switchMode(mode) {
+  // `user: false` is the restoration of the last tab at startup: not a visit.
+  function switchMode(mode, { user = true } = {}) {
     if (mode !== 'terminal' && mode !== 'chat') return;
     if (!alive() || !manager) return;
     overlay?.hide();
@@ -108,7 +106,8 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     lastChatBounds = null;
     navigator.setMode(mode);       // picks the right conversation for the workspace, THEN attaches it (or detaches)
     resizeChat();
-    syncObserverVisibility();
+    updatePresence();
+    if (mode === 'chat' && user) navigator.visitVisible();
     persist();
     send('dock:mode', mode);
     if (mode === 'chat') {
@@ -156,7 +155,10 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     mainWindow.on('unmaximize', relayout);
     mainWindow.on('minimize', () => overlay.hide());
     // After Alt+Tab the OS may hand focus to the wrong webContents; restore the active one.
+    for (const name of ['blur', 'minimize', 'restore', 'show', 'hide']) mainWindow.on(name, updatePresence);
     mainWindow.on('focus', () => {
+      updatePresence();
+      navigator?.visitVisible();      // coming back to the window with a conversation on screen is a visit
       if (overlay.isOpen()) return;
       if (activeMode === 'chat') focusChat();
       else if (alive()) mainWindow.webContents.focus();
@@ -166,8 +168,8 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
       onClosed?.();
       if (overlay) overlay.destroy();
       overlay = undefined;
-      chatObservation?.stop();
-      chatObservation = null;
+      hub?.stop();                    // observers first: nothing may probe a view that is being closed
+      hub = null;
       navigator?.stop();
       manager?.destroyAll();          // the only place a ChatGPT view is ever destroyed
       navigator = undefined;
@@ -179,15 +181,25 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     manager = createChatViewManager({
       host,
       createView: ({ id, onEvent }) => createChatView({
-        onBeforeInput: handleShortcuts,
+        // Typing into the page is the user being there: a visit (a no-op unless attention is pending).
+        onBeforeInput: (event, input) => { handleShortcuts(event, input); if (input && input.type === 'keyDown') navigator?.visitVisible(); },
         onEvent,
         onNavigated: () => onChatNavigated?.(),
         // The footer line describes the page the user is looking at, not a background one.
         status: (channel, data) => { if (manager && manager.isVisible(id)) send(channel, data); }
       })
     });
+    // One status observer per loaded view (the I3P detector), unless disabled with CONTEXTDECK_CHAT_STATUS=0.
+    const statusOn = process.env.CONTEXTDECK_CHAT_STATUS !== '0';
+    hub = createObservationHub({
+      manager,
+      startObserver: ({ viewId, handle, onChange, phaseMs }) => (statusOn || process.env.CONTEXTDECK_CHAT_OBSERVER === '1'
+        ? startChatObservation({ contents: handle.contents, userDataDir: path.dirname(uiStateFile), viewId, status: statusOn, onChange, phaseMs })
+        : null)
+    });
     navigator = createChatNavigator({
       manager,
+      activity: hub,
       session: chats.session,
       bindings: chats.bindings,
       selection: chats.selection,
@@ -197,12 +209,12 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
         setLast: (key, bindingId) => { uiState.chat.last[key] = bindingId; persist(); }
       }
     });
-    navigator.onChange(() => { syncObserverVisibility(); onNavChange?.(); });
+    navigator.onChange(() => onNavChange?.());
     // The application's own initial page (what M00 always had), loaded as before and kept unscoped until the user
     // hands it to a workspace ("new conversation"). Nothing else is loaded until it is asked for.
     initialViewId = manager.create({ url: CHAT_HOME, scope: null, pristine: true });
-    chatObservation = startChatObservation({ contents: manager.handleOf(initialViewId).contents, userDataDir: path.dirname(uiStateFile) });
-    if (uiState.lastMode === 'chat') switchMode('chat');
+    updatePresence();
+    if (uiState.lastMode === 'chat') switchMode('chat', { user: false });
     else send('dock:mode', 'terminal');
   }
 
@@ -216,6 +228,7 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     getWindow: () => mainWindow,
     getChat: attachedChat,
     getNavigator: () => navigator,
+    getObservationStats: () => (hub ? hub.stats() : null),
     getChatUrl: () => (navigator ? navigator.getVisibleUrl() : ''),
     isTrusted: (event) => Boolean(mainWindow) && event.sender === mainWindow.webContents,
     isOverlay: (event) => Boolean(overlay) && overlay.isOverlay(event),

@@ -20,7 +20,10 @@ const { RUNTIME_PROVIDER_METHODS } = require('../chat/runtime-contract');
 const wsKeyOf = (b) => `${b.workspaceIdentity.session}/${b.workspaceIdentity.workspaceId}`;
 const fail = (code, message, extra) => ({ ok: false, error: { code, message, ...extra } });
 
-function createChatNavigator({ manager, session, bindings, selection, prefs, homeUrl }) {
+// `activity` (optional, the observation hub): per-view status (responding / draft / attention) shown on tabs and
+// aggregated per workspace. It is read-only here: the navigator never starts, stops or feeds an observer, and an
+// explicit user action that shows a view is reported as a visit (which acknowledges that view's pending attention).
+function createChatNavigator({ manager, session, bindings, selection, prefs, homeUrl, activity = null }) {
   const listeners = new Set();
   let mode = 'terminal';
   let reconciling = false;
@@ -142,6 +145,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     manager.show(id);
     prefs.setLast(g.wk, b.bindingId);
     reconcile();
+    activity?.visit(id);
     return { ok: true, viewId: id };
   }
 
@@ -158,6 +162,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     choice.set(g.wk, id);
     manager.show(id);
     reconcile();
+    activity?.visit(id);
     return { ok: true, viewId: id };
   }
 
@@ -169,6 +174,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     choice.set(g.wk, v.id);
     manager.show(v.id);
     reconcile();
+    activity?.visit(v.id);
     return { ok: true, viewId: v.id };
   }
 
@@ -180,7 +186,50 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     const id = existing ? existing.id : manager.create({ url: homeUrl, scope: null });
     manager.show(id);
     reconcile();
+    activity?.visit(id);
     return { ok: true, viewId: id };
+  }
+
+  // ---- activity (status of the loaded views) ---------------------------------------------------------------------
+  // What a tab shows about a view. Only a view that SHOWS the tab's conversation (identity truth) contributes; a
+  // loading view, a placeholder that never showed it, or a reading from another identity contribute nothing.
+  const wsIdOf = (scope) => (scope ? scope.slice(scope.indexOf('/') + 1) : null);
+
+  function activityOf(view, expectedKey) {
+    const s = activity && view ? activity.summaryOf(view.id) : null;
+    if (!s || !s.identityOk || (expectedKey !== undefined && s.identityKey !== expectedKey)) return null;
+    const ended = ['ended-unclassified', 'completed', 'interrupted', 'error'].includes(s.generation);
+    return {
+      phase: s.phase,
+      responding: s.generation === 'responding',
+      ended,
+      draft: s.draft === 'present',
+      attention: s.attention === 'pending',
+      // Ready, probed at least once, and still no usable answer (composer missing, probe failing, reading expired).
+      // Before the first answer, or while loading, nothing is claimed.
+      unknown: s.phase === 'ready' && s.observedAt !== null && s.generation === 'unknown',
+      stale: s.stale,
+      evidence: s.evidence
+    };
+  }
+
+  // Derived from the loaded views only; nothing persisted, nothing loaded to compute it. A workspace appears only if
+  // some of its views are loaded: a workspace whose conversations were never opened says nothing (it is NOT "idle").
+  function getWorkspaceActivity() {
+    const out = {};
+    for (const v of manager.list()) {
+      const id = wsIdOf(v.scope);
+      if (!id) continue;
+      const a = activityOf(v);
+      const row = out[id] || (out[id] = { responding: 0, attention: 0, drafts: 0, loaded: 0, observed: 0 });
+      row.loaded += 1;
+      if (!a) continue;
+      row.observed += 1;
+      if (a.responding) row.responding += 1;
+      if (a.attention) row.attention += 1;
+      if (a.draft) row.drafts += 1;
+    }
+    return out;
   }
 
   // ---- mode and state ------------------------------------------------------------------------------------------
@@ -217,6 +266,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
         bindingId: b.bindingId, label: b.label || '(sem rótulo)', role: b.role, status: b.status,
         hint: (labelCount.get(b.label || '') || 0) > 1 ? b.conversationKey.slice(-4) : '',
         loaded: Boolean(v), loading: Boolean(v && v.page === 'loading'), failed: Boolean(v && v.page === 'error'),
+        activity: v ? activityOf(v, b.conversationKey) : null,
         active: Boolean(v && v.id === visibleId), needsConfirm: b.status !== 'linked',
         relation: v ? v.relation : null
       };
@@ -231,6 +281,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
       if (v.identity.state === 'durable') label = other ? `${other.label || '(sem rótulo)'}${elsewhere ? ` · ${elsewhere.workspaceIdentity.workspaceId}` : ''}` : 'Conversa não vinculada';
       return {
         viewId: v.id, label, relation: v.relation, active: v.id === visibleId, loading: v.page === 'loading', failed: v.page === 'error',
+        activity: activityOf(v),
         warning: v.relation === REL.DIVERGED || v.relation === REL.LEFT || Boolean(elsewhere) || duplicated.has(v.id), bound: Boolean(other)
       };
     });
@@ -254,7 +305,10 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     getRuntime(bindingId) {
       const b = mine(bindings.all()).find((x) => x.bindingId === bindingId);
       const v = b ? manager.findByKey(b.conversationKey) : null;
-      return v ? manager.runtimeOf(v.id) : null;
+      if (!v) return null;
+      const base = manager.runtimeOf(v.id);
+      const live = activity ? activity.runtimeOf(v.id) : null;
+      return live ? Object.freeze({ ...base, generation: live.generation, draft: live.draft, attention: live.attention }) : base;
     },
     subscribe(listener) {
       const last = new Map();
@@ -271,15 +325,19 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
   };
 
   const offManager = manager.onChange(() => reconcile());
+  // A status change redraws the strip; it never reconciles (observing cannot change which view is shown).
+  const offActivity = activity ? activity.onChange(() => emit()) : () => {};
   const offSelection = selection.onChange(() => reconcile());
 
   return {
-    reconcile, setMode, selectBinding, newConversation, selectTemporary, openUnscoped, getState,
+    reconcile, getWorkspaceActivity, setMode, selectBinding, newConversation, selectTemporary, openUnscoped, getState,
     getVisibleUrl: () => { const id = manager.getVisibleId(); const h = id && manager.isAttached() ? manager.handleOf(id) : null; return h && !h.isDestroyed() ? h.getUrl() : ''; },
     onChange(l) { listeners.add(l); return () => listeners.delete(l); },
     runtime: provider,
     _debugViews: () => manager.list(),
-    stop() { offManager(); offSelection(); listeners.clear(); }
+    // The user can see the visible view now (chat tab shown, window interactive): acknowledges its pending attention.
+    visitVisible: () => (activity ? activity.visitVisible() : false),
+    stop() { offManager(); offSelection(); offActivity(); listeners.clear(); }
   };
 }
 

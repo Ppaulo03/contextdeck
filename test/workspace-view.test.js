@@ -106,3 +106,34 @@ test('menu states: empty session and disconnected', () => {
   assert.match(down.emptyText, /desconectado/);
   assert.deepEqual(menuModel(null).items, []);
 });
+
+// ---- conversation activity (M01-I3B-2) ---------------------------------------------------------------------------------
+
+const { activityBadges } = require('../src/shared/workspace-view');
+
+test('activity badges: counts of responding and pending conversations, singular/plural labels, nothing for zero or unknown workspaces', () => {
+  assert.deepEqual(activityBadges(undefined), []);
+  assert.deepEqual(activityBadges({ responding: 0, attention: 0, drafts: 1, loaded: 3, observed: 3 }), [], 'drafts and loaded counts are not badges; zero is not announced');
+  const b = activityBadges({ responding: 2, attention: 1, loaded: 3, observed: 3 });
+  assert.deepEqual(b.map((x) => [x.kind, x.count, x.glyph]), [['responding', 2, '↻'], ['attention', 1, '●']]);
+  assert.equal(b[0].label, '2 conversas respondendo');
+  assert.equal(b[1].label, '1 conversa com atividade para revisar');
+  assert.equal(activityBadges({ responding: 1 })[0].label, '1 conversa respondendo');
+});
+
+test('menu items carry the badges of their workspace; a workspace that was never observed has none (not "idle")', () => {
+  const s = { ...state(), activity: { w1: { responding: 1, attention: 0, drafts: 0, loaded: 1, observed: 1 }, w3: { responding: 0, attention: 2, drafts: 0, loaded: 2, observed: 2 } } };
+  const items = menuModel(s).items;
+  assert.deepEqual(items.map((i) => i.badges.map((b) => b.kind)), [['responding'], [], ['attention']]);
+  assert.deepEqual(menuModel(state()).items.map((i) => i.badges), [[], [], []], 'no activity data: no badges');
+});
+
+test('the trigger summarises the other workspaces activity so it is visible with the menu closed; the selected workspace is not double counted', () => {
+  const s = { ...state(), activity: { w1: { responding: 1, attention: 1 }, w2: { responding: 5, attention: 5 }, w3: { responding: 1, attention: 0 } } };
+  const m = triggerModel(s, null);
+  assert.equal(m.activity.text, '↻2 ●1');
+  assert.match(m.activity.title, /outros workspaces/);
+  assert.equal(triggerModel(state(), null).activity.text, '');
+  assert.equal(triggerModel(null, null).activity.text, '');
+  assert.equal(triggerModel({ ...state(), activity: { w2: { responding: 3, attention: 0 } } }, null).activity.text, '', 'only the selected workspace is active: nothing to add');
+});

@@ -26,6 +26,25 @@ const EMPTY = {
   'not-verified': { title: 'Workspace não verificado', text: 'O Herdr não confirmou a identidade deste workspace. Escolha uma conversa na barra e confirme para abri-la.' }
 };
 
+// Indicators of a conversation (M01-I3B-2). Each has a distinct SHAPE (not only a color) and a text. "Attention" means
+// activity that ended while the user could not see it: it does not claim the response succeeded.
+const STATUS = {
+  responding: { glyph: 'ring', label: 'Respondendo', title: 'Esta conversa está respondendo.' },
+  attention: { glyph: '\u25CF', label: 'Atividade para revisar', title: 'Houve atividade nesta conversa enquanto você não a via. Isso não indica que terminou com sucesso: abra para revisar.' },
+  draft: { glyph: '\u270E', label: 'Rascunho não enviado', title: 'Há texto digitado e não enviado nesta conversa (o conteúdo não é lido).' },
+  unknown: { glyph: '?', label: 'Estado desconhecido', title: 'Não foi possível observar o estado desta conversa (a página pode ter mudado). Ela continua utilizável.' }
+};
+
+function statusItems(activity) {
+  if (!activity) return [];
+  const out = [];
+  if (activity.responding) out.push('responding');
+  if (activity.attention) out.push('attention');
+  if (activity.draft) out.push('draft');
+  if (activity.unknown && !activity.responding) out.push('unknown');
+  return out.map((kind) => ({ kind, ...STATUS[kind] }));
+}
+
 const workspaceName = (w) => (w ? (w.label || w.id) : null);
 
 function barModel(state, armedBindingId = null) {
@@ -38,8 +57,12 @@ function barModel(state, armedBindingId = null) {
     if (t.failed) notes.push('Falha ao carregar: clique para tentar de novo.');
     const off = t.relation && t.relation !== 'match' && t.relation !== 'loading';
     if (off && RELATION_NOTE[t.relation]) notes.push(RELATION_NOTE[t.relation]);
+    const status = statusItems(t.activity);
+    if (status.length) notes.push(status.map((s) => s.title).join(' '));
     return {
       id: t.bindingId,
+      status,
+      aria: status.map((s) => s.label).join(', '),
       text: armed ? `Confirmar "${t.label}"?` : (t.hint ? `${t.label} · ${t.hint}` : t.label),
       active: t.active,
       loading: t.loading,
@@ -51,8 +74,8 @@ function barModel(state, armedBindingId = null) {
     };
   });
   const temporaries = state.temporaries.map((t) => ({
-    id: t.viewId, text: t.label, active: t.active, loading: t.loading, failed: t.failed, warn: t.warning,
-    title: t.failed ? 'Falha ao carregar.' : (RELATION_NOTE[t.relation] || RELATION_NOTE.temporary)
+    id: t.viewId, status: statusItems(t.activity), aria: statusItems(t.activity).map((s) => s.label).join(', '), text: t.label, active: t.active, loading: t.loading, failed: t.failed, warn: t.warning,
+    title: [t.failed ? 'Falha ao carregar.' : (RELATION_NOTE[t.relation] || RELATION_NOTE.temporary), ...statusItems(t.activity).map((s) => s.title)].join(' ')
   }));
   return {
     ready: true,
@@ -68,4 +91,4 @@ function barModel(state, armedBindingId = null) {
   };
 }
 
-module.exports = { barModel, ROLE_LABELS, STATUS_NOTE, RELATION_NOTE, EMPTY };
+module.exports = { barModel, statusItems, STATUS, ROLE_LABELS, STATUS_NOTE, RELATION_NOTE, EMPTY };

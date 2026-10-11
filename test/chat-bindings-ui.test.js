@@ -355,7 +355,7 @@ test('indicator button: shows the real binding state, opens the panel under itse
 });
 
 test('the workspace selector ignores the closing of the chats panel (and still handles its own menu)', async () => {
-  const document = createDocument(['ws-trigger', 'ws-trigger-text', 'ws-mode']);
+  const document = createDocument(['ws-trigger', 'ws-trigger-text', 'ws-activity', 'ws-mode']);
   const { initWorkspaceSelector } = load(path.join(SRC, 'components', 'workspace-selector.js'), { document });
   let closedCb;
   const store = { get: () => null, subscribe: () => () => {} };

@@ -62,6 +62,12 @@ function render() {
     row.append(main);
     if (item.selected) row.append(el('span', 'badge is-success', 'atual'));
     else if (item.observed) row.append(el('span', 'badge', 'foco Herdr'));
+    for (const b of item.badges) {
+      const badge = el('span', `badge is-activity is-${b.kind}`, `${b.glyph}${b.count}`);
+      badge.title = b.label;
+      badge.setAttribute('aria-label', b.label);
+      row.append(badge);
+    }
     row.addEventListener('mousemove', () => { if (activeId !== item.id || keyboard) { activeId = item.id; keyboard = false; setActive(); } });
     row.addEventListener('click', () => void choose(item.id));
     list.append(row);

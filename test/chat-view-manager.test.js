@@ -186,7 +186,7 @@ test('runtime context of a view: lifecycle, identity and epoch are live; the oth
   assert.equal(r.page.source, 'navigation');
   assert.equal(r.generation.value, rc.GenerationState.UNKNOWN);
   assert.equal(r.draft.value, rc.DraftState.UNKNOWN);
-  assert.equal(r.attention.value, rc.AttentionState.ACKNOWLEDGED);
+  assert.equal(r.attention.value, rc.AttentionState.NONE);
   assert.ok(Object.isFrozen(r));
   assert.equal(manager.runtimeOf('nope'), null);
   assert.equal(r.generation.value === 'completed', false);
@@ -201,6 +201,7 @@ test('destroyAll closes every view once, detaches the visible one and silences t
   let changes = 0;
   manager.onChange(() => { changes += 1; });
   manager.destroyAll();
+  changes = 0;                      // (observers learn of the closing through one final change)
   assert.deepEqual(fake.log.filter((l) => l[0] === 'destroy').map((l) => l[1]).sort(), fake.views.map((v) => v.id).sort());
   assert.equal(fake.host.attached.size, 0);
   assert.equal(manager._size(), 0);

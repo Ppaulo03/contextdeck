@@ -228,3 +228,77 @@ test('markup and layout: the strip and the empty state exist, are chat-only, and
   const { TOPBAR_HEIGHT, CHATBAR_HEIGHT } = require('../src/main/window-metrics');
   assert.deepEqual([TOPBAR_HEIGHT, CHATBAR_HEIGHT], [top, px], 'main and the stylesheet agree on the chat view offset');
 });
+
+// ---- activity indicators (M01-I3B-2) ----------------------------------------------------------------------------------------
+
+const { statusItems } = require('../src/shared/chat-nav-view');
+const act = (over = {}) => ({ phase: 'ready', responding: false, ended: false, draft: false, attention: false, unknown: false, stale: false, evidence: 'observed', ...over });
+
+test('status items: responding, attention, draft and unknown, in a fixed order; unknown is hidden while responding; no activity means nothing', () => {
+  assert.deepEqual(statusItems(null), []);
+  assert.deepEqual(statusItems(act()), [], 'loaded, observed, quiet: no indicator');
+  assert.deepEqual(statusItems(act({ responding: true, attention: true, draft: true })).map((s) => s.kind), ['responding', 'attention', 'draft']);
+  assert.deepEqual(statusItems(act({ unknown: true })).map((s) => s.kind), ['unknown']);
+  assert.deepEqual(statusItems(act({ unknown: true, responding: true })).map((s) => s.kind), ['responding']);
+  const all = statusItems(act({ responding: true, attention: true, draft: true, unknown: true }));
+  assert.ok(all.every((s) => s.label && s.title && s.glyph), 'every indicator has a text label, a description and a shape');
+  assert.equal(new Set(all.map((s) => s.glyph)).size, all.length, 'distinct shapes: not only colors');
+  assert.match(statusItems(act({ attention: true }))[0].title, /não indica que terminou com sucesso/, 'attention never claims success');
+  assert.doesNotMatch(JSON.stringify(all), /conclu[ií]d|completed/i, 'no indicator says "finished"');
+});
+
+test('tabs render a fixed slot with the indicators, an accessible name and a descriptive tooltip', async () => {
+  const s = nav({ tabs: [tab(1, { active: true, activity: act({ responding: true, draft: true }) }), tab(2, { activity: act({ attention: true }) }), tab(3)] });
+  const t = mount(s);
+  await t.tick();
+  const slots = t.tabs().map((x) => x.children.find((c) => c.classList.contains('chat-tab-status')));
+  assert.ok(slots.every(Boolean), 'every tab has the slot, indicators or not');
+  assert.deepEqual(slots.map((x) => x.children.map((c) => c.className.replace('status-ico ', ''))), [['is-responding', 'is-draft'], ['is-attention'], []]);
+  assert.ok(slots.every((x) => x.getAttribute('aria-hidden') === 'true'), 'the slot is decorative: the name carries the meaning');
+  assert.equal(t.tabs()[0].getAttribute('aria-label'), 'chat 1, Respondendo, Rascunho não enviado');
+  assert.equal(t.tabs()[1].getAttribute('aria-label'), 'chat 2, Atividade para revisar');
+  assert.equal(t.tabs()[2].getAttribute('aria-label'), null, 'no status: the visible text is the name');
+  assert.match(t.tabs()[0].title, /está respondendo/);
+  assert.match(t.tabs()[1].title, /abra para revisar/);
+});
+
+test('status changes never change the structure of a tab (same children, same order), so widths cannot jump', async () => {
+  const t = mount(nav({ tabs: [tab(1, { active: true }), tab(2)] }));
+  await t.tick();
+  const shape = () => t.tabs().map((x) => x.children.map((c) => (c.classList.contains('chat-tab-text') ? 'text' : (c.classList.contains('chat-tab-status') ? 'slot' : 'other'))).join(','));
+  const before = shape();
+  t.push(nav({ tabs: [tab(1, { active: true, activity: act({ responding: true, attention: true, draft: true }) }), tab(2, { activity: act({ unknown: true }) })] }));
+  assert.deepEqual(shape(), before);
+  t.push(nav({ tabs: [tab(1, { active: true }), tab(2)] }));
+  assert.deepEqual(shape(), before);
+  const css = fs.readFileSync(path.join(SRC, 'styles', 'components.css'), 'utf8');
+  assert.match(css, /\.chat-tab-status\s*\{[^}]*min-width:/, 'the slot reserves its width in CSS');
+});
+
+test('indicators do not get in the way: tabs stay clickable and focusable, and the focused tab keeps focus when its status changes', async () => {
+  const t = mount(nav({ tabs: [tab(1, { active: true }), tab(2)] }));
+  await t.tick();
+  t.tabs()[1].focus();
+  t.push(nav({ tabs: [tab(1, { active: true, activity: act({ attention: true }) }), tab(2, { activity: act({ responding: true }) })] }));
+  assert.equal(t.document.activeElement.dataset.key, tab(2).bindingId);
+  await t.click(t.tabs()[1]);
+  assert.deepEqual(t.calls.select.map((c) => c.bindingId), [tab(2).bindingId]);
+  assert.ok(t.tabs().every((x) => x.tabIndex === 0 || x.tabIndex === -1));
+});
+
+test('temporary conversations show their status too, and nothing is shown for views that are not observed', async () => {
+  const t = mount(nav({ temporaries: [{ viewId: 'v7', label: 'Nova conversa', relation: 'temporary', active: false, loading: false, failed: false, warning: false, bound: false, activity: act({ draft: true }) }], tabs: [tab(1, { activity: null }), tab(2, { activity: null })] }));
+  await t.tick();
+  const slots = t.tabs().map((x) => x.children.find((c) => c.classList.contains('chat-tab-status')).children.length);
+  assert.deepEqual(slots, [0, 0, 1]);
+  assert.equal(t.tabs()[2].getAttribute('aria-label'), 'Nova conversa, Rascunho não enviado');
+});
+
+test('motion: the only animation is the existing spinner keyframes and base.css turns animations off for reduced motion', () => {
+  const css = fs.readFileSync(path.join(SRC, 'styles', 'components.css'), 'utf8');
+  const base = fs.readFileSync(path.join(SRC, 'styles', 'base.css'), 'utf8');
+  assert.equal([...css.matchAll(/@keyframes/g)].length, 1);
+  assert.match(css, /\.status-ico\.is-responding[^}]*animation: spin var\(--duration-spin\)/);
+  assert.match(base, /prefers-reduced-motion: reduce[\s\S]*animation/);
+  assert.doesNotMatch(css.slice(css.indexOf('Indicators inside a tab'), css.indexOf('Footer: Git bar')), /#[0-9a-fA-F]{3,8}\b|rgba?\(/);
+});

@@ -252,6 +252,7 @@ function createChatViewManager({ createView, host, now = () => Date.now() }) {
       if (e.page !== 'destroyed') { try { e.handle.destroy(); } catch { /* Already gone. */ } setPage(e, PageLifecycle.DESTROYED); }
     }
     entries.clear();
+    emit();                           // observers of the closed views stop on this signal
     listeners.clear();
   }
 

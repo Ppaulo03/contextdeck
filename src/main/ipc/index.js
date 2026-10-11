@@ -12,14 +12,14 @@ const { registerChatNavIpc } = require('./chatnav');
 // Registers every IPC channel the local UI may use. `electron` is injected ({ ipcMain, shell,
 // clipboard, dialog }) so the registration can be tested without launching Electron. Channel
 // names and payloads are the contract with src/preload/index.js.
-function registerIpc({ electron, win, herdr, observer, selection, bindings, notifyChats, settings, uiState, persist, userDataDir }) {
+function registerIpc({ electron, win, herdr, observer, selection, activity, bindings, notifyChats, settings, uiState, persist, userDataDir }) {
   const { ipcMain, shell, clipboard, dialog } = electron;
   const trusted = (event) => win.isTrusted(event);
   registerDockIpc({ ipcMain, shell, trusted, win, settings });
   registerTerminalIpc({ ipcMain, trusted, herdr });
   registerClipboardIpc({ ipcMain, clipboard, trusted });
-  registerHerdrIpc({ ipcMain, trusted, observer, selection });
-  registerOverlayIpc({ ipcMain, trustedUi: trusted, trustedOverlay: (event) => win.isOverlay(event), win, observer, selection });
+  registerHerdrIpc({ ipcMain, trusted, observer, selection, extra: activity });
+  registerOverlayIpc({ ipcMain, trustedUi: trusted, trustedOverlay: (event) => win.isOverlay(event), win, observer, selection, extra: activity });
   // Chat bindings are managed from the UI window and from the overlay panel; never from the remote page.
   registerChatsIpc({ ipcMain, trusted: (event) => win.isTrusted(event) || win.isOverlay(event), win, bindings, notify: notifyChats });
   // Conversation navigation: UI window only.

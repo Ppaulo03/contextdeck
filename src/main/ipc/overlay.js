@@ -20,7 +20,7 @@ function sanitizeAnchor(anchor) {
   return out;
 }
 
-function registerOverlayIpc({ ipcMain, trustedUi, trustedOverlay, win, observer, selection }) {
+function registerOverlayIpc({ ipcMain, trustedUi, trustedOverlay, win, observer, selection, extra }) {
   ipcMain.handle('overlay:open-workspace-menu', async (event, anchor) => {
     if (!trustedUi(event)) return denied;
     const rect = sanitizeAnchor(anchor);
@@ -34,7 +34,7 @@ function registerOverlayIpc({ ipcMain, trustedUi, trustedOverlay, win, observer,
     if (!rect) return { ok: false, error: { code: 'invalid_anchor', message: 'Posicao do painel invalida.' } };
     return { ok: await win.openMenu(rect, 'chats') };
   });
-  ipcMain.handle('overlay:state', (event) => (trustedOverlay(event) ? herdrState(observer, selection) : null));
+  ipcMain.handle('overlay:state', (event) => (trustedOverlay(event) ? herdrState(observer, selection, extra) : null));
   ipcMain.handle('overlay:choose', (event, args) => {
     if (!trustedOverlay(event)) return denied;
     return selection.select(typeof args?.session === 'string' ? args.session : null, typeof args?.workspaceId === 'string' ? args.workspaceId : null);

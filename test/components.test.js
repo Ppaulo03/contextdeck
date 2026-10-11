@@ -44,7 +44,7 @@ test('herdr store: one IPC subscription and one initial read shared by every com
 // ---- selector trigger -------------------------------------------------------------------------------------
 
 function mountSelector(initial = state()) {
-  const document = createDocument(['ws-trigger', 'ws-trigger-text', 'ws-mode']);
+  const document = createDocument(['ws-trigger', 'ws-trigger-text', 'ws-activity', 'ws-mode']);
   const { initWorkspaceSelector } = load(path.join(SRC, 'components', 'workspace-selector.js'), { document });
   const subs = new Set(); let current = initial;
   const store = { get: () => current, subscribe: (fn) => { subs.add(fn); if (current) fn(current); return () => subs.delete(fn); } };
@@ -317,4 +317,30 @@ test('header markup: plain brand, Terminal/ChatGPT segmented switch, no session 
   const order = ['brand', 'segmented', 'class="ws"', 'id="ws-mode"', 'view-actions', 'unlinked'].map((k) => bar.indexOf(k));
   assert.deepEqual(order, [...order].sort((a, b) => a - b), 'header hierarchy order');
   assert.ok(order.every((i) => i >= 0));
+});
+
+// ---- conversation activity in the selector and its menu (M01-I3B-2) ---------------------------------------------------
+
+test('trigger: activity of the other workspaces is shown next to the label, hidden when there is none, and never changes the label', () => {
+  const t = mountSelector();
+  const badge = t.document.getElementById('ws-activity');
+  assert.equal(badge.hidden, true);
+  t.push({ ...state(), activity: { w1: { responding: 2, attention: 1 }, w2: { responding: 9, attention: 9 } } });
+  assert.equal(badge.textContent, '↻2 ●1');
+  assert.equal(badge.hidden, false);
+  assert.match(badge.title, /outros workspaces/);
+  assert.equal(t.el.label.textContent, 'w2 · app', 'the workspace label is untouched');
+  t.push(state());
+  assert.equal(badge.hidden, true);
+  assert.equal(badge.textContent, '');
+});
+
+test('overlay menu: each workspace row shows its activity badges with an accessible name; workspaces without data show none', async () => {
+  const s = { ...state(), activity: { w1: { responding: 1, attention: 0 }, w3: { responding: 0, attention: 2 } } };
+  const o = mountOverlay(s);
+  await o.open();
+  const badges = o.rows().map((r) => r.children.filter((c) => c.classList.contains('is-activity')).map((c) => [c.textContent, c.getAttribute('aria-label')]));
+  assert.deepEqual(badges, [[['↻1', '1 conversa respondendo']], [], [['●2', '2 conversas com atividade para revisar']]]);
+  o.pushState({ ...s, activity: {} });
+  assert.deepEqual(o.rows().map((r) => r.children.filter((c) => c.classList.contains('is-activity')).length), [0, 0, 0], 'pushes update the badges');
 });

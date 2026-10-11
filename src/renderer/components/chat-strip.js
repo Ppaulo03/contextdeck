@@ -36,6 +36,12 @@ export function initChatStrip({ dock, feedback, openChatsPanel }) {
       b.append(spin);
     }
     b.append(el('span', 'chat-tab-text', item.text));
+    // A fixed-size slot, always present: indicators come and go without changing the width of the tab.
+    const slot = el('span', 'chat-tab-status');
+    slot.setAttribute('aria-hidden', 'true');
+    for (const s of item.status) slot.append(el('span', `status-ico is-${s.kind}`, s.glyph === 'ring' ? '' : s.glyph));
+    b.append(slot);
+    if (item.aria) b.setAttribute('aria-label', `${item.text}, ${item.aria}`);
     b.addEventListener('click', onClick);
     return b;
   }

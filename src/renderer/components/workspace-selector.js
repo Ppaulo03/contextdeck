@@ -10,6 +10,7 @@ import { triggerModel } from '../../shared/workspace-view.js';
 export function initWorkspaceSelector({ dock, store, feedback }) {
   const trigger = $('ws-trigger');
   const label = $('ws-trigger-text');
+  const activity = $('ws-activity');
   const modeButton = $('ws-mode');
   let shown = null;        // what the trigger displayed last: kept while a switch is pending
   let model = triggerModel(null, null);
@@ -21,6 +22,9 @@ export function initWorkspaceSelector({ dock, store, feedback }) {
     label.classList.toggle('is-placeholder', model.tone === 'placeholder');
     label.classList.toggle('is-dim', model.tone === 'dim');
     label.classList.toggle('is-warning', model.tone === 'warning');
+    setText(activity, model.activity.text);
+    activity.hidden = !model.activity.text;
+    if (activity.title !== model.activity.title) activity.title = model.activity.title;
     setAttr(trigger, 'aria-busy', model.busy);
     setAttr(trigger, 'aria-disabled', model.disabled);
     if (trigger.title !== model.title) trigger.title = model.title;

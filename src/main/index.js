@@ -60,6 +60,10 @@ async function bootstrap() {
     selection
   });
   let navPusher = { notify() {}, stop() {} };
+  // Conversation activity per workspace (derived from the loaded views, never persisted) rides on the Herdr state the
+  // selector already receives; it is re-sent only when it actually changed.
+  const activity = () => (win && win.getNavigator() ? win.getNavigator().getWorkspaceActivity() : {});
+  let lastActivity = '{}';
   const chatsPusher = startChatsPusher({
     bindings,
     observer,
@@ -77,12 +81,17 @@ async function bootstrap() {
     overlayHtml: OVERLAY_HTML,
     onClosed: shutdown,
     onChatNavigated: () => chatsPusher.notify(),
-    onNavChange: () => { navPusher.notify(); chatsPusher.notify(); },
+    onNavChange: () => {
+      navPusher.notify();
+      chatsPusher.notify();
+      const text = JSON.stringify(activity());
+      if (text !== lastActivity) { lastActivity = text; stopPusher.notify?.(); }
+    },
     chats: { session: settings.herdrSession, bindings, selection }
   });
 
   navPusher = startChatNavPusher({ getState: () => win.getNavigator()?.getState(), send: (channel, data) => win.send(channel, data) });
-  registerIpc({ electron, win, herdr, observer, selection, bindings, notifyChats: () => { chatsPusher.notify(); win.getNavigator()?.reconcile(); }, settings, uiState, persist, userDataDir });
+  registerIpc({ electron, win, herdr, observer, selection, activity, bindings, notifyChats: () => { chatsPusher.notify(); win.getNavigator()?.reconcile(); }, settings, uiState, persist, userDataDir });
   app.on('second-instance', () => win.focus());
   app.on('before-quit', shutdown);
   await win.create();
@@ -90,6 +99,7 @@ async function bootstrap() {
   stopPusher = startStatePusher({
     observer,
     selection,
+    extra: activity,
     send: (channel, data) => { win.send(channel, data); if (channel === 'herdr:state') win.sendToOverlay('overlay:state-push', data); }
   });
   selection.start();

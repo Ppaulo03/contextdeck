@@ -545,7 +545,14 @@ test('M01-I3B-1: ChatGPT views are created in one place, destroyed only on shutd
 
 test('M01-I3B-1: no pool, no eviction, no automatic suspension of views', () => {
   for (const f of walk(path.join(SRC, 'main', 'chat-views'))) {
-    const text = fs.readFileSync(f, 'utf8').replace(/^\s*\/\/.*$/gm, '');
+    let text = fs.readFileSync(f, 'utf8').replace(/^\s*\/\/.*$/gm, '');
+    if (path.basename(f) === 'observation.js') {
+      // The status hub owns exactly ONE injected timer (the shared expiry sweep); observers own their poll timers.
+      assert.equal([...text.matchAll(/\bsetTimer\(/g)].length, 1, 'one sweep timer in the hub');
+      text = text.replace('setTimer = setTimeout, clearTimer = clearTimeout', '');
+      // Observing never creates, loads, navigates or destroys a view.
+      assert.doesNotMatch(text, /\.create\(|loadURL|\.reload\(|\.destroy\(\)|\.show\(|\.hide\(|setAttached|executeJavaScript|webContents|session\./);
+    }
     assert.doesNotMatch(text, /MAX_VIEWS|poolSize|evict|\bLRU\b|setTimeout|setInterval|suspend|backgroundThrottling|lifecycleAdvice|setAudioMuted|\.close\(\)/, path.relative(ROOT, f));
   }
 });
@@ -560,4 +567,28 @@ test('M01-I3B-1: the navigation channels are UI-window-only and never reach the 
 
 test('M01-I3B-1: documentation and decision record exist', () => {
   for (const f of ['docs/validation/m01-i3b-1.md', 'docs/decisions/0003-multi-view-navigation.md']) assert.ok(fs.existsSync(path.join(ROOT, f)), f);
+});
+
+// ---- M01-I3B-2 guard rails -------------------------------------------------------------------------------------
+
+test('M01-I3B-2: observers stop before views are closed; the status is never persisted; no new IPC channel carries it', () => {
+  const win = read('src', 'main', 'window.js').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(win.indexOf('hub?.stop()') >= 0 && win.indexOf('hub?.stop()') < win.indexOf('manager?.destroyAll()'), 'hub.stop() runs before destroyAll()');
+  assert.match(win, /CONTEXTDECK_CHAT_STATUS !== '0'/);
+  assert.equal([...win.matchAll(/createObservationHub\(/g)].length, 1, 'one hub');
+  // Nothing about activity is written to disk.
+  for (const f of ['src/main/persistence/ui-state.js', 'src/main/chat-bindings/model.js', 'src/main/chat-bindings/store.js']) {
+    assert.doesNotMatch(read(...f.split('/')).replace(/^\s*\/\/.*$/gm, ''), /responding|attention|generation|activity/, f);
+  }
+  // The status travels on channels that already existed (named in HANDLE_CHANNELS) as plain data.
+  const ipcFiles = ['chatnav.js', 'herdr.js'].map((f) => read('src', 'main', 'ipc', f));
+  assert.ok(ipcFiles.every((t) => !/ipcMain\.handle\('(chatstatus|activity)/.test(t)));
+  // The hub is the only consumer of the observer; the model never imports anything outside chat/ (pure).
+  const hub = read('src', 'main', 'chat-views', 'observation.js');
+  assert.match(hub, /require\('\.\.\/chat\/runtime-contract'\)/);
+  assert.doesNotMatch(hub, /require\('(electron|node:fs|fs)'\)/);
+});
+
+test('M01-I3B-2: documentation exists', () => {
+  assert.ok(fs.existsSync(path.join(ROOT, 'docs/validation/m01-i3b-2.md')));
 });

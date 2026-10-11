@@ -663,3 +663,23 @@ test('a workspace without a Project never asks the outside-Project question', ()
   v.navigate(chatUrl(7));
   assert.equal(w.bound(7).workspaceIdentity.workspaceId, 'w1');
 }));
+
+// ---- answering a question must always emit the new state (a modal is closed by state, never left open) -------------------------------------------------
+test('"Agora não" / "Vincular Project" / "Deixar sem vínculo" each emit the new state, and a repeated answer is harmless', () => run(async (w) => {
+  withProjectAdoption(w);
+  const states = [];
+  w.navigator.onChange((s) => states.push(s));
+  const v = w.newChat();
+  v.finishLoad(PROJECT_HOME);
+  assert.equal(states.at(-1).pending.kind, 'offer');
+  assert.equal(w.adoption.skip({ viewId: v.id }).ok, true);
+  assert.equal(states.at(-1).pending, null, 'the state that closes the modal was emitted');
+  assert.equal(w.adoption.skip({ viewId: v.id }).ok, true, 'a second answer (Esc after the button) is not an error');
+  v.navigate(`https://chatgpt.com/g/${OTHER}/project`);
+  assert.equal(states.at(-1).pending.kind, 'offer');
+  assert.equal(w.adoption.linkProject({ viewId: v.id }).ok, true);
+  assert.equal(states.at(-1).pending, null);
+  const again = w.adoption.linkProject({ viewId: v.id });
+  assert.equal(again.ok, false, 'nothing left to link');
+  assert.equal(states.at(-1).pending, null, 'and the state is re-emitted so a stale modal closes');
+}));

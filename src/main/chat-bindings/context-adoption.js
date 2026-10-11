@@ -177,29 +177,37 @@ function createContextAdoption({ session, navigator, bindings, selection, projec
     return { viewId, workspaceId: v.workspaceId, projectId: cur.projectId, url, label: cur.label };
   }
 
+  // These answers change what the page needs from the user WITHOUT changing any page or binding, so nothing would tell the window
+  // that the question is gone: every answer ends with a reconcile (it emits the new state, and the modal closes or updates).
+  // A modal must never be left open because an answer "did nothing".
   function linkProject({ viewId } = {}) {
     const offer = offerFor(viewId);
-    if (!offer) return fail('no_offer', 'Nao ha Project para vincular nesta pagina.');
-    const sel = selection.getState();
-    const current = sel.selected ? sel.selected.workspaceId : null;
-    if (current !== offer.workspaceId) return fail('context_changed', 'O workspace selecionado mudou. Revise a escolha.');
-    // The button is the explicit choice (destination on screen); set here, never taken from the renderer.
-    return projects.link({ target: { session, workspaceId: offer.workspaceId }, url: offer.url, selectedAtOpen: current, targetChosen: true });
+    let result;
+    if (!offer) result = fail('no_offer', 'Nao ha Project para vincular nesta pagina.');
+    else {
+      const sel = selection.getState();
+      const current = sel.selected ? sel.selected.workspaceId : null;
+      if (current !== offer.workspaceId) result = fail('context_changed', 'O workspace selecionado mudou. Revise a escolha.');
+      // The button is the explicit choice (destination on screen); set here, never taken from the renderer.
+      else result = projects.link({ target: { session, workspaceId: offer.workspaceId }, url: offer.url, selectedAtOpen: current, targetChosen: true });
+    }
+    navigator.reconcile();
+    return result;
   }
 
-  // "Agora nao" / "Deixar sem vinculo": the user declines what the banner asked.
+  // "Agora nao" / "Deixar sem vinculo": the user declines what the modal asked. Idempotent: declining something that is already
+  // gone (a second click, Esc after the button) is fine, never an error.
   function skip({ viewId } = {}) {
     const offer = offerFor(viewId);
     const note = pendingNotes.get(viewId);
-    if (note && note.kind === 'pending') { snoozed.add(`${viewId}|${note.code}`); return { ok: true }; }
-    if (note && note.kind === 'confirm') {
+    if (note && note.kind === 'pending') snoozed.add(`${viewId}|${note.code}`);
+    else if (note && note.kind === 'confirm') {
       const v = find(viewId);
       if (v && v.identity.state === 'durable') decline(v.identity.key);
       pendingNotes.delete(viewId);
-      return { ok: true };
-    }
-    if (offer) { dismissedOffers.add(`${offer.workspaceId}|${offer.projectId}`); return { ok: true }; }
-    return fail('nothing_to_skip', 'Nada a dispensar.');
+    } else if (offer) dismissedOffers.add(`${offer.workspaceId}|${offer.projectId}`);
+    navigator.reconcile();
+    return { ok: true };
   }
 
   const back = ({ viewId } = {}) => navigator.backFromConflict(viewId);

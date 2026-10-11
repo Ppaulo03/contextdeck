@@ -92,7 +92,12 @@ function createChatViewManager({ createView, host, now = () => Date.now() }) {
     let changed = false;
     switch (kind) {
       case 'navigation-started': setPage(entry, PageLifecycle.LOADING); changed = true; break;
-      case 'navigated': changed = setIdentity(entry, payload.url) || changed; break;
+      case 'navigated':
+        changed = setIdentity(entry, payload.url) || changed;
+        // Two pages without a conversation id (the home of a Project, then another Project's) have the same identity; the address
+        // still changed and what the UI offers for it (link this Project) depends on it. No epoch bump: identity is unchanged.
+        if (payload.url !== entry.lastUrl) { entry.lastUrl = payload.url; changed = true; }
+        break;
       case 'loaded':
         // A load that finished after the view was told to load something newer says nothing about it.
         if (payload.loadSeq !== undefined && payload.loadSeq !== entry.loadSeq) return;

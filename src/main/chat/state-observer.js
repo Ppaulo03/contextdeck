@@ -14,13 +14,16 @@ const DEFAULT_INTERVALS = Object.freeze({ respondingMs: 1000, visibleIdleMs: 200
 //  - a timer-chained poll (never overlapping) of a boolean-only probe in an isolated world, only while the
 //    page is ready. No DOM mutation observers, no preload, no IPC from the page, no network interception.
 // onChange runs only when the model actually changed, never per poll.
-function createStateObserver({ contents, onChange, intervals = DEFAULT_INTERVALS, diagnostic = false, onProbe, setTimer = setTimeout, clearTimer = clearTimeout }) {
+// `phaseMs` offsets the FIRST poll so that many observers (one per loaded view) do not probe in the same instant;
+// `probeTimeoutMs` bounds a probe that never answers (a hung renderer), which would otherwise end the poll chain.
+function createStateObserver({ contents, onChange, intervals = DEFAULT_INTERVALS, diagnostic = false, onProbe, phaseMs = 0, probeTimeoutMs = 5000, setTimer = setTimeout, clearTimer = clearTimeout }) {
   let state = createState();
   let seq = 0;
   let timer;
   let timerDue = 0;
   let stopped = false;
-  const stats = { polls: 0, changes: 0, signalsLost: 0, lastLatencyMs: null, dropped: { stale: 0, order: 0 } };
+  const stats = { polls: 0, changes: 0, signalsLost: 0, probeTimeouts: 0, lastLatencyMs: null, lastPollAt: null, dropped: { stale: 0, order: 0 } };
+  let phase = Math.max(0, phaseMs);
   const source = probeSource({ diagnostic });
 
   function dispatch(event) {
@@ -64,11 +67,12 @@ function createStateObserver({ contents, onChange, intervals = DEFAULT_INTERVALS
   function schedule() {
     if (stopped || state.page !== PAGE.READY) { clearTimer(timer); timer = undefined; return; }
     // A pending poll that is already due sooner is kept: re-arming on every visibility toggle would starve polling.
-    const wait = interval();
+    const wait = phase > 0 ? phase : interval();
     const due = Date.now() + wait;
     if (timer && timerDue <= due) return;
     clearTimer(timer);
     timerDue = due;
+    phase = 0;
     timer = setTimer(() => { timer = undefined; void poll(); }, wait);
     timer.unref?.();
   }
@@ -79,8 +83,12 @@ function createStateObserver({ contents, onChange, intervals = DEFAULT_INTERVALS
     const mySeq = ++seq;
     const started = process.hrtime.bigint();
     stats.polls += 1;
+    let guard;
     try {
-      const raw = await contents.executeJavaScriptInIsolatedWorld(WORLD_ID, [{ code: source }]);
+      const timeout = new Promise((_, reject) => { guard = setTimer(() => reject(Object.assign(new Error('probe timed out'), { code: 'probe-timeout' })), probeTimeoutMs); guard.unref?.(); });
+      const raw = await Promise.race([contents.executeJavaScriptInIsolatedWorld(WORLD_ID, [{ code: source }]), timeout]);
+      clearTimer(guard);
+      stats.lastPollAt = Date.now();
       stats.lastLatencyMs = Number(process.hrtime.bigint() - started) / 1e6;
       const signals = normalizeSignals(raw);
       const extra = diagnostic ? sanitizeProbe(raw) : null;
@@ -90,7 +98,9 @@ function createStateObserver({ contents, onChange, intervals = DEFAULT_INTERVALS
       else if (!(mySeq > state.lastSeq)) stats.dropped.order += 1;
       if (signals) dispatch({ type: 'signals', epoch, seq: mySeq, signals });
       else { stats.signalsLost += 1; dispatch({ type: 'signals-lost', epoch }); }
-    } catch {
+    } catch (error) {
+      clearTimer(guard);
+      if (error && error.code === 'probe-timeout') stats.probeTimeouts += 1;
       stats.signalsLost += 1;
       dispatch({ type: 'signals-lost', epoch });
     }

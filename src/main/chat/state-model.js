@@ -111,7 +111,11 @@ function reduce(state, event) {
     case 'navigated': {
       const identity = parseConversationIdentity(event.url);
       const durable = identity.kind === 'conversation' || identity.kind === 'project-conversation';
-      if (durable && identity.key === state.identity.key) return state;
+      // The same conversation reached through another route (a Project's /g/<project>/c/<id> vs /c/<id>) is the same
+      // identity: only the id counts, nothing learned about it is reset.
+      if (durable && state.identity.id && String(identity.id).toLowerCase() === String(state.identity.id).toLowerCase()) {
+        return identity.key === state.identity.key ? state : { ...state, identity };
+      }
       // A brand-new chat gets its durable id when the first message is sent: same conversation, keep the response.
       const upgrade = event.inPage && state.identity.kind === 'new' && durable && state.generation.state === GEN.RESPONDING;
       if (upgrade) return { ...state, epoch: state.epoch + 1, identity, draft: DRAFT_UNKNOWN };

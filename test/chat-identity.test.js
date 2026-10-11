@@ -70,7 +70,7 @@ test('runtime contract: dimensions, outcome states and the provider interface ar
   assert.deepEqual(Object.values(rc.PageLifecycle), ['unloaded', 'loading', 'ready', 'error', 'destroyed']);
   assert.deepEqual(Object.values(rc.GenerationState), ['unknown', 'idle', 'responding', 'ended-unclassified', 'interrupted', 'completed', 'error']);
   assert.deepEqual(Object.values(rc.DraftState), ['unknown', 'empty', 'present']);
-  assert.deepEqual(Object.values(rc.AttentionState), ['pending', 'acknowledged']);
+  assert.deepEqual(Object.values(rc.AttentionState), ['none', 'pending']);
   assert.deepEqual(rc.RUNTIME_PROVIDER_METHODS, ['getRuntime', 'subscribe']);
   const initial = rc.initialRuntime();
   assert.equal(initial.generation.value, 'unknown');
@@ -96,6 +96,10 @@ test('runtime contract: the I3P observer state maps onto it; ended-unclassified 
   assert.equal(idle.page.source, 'navigation');
   assert.equal(idle.generation.value, 'unknown');
   assert.equal(idle.generation.reliability, 'unknown');
+  // The observation time is the probe's, not the time the mapping ran: an old reading expires on its own.
+  const old = rc.fromObserverState(s, { now: 100_000, ttlMs: 50, observedAt: 1000 });
+  assert.equal(old.draft.observedAt, 1000);
+  assert.equal(rc.effectiveValue(old.draft, 100_000), 'unknown');
 
   const base = (generation) => ({ ...s, generation, draft: { state: 'present', evidence: 'observed' }, attention: { pending: true } });
   const ended = rc.fromObserverState(base({ state: 'unknown', evidence: 'unknown', reason: 'ended-unclassified' }), { now: 100, ttlMs: 50 });

@@ -11,14 +11,15 @@ const MAX_BYTES = 1024 * 1024;
 // diagnostic evidence, never read back as state and never used to restore anything after a restart.
 const shortHash = (value) => crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 8);
 
-function createDiagnosticsLog({ file, now = Date.now, maxBytes = MAX_BYTES }) {
+// `tag` (a view id) marks the entries of one view when several views share the file.
+function createDiagnosticsLog({ file, tag = null, now = Date.now, maxBytes = MAX_BYTES }) {
   let written = 0;
   try { fs.mkdirSync(path.dirname(file), { recursive: true }); written = fs.existsSync(file) ? fs.statSync(file).size : 0; } catch { /* Logging is best effort. */ }
 
   function write(entry) {
     try {
       if (written > maxBytes) { fs.renameSync(file, `${file}.1`); written = 0; }
-      const line = `${JSON.stringify({ t: now(), ...entry })}\n`;
+      const line = `${JSON.stringify({ t: now(), ...(tag ? { view: tag } : {}), ...entry })}\n`;
       fs.appendFileSync(file, line);
       written += line.length;
     } catch { /* Never let diagnostics affect the app. */ }

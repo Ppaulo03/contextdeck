@@ -11,7 +11,8 @@
 //   PageLifecycle   unloaded | loading | ready | error | destroyed
 //   GenerationState unknown | idle | responding | ended-unclassified | interrupted | completed | error
 //   DraftState      unknown | empty | present
-//   AttentionState  pending | acknowledged
+//   AttentionState  none | pending      (`pending`: activity that ended while the user could not see the view and has not
+//                                         been visited since; `none` otherwise. It is independent of generation and draft.)
 //
 // Every dimension is an Observation: { value, source, reliability, observedAt, validUntil }.
 //   source       who produced it: 'navigation' (Electron events), 'dom-probe' (I3P boolean probe), 'user' (explicit
@@ -28,7 +29,7 @@ const GenerationState = Object.freeze({
   INTERRUPTED: 'interrupted', COMPLETED: 'completed', ERROR: 'error'
 });
 const DraftState = Object.freeze({ UNKNOWN: 'unknown', EMPTY: 'empty', PRESENT: 'present' });
-const AttentionState = Object.freeze({ PENDING: 'pending', ACKNOWLEDGED: 'acknowledged' });
+const AttentionState = Object.freeze({ NONE: 'none', PENDING: 'pending' });
 const Reliability = Object.freeze({ OBSERVED: 'observed', INFERRED: 'inferred', UNKNOWN: 'unknown' });
 const Source = Object.freeze({ NAVIGATION: 'navigation', DOM_PROBE: 'dom-probe', USER: 'user', NONE: 'none' });
 
@@ -47,19 +48,19 @@ function initialRuntime() {
     page: observation(PageLifecycle.UNLOADED, { source: Source.NAVIGATION, reliability: Reliability.OBSERVED }),
     generation: observation(GenerationState.UNKNOWN),
     draft: observation(DraftState.UNKNOWN),
-    attention: observation(AttentionState.ACKNOWLEDGED)
+    attention: observation(AttentionState.NONE)
   });
 }
 
 // Maps the I3P observer state (state-model.js) onto this contract. `ended-unclassified` was a `reason` of an
 // `unknown` generation there; here it is a first-class value. `ttlMs` bounds how long a probe reading is trusted
 // (default: three hidden-idle polls, see state-observer.js).
-function fromObserverState(state, { now = Date.now(), ttlMs = 15000 } = {}) {
+function fromObserverState(state, { now = Date.now(), ttlMs = 15000, observedAt = now } = {}) {
   const fromProbe = (value, evidence) => observation(value, {
     source: Source.DOM_PROBE,
     reliability: evidence === 'observed' ? Reliability.OBSERVED : evidence === 'inferred' ? Reliability.INFERRED : Reliability.UNKNOWN,
-    observedAt: now,
-    validUntil: now + ttlMs
+    observedAt,
+    validUntil: observedAt + ttlMs
   });
   let generation = state.generation.state;
   if (generation === 'unknown' && state.generation.reason === 'ended-unclassified') generation = GenerationState.ENDED_UNCLASSIFIED;
@@ -70,7 +71,7 @@ function fromObserverState(state, { now = Date.now(), ttlMs = 15000 } = {}) {
     page: observation(state.page, { source: Source.NAVIGATION, reliability: Reliability.OBSERVED, observedAt: now }),
     generation: unsupportedOutcome ? observation(GenerationState.UNKNOWN) : fromProbe(known, state.generation.evidence),
     draft: fromProbe(state.draft.state, state.draft.evidence),
-    attention: observation(state.attention.pending ? AttentionState.PENDING : AttentionState.ACKNOWLEDGED, {
+    attention: observation(state.attention.pending ? AttentionState.PENDING : AttentionState.NONE, {
       source: state.attention.pending ? Source.DOM_PROBE : Source.USER,
       reliability: Reliability.INFERRED,
       observedAt: now

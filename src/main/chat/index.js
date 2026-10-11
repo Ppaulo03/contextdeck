@@ -8,15 +8,20 @@ const SUMMARY_MS = 30000;
 const SNAPSHOT_DELAYS_MS = [3000, 20000];     // after a load / conversation change: SPA hydration, then a second look
 const SNAPSHOT_LIMIT = 12;                    // per run: the log is evidence, not a stream
 
-// Experimental chat-state observation (M01-I3P). Disabled unless CONTEXTDECK_CHAT_OBSERVER=1; when enabled it
-// only logs to <userData>\diagnostics\chat-observer.jsonl:
+// Chat-state observation of ONE view's WebContents (the I3P detector and model, unchanged).
+//   status mode (M01-I3B-2): `status: true`, used by the observation hub for every loaded view; reports the model through
+//   `onChange` only when it meaningfully changes; no diagnostics log.
+//   diagnostic mode: CONTEXTDECK_CHAT_OBSERVER=1; additionally logs to <userData>\diagnostics\chat-observer.jsonl (each
+//   entry tagged with the view id):
 //   transitions of the model, the shape of the send/stop controls when it changes, a summary every 30 s
 //   (polls, lost/dropped results, how often each signal was true/false/unknown, how the composer was found)
 //   and a sanitized structural snapshot of the page while the composer has not been found.
-// Nothing in the UI, the lifecycle of the view or any decision depends on it. No message text is ever read out.
-function startChatObservation({ contents, userDataDir, env = process.env, setTimer = setTimeout, clearTimer = clearTimeout, setRepeat = setInterval, clearRepeat = clearInterval }) {
-  if (env.CONTEXTDECK_CHAT_OBSERVER !== '1') return null;
-  const log = createDiagnosticsLog({ file: path.join(userDataDir, 'diagnostics', 'chat-observer.jsonl') });
+// Only indicators depend on it: no view lifecycle, binding, navigation or Herdr decision does. No message text is ever read out.
+function startChatObservation({ contents, userDataDir, env = process.env, viewId = null, status = false, onChange: notify, phaseMs = 0, setTimer = setTimeout, clearTimer = clearTimeout, setRepeat = setInterval, clearRepeat = clearInterval }) {
+  const diagnostics = env.CONTEXTDECK_CHAT_OBSERVER === '1';
+  if (!diagnostics && !status) return null;
+  if (!diagnostics) return createStateObserver({ contents, onChange: notify, phaseMs, setTimer, clearTimer });
+  const log = createDiagnosticsLog({ file: path.join(userDataDir, 'diagnostics', 'chat-observer.jsonl'), tag: viewId });
   let lastControls = '';
   let composerSeen = false;
   let snapshots = 0;
@@ -42,8 +47,10 @@ function startChatObservation({ contents, userDataDir, env = process.env, setTim
   const observer = createStateObserver({
     contents,
     diagnostic: true,
+    phaseMs,
     onChange: (state, prev, event) => {
       log.transition(state, prev, event);
+      notify?.(state, prev, event);
       // Every load or conversation change starts a new search for the composer.
       if ((event.type === 'page-ready' || event.type === 'navigated') && state.page === 'ready') { composerSeen = false; scheduleSnapshots(event.type); }
     },

@@ -7,6 +7,7 @@ const { registerGitIpc } = require('./git');
 const { registerHerdrIpc } = require('./herdr');
 const { registerOverlayIpc } = require('./overlay');
 const { registerChatsIpc } = require('./chats');
+const { registerChatNavIpc } = require('./chatnav');
 
 // Registers every IPC channel the local UI may use. `electron` is injected ({ ipcMain, shell,
 // clipboard, dialog }) so the registration can be tested without launching Electron. Channel
@@ -21,6 +22,8 @@ function registerIpc({ electron, win, herdr, observer, selection, bindings, noti
   registerOverlayIpc({ ipcMain, trustedUi: trusted, trustedOverlay: (event) => win.isOverlay(event), win, observer, selection });
   // Chat bindings are managed from the UI window and from the overlay panel; never from the remote page.
   registerChatsIpc({ ipcMain, trusted: (event) => win.isTrusted(event) || win.isOverlay(event), win, bindings, notify: notifyChats });
+  // Conversation navigation: UI window only.
+  registerChatNavIpc({ ipcMain, trusted, win });
   registerGitIpc({ ipcMain, clipboard, dialog, trusted, win, settings, uiState, persist, userDataDir });
 }
 

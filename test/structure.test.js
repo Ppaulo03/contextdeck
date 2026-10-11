@@ -136,11 +136,12 @@ test('renderer wiring: each bridge subscription is registered once (no duplicate
   const files = sourceFiles.filter((f) => f.includes(`${path.sep}renderer${path.sep}`) && !f.includes(`${path.sep}overlay${path.sep}`));
   const text = files.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
   // onOverlayClosed: the workspace selector and the chat indicator each restore focus to their own trigger (told apart by `kind`).
-  const expected = { onHerdrState: 1, onMode: 1, onPtyData: 1, onPtyExit: 1, onFocusTerminal: 1, onChatStatus: 1, onChatHost: 1, onChatError: 1, onChatsState: 1, onOverlayClosed: 2 };
+  const expected = { onHerdrState: 1, onMode: 1, onPtyData: 1, onPtyExit: 1, onFocusTerminal: 1, onChatStatus: 1, onChatHost: 1, onChatError: 1, onChatsState: 1, onChatNavState: 1, onOverlayClosed: 2 };
   for (const [name, count] of Object.entries(expected)) {
     assert.equal([...text.matchAll(new RegExp(`dock\\.${name}\\(`, 'g'))].length, count, `dock.${name}( is subscribed in ${count} place(s)`);
   }
   assert.equal([...text.matchAll(/chatsState\(\)/g)].length, 1, 'one initial chats state read (in the indicator)');
+  assert.equal([...text.matchAll(/chatNavState\(\)/g)].length, 1, 'one initial navigation state read (in the strip)');
   assert.equal([...text.matchAll(/herdrState\(\)/g)].length, 1, 'one initial state read (in the store)');
   assert.equal([...text.matchAll(/new ResizeObserver\(/g)].length, 2, 'terminal root and footer');
 });
@@ -234,6 +235,7 @@ const HANDLE_CHANNELS = [
   'herdr:refresh', 'herdr:select-workspace', 'herdr:set-sync-mode', 'herdr:state',
   'overlay:choose', 'overlay:close', 'overlay:open-chats-panel', 'overlay:open-workspace-menu', 'overlay:state',
   'chats:bind', 'chats:reassign', 'chats:state', 'chats:unbind', 'chats:update',
+  'chatnav:new', 'chatnav:open-unscoped', 'chatnav:select', 'chatnav:select-temporary', 'chatnav:state',
   'git:show', 'git:status', 'git:zip', 'pty:start'
 ].sort();
 // Chat bindings (M01-I3A): callable from the UI window AND from the overlay panel, never from the remote page.
@@ -336,7 +338,7 @@ test('IPC: preload channels all exist in main, and main only sends channels the 
   assert.ok(invoked.every((c) => !OVERLAY_ONLY.includes(c)), 'the UI window bridge cannot reach the overlay-only channels');
   assert.deepEqual([...sent].sort(), ON_CHANNELS);
   const listened = new Set([...preload.matchAll(/listen\('([^']+)'/g), ...overlayPreload.matchAll(/listen\('([^']+)'/g)].map((m) => m[1]));
-  const emitted = new Set(sourceFiles.filter((f) => f.includes(`${path.sep}main${path.sep}`)).flatMap((f) => [...fs.readFileSync(f, 'utf8').matchAll(/\b(?:send|sendToOverlay)\('([a-z]+:[a-z-]+)'/g)].map((m) => m[1])));
+  const emitted = new Set(sourceFiles.filter((f) => f.includes(`${path.sep}main${path.sep}`)).flatMap((f) => [...fs.readFileSync(f, 'utf8').matchAll(/\b(?:send|sendToOverlay|status\?\.)\('([a-z]+:[a-z-]+)'/g)].map((m) => m[1])));
   assert.deepEqual([...emitted].sort(), [...listened].sort());
 });
 
@@ -487,8 +489,9 @@ test('M01-I3A: bindings never drive the page, the views, Herdr or the Chromium p
   assert.deepEqual(creators, [path.join('main', 'chat-view.js'), path.join('main', 'overlay.js')]);
   assert.equal([...fs.readFileSync(path.join(SRC, 'main', 'chat-view.js'), 'utf8').matchAll(/new WebContentsView\(/g)].length, 1);
   assert.equal([...fs.readFileSync(path.join(SRC, 'main', 'window.js'), 'utf8').matchAll(/createChatView\(/g)].length, 1, 'the chat view is created once');
-  // The preference file knows nothing about bindings.
-  assert.doesNotMatch(read('src', 'main', 'persistence', 'ui-state.js'), /binding/i);
+  // The preference file knows about bindings only as opaque ids (the last conversation chosen per workspace).
+  const prefs = read('src', 'main', 'persistence', 'ui-state.js').replace(/^\s*\/\/.*$/gm, '');
+  assert.deepEqual([...new Set((prefs.match(/binding\w*/gi) || []).map((m) => m.toLowerCase()))].sort(), ['binding_id_re']);
 });
 
 test('M01-I3A: the persistent identifiers that keep the login are unchanged and the bindings have a file of their own', () => {
@@ -503,7 +506,8 @@ test('M01-I3A: the persistent identifiers that keep the login are unchanged and 
 
 test('M01-I3A: the chat view only reports navigations; its permission and popup policy is untouched', () => {
   const chat = read('src', 'main', 'chat-view.js');
-  assert.match(chat, /contents\.on\('did-navigate-in-page', \(\) => onNavigated\?\.\(\)\)/);
+  assert.match(chat, /contents\.on\('did-navigate-in-page'/);
+  assert.match(chat, /onEvent\?\.\('navigated', \{ url \}\)/);
   assert.match(chat, /requestingHost === 'chatgpt\.com'/);
   assert.match(chat, /setPermissionCheckHandler\(\(\) => false\)/);
   assert.match(chat, /AUTH_POPUP_HOSTS/);
@@ -511,4 +515,49 @@ test('M01-I3A: the chat view only reports navigations; its permission and popup 
 
 test('M01-I3A: documentation and decision record exist', () => {
   for (const f of ['docs/validation/m01-i3a.md', 'docs/decisions/0002-chat-bindings.md']) assert.ok(fs.existsSync(path.join(ROOT, f)), f);
+});
+
+// ---- M01-I3B-1 guard rails -------------------------------------------------------------------------------------
+
+test('M01-I3B-1: ChatGPT views are created in one place, destroyed only on shutdown, and loaded only when created or retried', () => {
+  const main = sourceFiles.filter((f) => f.includes(`${path.sep}main${path.sep}`));
+  const code = (f) => fs.readFileSync(f, 'utf8').replace(/^\s*\/\/.*$/gm, '');
+  // Destroying a view: the handle's destroy() is called by the manager's destroyAll() and nowhere else.
+  const destroyers = main.filter((f) => /\.destroy\(\)/.test(code(f))).map((f) => path.relative(SRC, f)).sort();
+  // (window.js: the overlay's own destroy; api-client.js: sockets. Neither touches a ChatGPT view.)
+  assert.deepEqual(destroyers, [path.join('main', 'chat-views', 'manager.js'), path.join('main', 'herdr', 'api-client.js'), path.join('main', 'window.js')]);
+  assert.match(code(path.join(SRC, 'main', 'window.js')).match(/.*\.destroy\(\).*/)[0], /overlay\.destroy\(\)/);
+  const manager = code(path.join(SRC, 'main', 'chat-views', 'manager.js'));
+  assert.equal([...manager.matchAll(/\.destroy\(\)/g)].length, 1, 'a single destroy call, inside destroyAll');
+  assert.match(manager.slice(manager.indexOf('function destroyAll')), /e\.handle\.destroy\(\)/);
+  const win = code(path.join(SRC, 'main', 'window.js'));
+  assert.equal([...win.matchAll(/destroyAll\(\)/g)].length, 1, 'only when the window closes');
+  assert.match(win, /mainWindow\.on\('closed'[\s\S]*manager\?\.destroyAll\(\)/);
+  // Loading: the manager loads an address only in load() (creation and the retry of a FAILED view); the navigator never loads.
+  assert.equal([...manager.matchAll(/\.loadURL\(/g)].length, 1);
+  assert.doesNotMatch(code(path.join(SRC, 'main', 'chat-views', 'navigator.js')), /\.loadURL|\.reload\(|goHome|\.destroy\(|webContents|\bsession\./);
+  // One partition for every view: no per-conversation partitions.
+  const chatView = code(path.join(SRC, 'main', 'chat-view.js'));
+  assert.equal([...chatView.matchAll(/chatWebPreferences\(CHAT_PARTITION\)/g)].length, 1);
+  assert.doesNotMatch(chatView, /partition:\s*['"`]|randomUUID|Date\.now\(\).*partition/);
+  assert.match(chatView, /sessionConfigured/);
+});
+
+test('M01-I3B-1: no pool, no eviction, no automatic suspension of views', () => {
+  for (const f of walk(path.join(SRC, 'main', 'chat-views'))) {
+    const text = fs.readFileSync(f, 'utf8').replace(/^\s*\/\/.*$/gm, '');
+    assert.doesNotMatch(text, /MAX_VIEWS|poolSize|evict|\bLRU\b|setTimeout|setInterval|suspend|backgroundThrottling|lifecycleAdvice|setAudioMuted|\.close\(\)/, path.relative(ROOT, f));
+  }
+});
+
+test('M01-I3B-1: the navigation channels are UI-window-only and never reach the remote page or the overlay bridge', () => {
+  const overlayPreload = read('src', 'preload', 'overlay.js');
+  assert.doesNotMatch(overlayPreload, /chatnav/);
+  const ipc = read('src', 'main', 'ipc', 'index.js');
+  assert.match(ipc, /registerChatNavIpc\(\{ ipcMain, trusted, win \}\)/, 'trusted = the UI window only (not the overlay)');
+  assert.doesNotMatch(read('src', 'main', 'chat-view.js'), /ipcMain|ipcRenderer|preload\s*:/);
+});
+
+test('M01-I3B-1: documentation and decision record exist', () => {
+  for (const f of ['docs/validation/m01-i3b-1.md', 'docs/decisions/0003-multi-view-navigation.md']) assert.ok(fs.existsSync(path.join(ROOT, f)), f);
 });

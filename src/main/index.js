@@ -9,6 +9,7 @@ const { USER_DATA_DIRNAME, UI_STATE_FILE, CHAT_BINDINGS_FILE } = require('./pers
 const { createBindingsStore } = require('./chat-bindings/store');
 const { createChatBindings } = require('./chat-bindings/service');
 const { startChatsPusher } = require('./ipc/chats');
+const { startChatNavPusher } = require('./ipc/chatnav');
 const { createHerdrClient } = require('./herdr/client');
 const { createWindowController } = require('./window');
 const { registerIpc } = require('./ipc');
@@ -58,6 +59,7 @@ async function bootstrap() {
     observer,
     selection
   });
+  let navPusher = { notify() {}, stop() {} };
   const chatsPusher = startChatsPusher({
     bindings,
     observer,
@@ -65,7 +67,7 @@ async function bootstrap() {
     getUrl: () => win.getChatUrl(),
     send: (channel, data) => { win.send(channel, data); win.sendToOverlay('overlay:chats-push', data); }
   });
-  const shutdown = () => { herdr.stop(); stopPusher(); chatsPusher.stop(); selection.stop(); observer.stop(); };
+  const shutdown = () => { herdr.stop(); stopPusher(); chatsPusher.stop(); navPusher.stop(); selection.stop(); observer.stop(); };
   win = createWindowController({
     uiState,
     uiStateFile,
@@ -74,10 +76,13 @@ async function bootstrap() {
     rendererHtml: RENDERER_HTML,
     overlayHtml: OVERLAY_HTML,
     onClosed: shutdown,
-    onChatNavigated: () => chatsPusher.notify()
+    onChatNavigated: () => chatsPusher.notify(),
+    onNavChange: () => { navPusher.notify(); chatsPusher.notify(); },
+    chats: { session: settings.herdrSession, bindings, selection }
   });
 
-  registerIpc({ electron, win, herdr, observer, selection, bindings, notifyChats: chatsPusher.notify, settings, uiState, persist, userDataDir });
+  navPusher = startChatNavPusher({ getState: () => win.getNavigator()?.getState(), send: (channel, data) => win.send(channel, data) });
+  registerIpc({ electron, win, herdr, observer, selection, bindings, notifyChats: () => { chatsPusher.notify(); win.getNavigator()?.reconcile(); }, settings, uiState, persist, userDataDir });
   app.on('second-instance', () => win.focus());
   app.on('before-quit', shutdown);
   await win.create();

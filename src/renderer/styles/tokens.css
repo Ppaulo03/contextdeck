@@ -63,6 +63,7 @@
   --control-h: 30px;
   --control-h-sm: 26px;
   --topbar-h: 52px;
+  --chatbar-h: 34px;          /* conversation strip: main lays the chat view out below top bar + this */
 
   /* Layers (renderer DOM only; native views are ordered by the main process) */
   --z-panel: 5;

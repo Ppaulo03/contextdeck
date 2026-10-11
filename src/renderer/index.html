@@ -37,8 +37,22 @@
       </div>
       <button id="chat-link" class="unlinked chat-link chat-only" type="button" aria-haspopup="dialog" aria-expanded="false" title="Vínculos entre esta conversa e os workspaces do Herdr">Vínculo: &hellip;</button>
     </header>
+    <nav id="chatbar" class="chatbar chat-only" aria-label="Conversas do workspace">
+      <span id="chatbar-ws" class="chatbar-ws">ChatGPT</span>
+      <div id="chatbar-tabs" class="chatbar-tabs" role="tablist" aria-label="Conversas"></div>
+      <button id="chatbar-new" class="btn btn-icon" type="button" aria-label="Nova conversa" title="Nova conversa">+</button>
+      <button id="chatbar-manage" class="btn" type="button" aria-haspopup="dialog" title="Vincular, renomear e reassociar conversas">Gerenciar</button>
+    </nav>
     <main class="content">
       <div id="terminal-root" aria-label="Terminal Herdr"></div>
+      <section id="chat-empty" class="chat-empty chat-only" aria-live="polite" hidden>
+        <h2 id="chat-empty-title" class="chat-empty-title"></h2>
+        <p id="chat-empty-text" class="chat-empty-text"></p>
+        <div class="actions">
+          <button id="chat-empty-new" class="btn" type="button">Nova conversa</button>
+          <button id="chat-empty-manage" class="btn" type="button" aria-haspopup="dialog">Vincular conversa&hellip;</button>
+        </div>
+      </section>
       <section id="herdr-panel" class="diag-panel" tabindex="-1" aria-label="Diagn&oacute;stico dos workspaces do Herdr" hidden>
         <header class="diag-title"><strong>Workspaces do Herdr</strong><span class="diag-ro">somente leitura</span><span class="spacer"></span><button id="herdr-panel-refresh" class="btn" type="button">Atualizar</button><button id="herdr-panel-close" class="btn" type="button" aria-label="Fechar">&times;</button></header>
         <div id="herdr-panel-body"></div>

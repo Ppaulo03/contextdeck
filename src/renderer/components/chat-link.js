@@ -17,19 +17,24 @@ export function initChatLink({ dock, feedback }) {
     button.classList.toggle('is-neutral', model.tone === 'neutral');
   }
 
-  async function openPanel() {
-    const box = button.getBoundingClientRect();
+  // The panel can be opened from this indicator or from the conversation strip; focus goes back to whoever opened it.
+  let opener = button;
+  async function openPanel(trigger = button) {
+    const box = trigger.getBoundingClientRect();
+    opener = trigger;
     const result = await dock.openChatsPanel({ x: box.left, y: box.top, width: box.width, height: box.height });
-    if (result && result.ok) setAttr(button, 'aria-expanded', true);
+    if (result && result.ok) setAttr(trigger, 'aria-expanded', true);
     else feedback.error('Não foi possível abrir o painel de conversas.');
   }
 
-  button.addEventListener('click', () => void openPanel());
+  button.addEventListener('click', () => void openPanel(button));
   // The overlay closes by itself (Esc, click outside, resize, tab switch): put focus back on the trigger.
-  const offClosed = dock.onOverlayClosed((kind) => { if (kind === 'chats' && button.getAttribute('aria-expanded') === 'true') { setAttr(button, 'aria-expanded', false); button.focus(); } });
+  const offClosed = dock.onOverlayClosed((kind) => {
+    if (kind === 'chats' && opener.getAttribute('aria-expanded') === 'true') { setAttr(opener, 'aria-expanded', false); opener.focus(); }
+  });
   const offState = dock.onChatsState(render);
   void dock.chatsState().then((initial) => { if (!state && initial) render(initial); });
   render(null);
 
-  return { dispose() { offClosed(); offState(); } };
+  return { openPanel, dispose() { offClosed(); offState(); } };
 }

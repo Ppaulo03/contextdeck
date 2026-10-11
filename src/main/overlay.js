@@ -90,6 +90,8 @@ function createOverlay({ getWindow, preloadPath, html, onBeforeInput, onHidden }
     show,
     hide,
     fit: () => { if (open) fit(); },
+    // Re-adding an existing child moves it to the top: called when another view is attached while the overlay is open.
+    raise: () => { const win = liveWindow(); if (open && view && win) win.contentView.addChildView(view); },
     isOpen: () => open,
     isOverlay: (event) => Boolean(view) && event.sender === view.webContents,
     send: (channel, data) => { const c = liveContents(); if (c) c.send(channel, data); },

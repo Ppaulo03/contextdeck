@@ -192,7 +192,8 @@ test('existing preferences are untouched: ui-state.json keeps loading and saving
     assert.equal(world.read().bindings.length, 1, 'ui-state saves never touch the bindings file');
     assert.equal(loadUiState(uiFile).herdr.mode, 'manual');
     assert.equal(loadUiState(uiFile).lastMode, 'chat');
-    assert.equal(JSON.stringify(Object.keys(loadUiState(uiFile)).sort()), JSON.stringify(['bounds', 'git', 'herdr', 'lastMode']), 'no bindings key leaked into the preferences');
+    assert.equal(JSON.stringify(Object.keys(loadUiState(uiFile)).sort()), JSON.stringify(['bounds', 'chat', 'git', 'herdr', 'lastMode']), 'no bindings key leaked into the preferences');
+    assert.deepEqual(loadUiState(uiFile).chat, { last: {} }, 'the only chat preference is the last conversation id per workspace');
   } finally { world.cleanup(); }
 });
 

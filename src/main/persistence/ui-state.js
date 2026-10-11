@@ -57,10 +57,24 @@ function sanitizeHerdr(value) {
   };
 }
 
+// Last conversation the user explicitly chose per workspace (M01-I3B-1): "<session>/<workspaceId>" -> bindingId.
+// Only the id of a binding (the bindings themselves live in chat-bindings.json). Bounded; anything malformed is dropped.
+const MAX_LAST_CHATS = 100;
+const WORKSPACE_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\/[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/;
+const BINDING_ID_RE = /^b_[0-9a-f]{16}$/;
+function sanitizeChat(value) {
+  const last = {};
+  const input = value && typeof value === 'object' && value.last && typeof value.last === 'object' && !Array.isArray(value.last) ? value.last : {};
+  for (const [key, id] of Object.entries(input).slice(0, MAX_LAST_CHATS)) {
+    if (WORKSPACE_KEY_RE.test(key) && typeof id === 'string' && BINDING_ID_RE.test(id)) last[key] = id;
+  }
+  return { last };
+}
+
 // Only non-sensitive UI preferences live here (last tab, window size, git and workspace settings).
 // Credentials and cookies stay inside Chromium's own partition storage.
 function sanitize(value) {
-  const state = { lastMode: 'terminal', bounds: undefined, git: sanitizeGit(undefined), herdr: sanitizeHerdr(undefined) };
+  const state = { lastMode: 'terminal', bounds: undefined, git: sanitizeGit(undefined), herdr: sanitizeHerdr(undefined), chat: sanitizeChat(undefined) };
   if (!value || typeof value !== 'object') return state;
   if (MODES.has(value.lastMode)) state.lastMode = value.lastMode;
   const b = value.bounds;
@@ -70,6 +84,7 @@ function sanitize(value) {
   }
   state.git = sanitizeGit(value.git);
   state.herdr = sanitizeHerdr(value.herdr);
+  state.chat = sanitizeChat(value.chat);
   return state;
 }
 

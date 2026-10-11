@@ -4,21 +4,28 @@ const path = require('node:path');
 const { BrowserWindow } = require('electron');
 const { saveUiState } = require('./persistence/ui-state');
 const { createChatView } = require('./chat-view');
+const { CHAT_HOME } = require('./persistence/identity');
+const { createChatViewManager } = require('./chat-views/manager');
+const { createChatNavigator } = require('./chat-views/navigator');
 const { startChatObservation } = require('./chat');
 const { createOverlay } = require('./overlay');
 const { createShortcutHandler } = require('./shortcuts');
 const { appWebPreferences } = require('./web-preferences');
 
-const TOPBAR_HEIGHT = 52;
+const { TOPBAR_HEIGHT, CHATBAR_HEIGHT } = require('./window-metrics');   // CHATBAR: conversation strip, chat tab only
 const DEFAULT_FOOTER_HEIGHT = 76; // The renderer reports the real value (it wraps on narrow windows).
 const FOOTER_RANGE = [30, 420];
 
-// Owns the main window, the ChatGPT view layered over its content area, the active mode
-// (terminal | chat) and focus. Switching modes only attaches/detaches the chat view, so neither
-// the ChatGPT page nor the PTY is reloaded or restarted.
-function createWindowController({ uiState, uiStateFile, preloadPath, overlayPreloadPath, rendererHtml, overlayHtml, onClosed, onChatNavigated }) {
+// Owns the main window, the ChatGPT views layered over its content area, the active mode
+// (terminal | chat) and focus. Which ChatGPT view is on screen is decided by the navigator (chat-views/), which
+// drives the manager; this module only provides how a view is attached to / detached from the window and where
+// it is laid out. Switching modes or workspaces only attaches/detaches views, so no ChatGPT page and not the PTY
+// is reloaded or restarted.
+function createWindowController({ uiState, uiStateFile, preloadPath, overlayPreloadPath, rendererHtml, overlayHtml, onClosed, onChatNavigated, onNavChange, chats }) {
   let mainWindow;
-  let chat;
+  let manager;
+  let navigator;
+  let initialViewId = null;
   let chatObservation = null;   // experimental, off unless CONTEXTDECK_CHAT_OBSERVER=1 (see chat/index.js)
   let overlay;
   let lastChatBounds = null;
@@ -40,37 +47,72 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     saveUiState(uiStateFile, uiState);
   }
 
-  // Lays out the ChatGPT view. Nothing to do while it is detached (terminal tab), and identical bounds are
-  // not re-applied: both would only cost native layout work for no visible change.
+  // The view that is attached to the window right now (at most one), or null (terminal tab, empty state).
+  const attachedChat = () => {
+    const id = manager && manager.getAttachedId();
+    const handle = id ? manager.handleOf(id) : null;
+    return handle && !handle.isDestroyed() ? handle : null;
+  };
+
+  // Lays out the attached ChatGPT view. Nothing to do while none is attached, and identical bounds are not
+  // re-applied: both would only cost native layout work for no visible change.
   function resizeChat() {
+    const chat = attachedChat();
     if (!alive() || !chat || activeMode !== 'chat') return;
     const { width, height } = mainWindow.getContentBounds();
-    const next = { x: 0, y: TOPBAR_HEIGHT, width: Math.max(width, 1), height: Math.max(height - TOPBAR_HEIGHT - footerHeight, 1) };
+    const top = TOPBAR_HEIGHT + CHATBAR_HEIGHT;
+    const next = { x: 0, y: top, width: Math.max(width, 1), height: Math.max(height - top - footerHeight, 1) };
     const last = lastChatBounds;
     if (last && last.x === next.x && last.y === next.y && last.width === next.width && last.height === next.height) return;
     lastChatBounds = next;
     chat.view.setBounds(next);
   }
 
+  // How the manager shows and hides a view in this window.
+  const host = {
+    attach(handle) {
+      if (!alive()) return;
+      mainWindow.contentView.addChildView(handle.view);
+      lastChatBounds = null;
+      overlay?.raise();            // an open menu stays above whatever view was just attached
+    },
+    detach(handle) {
+      if (!alive()) return;
+      try { mainWindow.contentView.removeChildView(handle.view); } catch { /* Already detached. */ }
+    },
+    setBounds: () => resizeChat()
+  };
+
+  // The experimental I3P observer is bound to the application's initial page only (diagnostic; see chat/index.js).
+  let observerShown = false;
+  function syncObserverVisibility() {
+    if (!chatObservation || !manager) return;
+    const shown = initialViewId !== null && manager.isVisible(initialViewId);
+    if (shown === observerShown) return;
+    observerShown = shown;
+    chatObservation.setVisible(shown);
+    if (shown) chatObservation.markViewed();
+  }
+
+  function focusChat() {
+    const chat = attachedChat();
+    if (chat) chat.focus();
+    else if (alive()) mainWindow.webContents.focus();   // empty state: the strip and its buttons need the keyboard
+  }
+
   function switchMode(mode) {
     if (mode !== 'terminal' && mode !== 'chat') return;
-    if (!alive() || !chat) return;
+    if (!alive() || !manager) return;
     overlay?.hide();
-    if (mode === 'chat' && activeMode !== 'chat') {
-      mainWindow.contentView.addChildView(chat.view);
-      activeMode = 'chat';
-      lastChatBounds = null;
-      resizeChat();
-    } else if (mode === 'terminal' && activeMode !== 'terminal') {
-      mainWindow.contentView.removeChildView(chat.view);
-    }
     activeMode = mode;
-    chatObservation?.setVisible(mode === 'chat');
-    if (mode === 'chat') chatObservation?.markViewed();
+    lastChatBounds = null;
+    navigator.setMode(mode);       // picks the right conversation for the workspace, THEN attaches it (or detaches)
+    resizeChat();
+    syncObserverVisibility();
     persist();
     send('dock:mode', mode);
     if (mode === 'chat') {
-      chat.focus();
+      focusChat();
     } else {
       mainWindow.webContents.focus();
       send('dock:focus-terminal');
@@ -116,7 +158,7 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     // After Alt+Tab the OS may hand focus to the wrong webContents; restore the active one.
     mainWindow.on('focus', () => {
       if (overlay.isOpen()) return;
-      if (activeMode === 'chat' && chat && !chat.contents.isDestroyed()) chat.focus();
+      if (activeMode === 'chat') focusChat();
       else if (alive()) mainWindow.webContents.focus();
     });
     mainWindow.on('close', persist);
@@ -126,14 +168,40 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
       overlay = undefined;
       chatObservation?.stop();
       chatObservation = null;
-      if (chat) chat.destroy();
-      chat = undefined;
+      navigator?.stop();
+      manager?.destroyAll();          // the only place a ChatGPT view is ever destroyed
+      navigator = undefined;
+      manager = undefined;
       mainWindow = undefined;
     });
 
     await mainWindow.loadFile(rendererHtml);
-    chat = createChatView({ send, onBeforeInput: handleShortcuts, onNavigated: () => onChatNavigated?.() });
-    chatObservation = startChatObservation({ contents: chat.contents, userDataDir: path.dirname(uiStateFile) });
+    manager = createChatViewManager({
+      host,
+      createView: ({ id, onEvent }) => createChatView({
+        onBeforeInput: handleShortcuts,
+        onEvent,
+        onNavigated: () => onChatNavigated?.(),
+        // The footer line describes the page the user is looking at, not a background one.
+        status: (channel, data) => { if (manager && manager.isVisible(id)) send(channel, data); }
+      })
+    });
+    navigator = createChatNavigator({
+      manager,
+      session: chats.session,
+      bindings: chats.bindings,
+      selection: chats.selection,
+      homeUrl: CHAT_HOME,
+      prefs: {
+        getLast: (key) => uiState.chat.last[key] || null,
+        setLast: (key, bindingId) => { uiState.chat.last[key] = bindingId; persist(); }
+      }
+    });
+    navigator.onChange(() => { syncObserverVisibility(); onNavChange?.(); });
+    // The application's own initial page (what M00 always had), loaded as before and kept unscoped until the user
+    // hands it to a workspace ("new conversation"). Nothing else is loaded until it is asked for.
+    initialViewId = manager.create({ url: CHAT_HOME, scope: null, pristine: true });
+    chatObservation = startChatObservation({ contents: manager.handleOf(initialViewId).contents, userDataDir: path.dirname(uiStateFile) });
     if (uiState.lastMode === 'chat') switchMode('chat');
     else send('dock:mode', 'terminal');
   }
@@ -146,8 +214,9 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     setFooterHeight,
     getMode: () => activeMode,
     getWindow: () => mainWindow,
-    getChat: () => chat,
-    getChatUrl: () => (chat ? chat.getUrl() : ''),
+    getChat: attachedChat,
+    getNavigator: () => navigator,
+    getChatUrl: () => (navigator ? navigator.getVisibleUrl() : ''),
     isTrusted: (event) => Boolean(mainWindow) && event.sender === mainWindow.webContents,
     isOverlay: (event) => Boolean(overlay) && overlay.isOverlay(event),
     // The workspace menu overlay (see overlay.js). The anchor is the trigger's rectangle in the UI window.
@@ -162,4 +231,4 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
   };
 }
 
-module.exports = { createWindowController, TOPBAR_HEIGHT };
+module.exports = { createWindowController };

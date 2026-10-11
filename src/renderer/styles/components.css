@@ -107,6 +107,32 @@
 .unlinked.is-success { color: var(--success); border-color: var(--success-border); }
 .unlinked.is-neutral { color: var(--text-muted); border-color: var(--border-strong); }
 
+/* ---- Conversation strip tabs ---------------------------------------------------------------- */
+.chat-tab {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 220px;
+  height: var(--control-h-sm);
+  padding: 0 var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+}
+.chat-tab:hover { color: var(--text); background: var(--bg-hover); }
+.chat-tab.is-active { color: var(--text); background: var(--accent-bg); border-color: var(--accent-border); }
+.chat-tab.is-warn { border-color: var(--warning-border); }
+.chat-tab.is-warn .chat-tab-text { color: var(--warning-soft); }
+.chat-tab.is-armed { background: var(--warning-bg); }
+.chat-tab-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-tab-spin { flex: none; width: 9px; height: 9px; border: 2px solid var(--border-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin var(--duration-spin) linear infinite; }
+.chat-empty-title { margin: 0; font-size: var(--text-md); }
+.chat-empty-text { margin: 0; max-width: 460px; font-size: var(--text-sm); color: var(--text-muted); }
+
 /* ---- Footer: Git bar and feedback ------------------------------------------------------------- */
 .git-repo { max-width: 260px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--text-sm); font-weight: 600; }
 .git-repo.is-unset { color: var(--warning-soft); font-weight: 400; }

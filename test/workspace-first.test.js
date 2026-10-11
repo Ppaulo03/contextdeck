@@ -632,7 +632,7 @@ test('workspace with a Project: a chat OUTSIDE it (general, or another Project) 
   const p = w.navigator.getState().pending;
   assert.deepEqual([p.kind, p.code], ['confirm', 'outside_project']);
   assert.match(p.text, /vinculado ao Project "Project 6ac650", mas esta conversa está fora dele\. Vincular a conversa a este workspace mesmo assim\?/);
-  assert.deepEqual(barModel(w.navigator.getState()).banner.actions.map((a) => a.label), ['Vincular mesmo assim', 'Deixar sem vínculo']);
+  assert.deepEqual(barModel(w.navigator.getState()).banner.actions.map((a) => a.label), ['Vincular', 'Voltar']);
   assert.equal(w.adoption.retry({ viewId: general.id }).ok, true, 'confirmed');
   assert.equal(w.bound(7).workspaceIdentity.workspaceId, 'w1');
   const other = w.newChat();
@@ -644,18 +644,36 @@ test('workspace with a Project: a chat OUTSIDE it (general, or another Project) 
   assert.equal(w.bound(9, inProject(9)).workspaceIdentity.workspaceId, 'w1', 'inside the linked Project: bound without asking');
 }));
 
-test('"Deixar sem vínculo": the chat stays where it is, unbound, and is not asked again while the page shows it', () => run(async (w) => {
+test('outside the linked Project the choices are Vincular or Voltar - never a loose chat: Voltar returns the page to where it came from', () => run(async (w) => {
   withProjectAdoption(w, { link: true });
-  const v = w.newChat();
-  v.navigate(chatUrl(7));
-  assert.equal(w.adoption.skip({ viewId: v.id }).ok, true);
-  w.adoption.resolve();
-  w.navigator.reconcile();
+  const r = w.creation.start({ workspaceKey: WK('w1') });
+  const v = w.view(r.viewId);
+  v.finishLoad(PROJECT_HOME);                                       // the Project page is where the new conversation started
+  v.navigate(chatUrl(7));                                           // and the user went to a general chat
+  assert.deepEqual(barModel(w.navigator.getState()).banner.actions.map((a) => a.action), ['retry', 'back']);
+  const out = w.adoption.back({ viewId: v.id });
+  assert.equal(out.ok, true);
+  assert.equal(out.how, 'history');
+  assert.equal(w.bound(7), null, 'not bound');
+  assert.equal(w.manager.get(v.id).scope, WK('w1'), 'the page stays in the workspace, back on the Project page');
+  assert.equal(w.manager.get(v.id).identity.state, 'pending');
+  assert.equal(w.navigator.getUnbound().length, 0, 'no loose chat anywhere');
   assert.equal(w.navigator.getState().pending, null);
-  assert.equal(w.bound(7), null);
-  assert.equal(w.manager.get(v.id).scope, WK('w1'));
-  assert.equal(w.fake.views.length, 1);
 }));
+
+test('Voltar on a chat outside the Project with no history: the last active page comes back and the page leaves the workspace (kept, not destroyed)', () => run(async (w) => {
+  withProjectAdoption(w, { link: true });
+  const v1 = w.view(w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') }).viewId);
+  v1.finishLoad(w.A[0].url);
+  const fresh = w.newChat();
+  fresh.navigate(chatUrl(7));                                       // no history behind it
+  const out = w.adoption.back({ viewId: fresh.id });
+  assert.equal(out.how, 'released');
+  assert.equal(w.manager.getVisibleId(), v1.id);
+  assert.equal(w.bound(7), null);
+  assert.equal(w.fake.log.some((l) => l[0] === 'destroy'), false);
+}));
+
 
 test('a workspace without a Project never asks the outside-Project question', () => run(async (w) => {
   withProjectAdoption(w);

@@ -237,7 +237,9 @@ function createContextAdoption({ session, navigator, bindings, selection, projec
   return { resolve, retry, transfer, back, leave, decline, linkProject, skip,
     // What the page on screen needs from the user, if anything: a pending/confirm note of its own, else the offer to link its Project.
     noteOf: (viewId, purpose) => {
-      const n = pendingNotes.get(viewId);
+      let n = pendingNotes.get(viewId);
+      // A note belongs to the conversation the page showed: once the page is elsewhere (it went back) the note is gone.
+      if (n) { const v = find(viewId); if (!v || v.identity.state !== 'durable') { pendingNotes.delete(viewId); n = undefined; } }
       if (n && purpose === 'banner' && n.kind === 'pending' && snoozed.has(`${viewId}|${n.code}`)) return null;
       if (n) return n;
       const offer = offerFor(viewId);

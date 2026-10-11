@@ -268,6 +268,17 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     const hasPrevious = manager.list().some((x) => x.scope === v.scope && x.id !== v.id && x.lastShownAt > 0);
     // 1. the page was a conversation's tab and navigated away (expectedKey): its own history leads back to that conversation;
     // 2. otherwise the last other active page of this workspace; 3. a page with nothing else to return to goes back in history.
+    // A conversation that belongs to nobody (the outside-Project question): the page goes back in its own history, wherever it came
+    // from (the Project page, a conversation); with no history it leaves the workspace and the last active page comes back.
+    const bound = v.identity.state === 'durable' && mine(bindings.all()).some((b) => b.conversationKey === v.identity.key);
+    if (!bound) {
+      if (manager.canGoBack(v.id) && manager.goBack(v.id)) return { ok: true, viewId: v.id, how: 'history' };
+      const previousPage = manager.list().filter((x) => x.scope === v.scope && x.id !== v.id && x.lastShownAt > 0).sort((p, q) => q.lastShownAt - p.lastShownAt)[0];
+      if (previousPage) choice.set(v.scope, previousPage.id); else choice.delete(v.scope);
+      releasePage(v.id);
+      reconcile();
+      return { ok: true, viewId: v.id, how: 'released' };
+    }
     if ((v.expectedKey || !hasPrevious) && manager.canGoBack(v.id) && manager.goBack(v.id)) return { ok: true, viewId: v.id, how: 'history' };
     return moveToBinding(viewId);
   }

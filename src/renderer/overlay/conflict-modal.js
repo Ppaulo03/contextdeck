@@ -76,8 +76,9 @@ export function createConflictModal({ api }) {
       const index = list.indexOf(document.activeElement);
       if (event.key === 'Escape') {
         event.preventDefault();
-        // A conflict cannot be dismissed. The other questions have a negative answer, and Esc is it.
-        const no = banner && banner.kind !== 'conflict' ? banner.actions.find((a) => a.action === 'skip') : null;
+        // A conflict cannot be dismissed. The other questions have a negative answer, and Esc is it ("Voltar" for a chat outside
+        // the linked Project, "Agora nao" for the others).
+        const no = banner && banner.kind !== 'conflict' ? banner.actions.find((a) => a.action === (banner.kind === 'confirm' ? 'back' : 'skip')) : null;
         if (no) void decide(no);
         return true;
       }

@@ -288,3 +288,11 @@ test('closing a failure notice with "Agora não" keeps the note on the tab but s
     assert.match(w.navigator.getState().temporaries[0].note || '', /Sem conexao/, 'the note stays on the tab');
   } finally { w.cleanup0(); }
 });
+
+test('Esc on the outside-Project question is Voltar', async () => {
+  const o = mountOverlay();
+  await o.open({ kind: 'confirm', viewId: 'v3', text: 'fora do Project', actions: [{ action: 'retry', label: 'Vincular', title: 'v' }, { action: 'back', label: 'Voltar', title: 'b' }] });
+  await o.key('Escape');
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(o.calls.resolve, [{ viewId: 'v3', action: 'back' }]);
+});

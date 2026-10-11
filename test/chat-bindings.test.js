@@ -13,18 +13,18 @@ const code = (r) => (r.ok ? 'ok' : r.error.code);
 
 // ---- one workspace, many conversations; identity of contexts ----------------------------------------------
 
-test('a workspace can hold several conversations; each has its own id, label and category', () => withWorld({}, (w) => {
-  const a = w.bindings.bind(w.args(1, { label: ' Arquitetura  base ', role: 'architecture' }));
-  const b = w.bindings.bind(w.args(2, { label: 'Review', role: 'review' }));
+test('a workspace can hold several conversations; each has its own id and label; no category is required', () => withWorld({}, (w) => {
+  const a = w.bindings.bind(w.args(1, { label: ' Arquitetura  base ', role: undefined }));
+  const b = w.bindings.bind(w.args(2, { label: 'Review', role: undefined }));
   const c = w.bindings.bind(w.args(3, { url: projectUrl(3), label: '', role: undefined }));
   assert.deepEqual([a.ok, b.ok, c.ok], [true, true, true]);
   assert.equal(a.binding.label, 'Arquitetura base', 'whitespace collapsed');
   assert.notEqual(a.binding.bindingId, b.binding.bindingId);
-  assert.equal(c.binding.role, 'general', 'default category');
+  assert.equal('role' in c.binding, false, 'new bindings carry no category');
+  assert.equal('role' in w.read().bindings[2], false, 'and none is written to disk');
   assert.equal(c.binding.url, projectUrl(3), 'project route kept');
   const listed = w.bindings.list(w.target('w1'));
   assert.deepEqual(listed.map((x) => x.label), ['Arquitetura base', 'Review', '']);
-  assert.deepEqual(listed.map((x) => x.role), ['architecture', 'review', 'general']);
   assert.ok(listed.every((x) => x.status === 'linked' && x.workspaceIdentity.workspaceId === 'w1'));
   assert.deepEqual(w.bindings.list(w.target('w2')), []);
 }));
@@ -89,18 +89,24 @@ test('a conversation bound elsewhere is a conflict: nothing changes until an exp
   assert.equal(w.bindings.reassign({ ...base, bindingId: 'b_ffffffffffffffff', confirmReassign: true }).error.code, 'binding_not_found');
 }));
 
-test('labels and categories can be changed; invalid values change nothing; unknown ids are reported', () => withWorld({}, (w) => {
+test('a legacy category passed by an old caller is still stored, validated and left alone by label edits', () => withWorld({}, (w) => {
   const { binding } = w.bindings.bind(w.args(1, { role: 'planning' }));
+  assert.equal(binding.role, 'planning');
+  assert.equal(w.bindings.bind(w.args(2, { role: 'boss' })).error.code, 'invalid_role');
+  assert.equal(w.bindings.update({ bindingId: binding.bindingId, label: 'novo' }).binding.role, 'planning', 'editing the label keeps an existing category');
+}));
+
+test('labels can be changed; invalid values change nothing; unknown ids are reported', () => withWorld({}, (w) => {
+  const { binding } = w.bindings.bind(w.args(1, { role: undefined }));
   const before = w.read();
   assert.equal(w.bindings.update({ bindingId: binding.bindingId, label: 'Novo\u0000 nome' }).binding.label, 'Novo nome');
-  assert.equal(w.bindings.update({ bindingId: binding.bindingId, role: 'review' }).binding.role, 'review');
-  const both = w.bindings.update({ bindingId: binding.bindingId, label: 'x', role: 'architecture' });
-  assert.deepEqual([both.binding.label, both.binding.role], ['x', 'architecture']);
+  const both = w.bindings.update({ bindingId: binding.bindingId, label: 'x' });
+  assert.equal(both.binding.label, 'x');
   assert.ok(w.read().bindings[0].updatedAt > before.bindings[0].updatedAt);
   assert.equal(w.read().bindings[0].createdAt, before.bindings[0].createdAt);
   assert.equal(w.read().bindings[0].url, before.bindings[0].url, 'metadata edits leave identity alone');
   const snapshot = fs.readFileSync(w.file, 'utf8');
-  for (const bad of [{ label: 'y'.repeat(81) }, { label: 42 }, { role: 'boss' }, { role: 7 }, {}]) {
+  for (const bad of [{ label: 'y'.repeat(81) }, { label: 42 }, { role: 'boss' }, {}]) {
     assert.equal(w.bindings.update({ bindingId: binding.bindingId, ...bad }).ok, false, JSON.stringify(bad));
   }
   assert.equal(code(w.bindings.update({ bindingId: 'b_ffffffffffffffff', label: 'z' })), 'binding_not_found');
@@ -208,7 +214,7 @@ test('ambiguous focus: an estimated destination needs explicit confirmation; an 
   assert.ok(w.bindings.bind(w.args(2)).ok, 'the user picked it in ContextDeck');
   w.select('w2', 'dock');
   assert.equal(code(w.bindings.bind(w.args(3, { target: w.target('w1'), selectedAtOpen: 'w2' }))), 'confirmation_required', 'binding to a workspace other than the explicit one needs confirmation too');
-  w.setWorkspaces([ws('w1', 'solo')]);
+  w.setWorkspaces([ws('w1', 'api')]);       // the same workspace, now alone in the session
   w.select('w1', 'herdr');
   assert.ok(w.bindings.bind(w.args(3)).ok, 'a session with a single workspace is not ambiguous');
 }));
@@ -295,9 +301,9 @@ test('current page indicator: bound here, bound elsewhere, unbound, identity unk
 test('state snapshot for the UI: compact, complete and free of transient data', () => withWorld({}, (w) => {
   w.bindings.bind(w.args(1));
   const state = w.bindings.getState({ url: chatUrl(1) });
-  assert.deepEqual(Object.keys(state).sort(), ['bindings', 'connection', 'current', 'pending', 'roles', 'selected', 'session', 'store', 'workspaces']);
+  assert.deepEqual(Object.keys(state).sort(), ['bindings', 'connection', 'current', 'pending', 'selected', 'session', 'store', 'workspaces']);
   assert.deepEqual(state.selected, { workspaceId: 'w1', origin: 'dock' });
-  assert.deepEqual(state.roles, ['general', 'architecture', 'review', 'planning']);
+  assert.equal('roles' in state, false);
   assert.doesNotMatch(JSON.stringify(state), /generation|responding|draft|attention/);
   assert.deepEqual(JSON.parse(JSON.stringify(state)), state, 'plain JSON');
 }));

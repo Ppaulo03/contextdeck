@@ -22,7 +22,7 @@ function binding(n, extra = {}) {
 function chatsState(extra = {}) {
   return {
     session: 'contextdeck', store: { status: 'ok', notice: null, writable: true }, connection: 'connected',
-    selected: { workspaceId: 'w1', origin: 'dock' }, pending: false, workspaces: wsList, roles: ['general', 'architecture', 'review', 'planning'],
+    selected: { workspaceId: 'w1', origin: 'dock' }, pending: false, workspaces: wsList,
     current: { state: 'unbound', conversationKey: `c:${ID(9)}`, selectedId: 'w1' }, bindings: [], ...extra
   };
 }
@@ -55,7 +55,10 @@ test('panel model: rows of the destination, orphans, blocked reasons, confirmati
   const s = chatsState({ bindings: [binding(1, { role: 'review' }), binding(2, { workspaceIdentity: { session: 'contextdeck', workspaceId: 'w2' } }), binding(3, { status: 'orphan', workspaceIdentity: { session: 'contextdeck', workspaceId: 'w9' }, workspaceLabel: 'gone' })] });
   const m = view.panelModel(s);
   assert.deepEqual([m.targetId, m.targetText, m.targetNote], ['w1', 'w1 · api', 'escolhido no ContextDeck']);
-  assert.deepEqual(m.rows.map((r) => [r.label, r.roleLabel]), [['chat 1', 'Revisão']]);
+  assert.deepEqual(m.rows.map((r) => r.label), ['chat 1']);
+  assert.equal('roles' in m, false, 'the fixed category is gone from the model');
+  assert.equal(m.estimated, false);
+  assert.match(view.panelModel(chatsState({ selected: { workspaceId: 'w1', origin: 'herdr' } })).estimateText, /não foi confirmado como destino/);
   assert.deepEqual(m.orphans.map((o) => [o.label, o.workspace]), [['chat 3', 'w9 · gone']]);
   assert.equal(m.canWrite, true);
   assert.equal(m.needsConfirm, false);
@@ -144,13 +147,12 @@ test('panel opens in chats mode: the menu is hidden, the destination and its con
   assert.equal(t.scrim.hidden, false);
   assert.equal(t.panel.hidden, false);
   assert.equal(t.menu.hidden, true, 'the workspace menu is not shown in chats mode');
-  assert.match(t.text(), /Destino escolhido no ContextDeck/);
+  assert.match(t.text(), /Destino w1 · api \(escolhido no ContextDeck\)/);
   const select = t.byKey('target');
   assert.equal(select.value, 'w1');
   assert.deepEqual(t.options('target').map((o) => o.textContent), ['w1 · api', 'w2 · app', 'w3 · app'], 'same rows as every other list');
   assert.equal(select.tag, 'button', 'no native <select>: its open list would look different');
   assert.match(t.text(), /chat 1/);
-  assert.match(t.text(), /Arquitetura/);
   assert.match(t.text(), /chat 2/);
   assert.equal(t.document.activeElement, select);
   assert.equal(t.panel.style.top, '48px');
@@ -161,13 +163,14 @@ test('panel opens in chats mode: the menu is hidden, the destination and its con
   assert.equal(t.scrim.hidden, true);
 });
 
-test('bind current: sends the destination shown, what was selected at open, and the typed label/category - never a URL', async () => {
+test('bind current: sends the destination shown, what was selected at open, and the typed label - never a URL, never a category', async () => {
   const t = mountPanel();
   await t.open();
   await t.type('label', 'Arquitetura base');
-  await t.choose('role', 'architecture');
+  assert.equal(t.byKey('role'), undefined, 'no category selector');
+  assert.equal(t.byKey('confirm'), undefined, 'no confirmation checkbox');
   await t.click(t.button('Vincular conversa atual'));
-  assert.deepEqual(t.calls.bind, [{ source: 'current', target: { session: 'contextdeck', workspaceId: 'w1' }, selectedAtOpen: 'w1', confirmTarget: false, label: 'Arquitetura base', role: 'architecture' }]);
+  assert.deepEqual(t.calls.bind, [{ source: 'current', target: { session: 'contextdeck', workspaceId: 'w1' }, selectedAtOpen: 'w1', targetChosen: false, label: 'Arquitetura base' }]);
   assert.match(t.message.textContent, /Conversa vinculada/);
   assert.equal(t.byKey('label').value, '', 'the form is cleared after success');
 });
@@ -192,30 +195,33 @@ test('bind by URL: needs text, sends source "url" and the typed address; main de
   assert.ok(t.message.classList.contains('is-error'));
 });
 
-test('an estimated destination must be confirmed explicitly before anything can be sent', async () => {
+test('an estimated destination is not proposed: the user picks a workspace (no checkbox) and then binds', async () => {
   const t = mountPanel(chatsState({ selected: { workspaceId: 'w1', origin: 'herdr' } }));
   await t.open();
-  assert.match(t.text(), /Destino estimado pelo foco do Herdr/);
+  assert.match(t.text(), /O workspace atual \(w1 · api\) vem do foco do Herdr e não foi confirmado como destino/);
+  assert.notEqual(t.byKey('target').value, 'w1', 'nothing preselected');
   assert.equal(t.button('Vincular conversa atual').disabled, true);
-  const box = t.byKey('confirm');
-  box.checked = true; await box.fire('change');
+  assert.equal(t.byKey('confirm'), undefined);
+  await t.choose('target', 'w1');
+  assert.doesNotMatch(t.text(), /não foi confirmado como destino/);
   assert.equal(t.button('Vincular conversa atual').disabled, false);
   await t.click(t.button('Vincular conversa atual'));
-  assert.equal(t.calls.bind[0].confirmTarget, true);
+  assert.equal(t.calls.bind.length, 1, 'one click, no confirmation loop');
+  assert.equal(t.calls.bind[0].targetChosen, true);
+  assert.equal('confirmTarget' in t.calls.bind[0], false);
 });
 
-test('choosing another destination in the panel is explicit but needs confirmation; the list follows it', async () => {
+test('choosing another destination in the panel is itself the confirmation; the list follows it', async () => {
   const s = chatsState({ bindings: [binding(1), binding(2, { workspaceIdentity: { session: 'contextdeck', workspaceId: 'w2' }, label: 'in w2' })] });
   const t = mountPanel(s);
   await t.open();
   await t.choose('target', 'w2');
   assert.match(t.text(), /in w2/);
   assert.doesNotMatch(t.text(), /chat 1/);
-  assert.match(t.text(), /Destino escolhido neste painel/);
-  assert.equal(t.button('Vincular conversa atual').disabled, true, 'needs the confirmation checkbox');
-  const box = t.byKey('confirm'); box.checked = true; await box.fire('change');
+  assert.match(t.text(), /Destino w2 · app \(escolhido neste painel\)/);
+  assert.equal(t.button('Vincular conversa atual').disabled, false);
   await t.click(t.button('Vincular conversa atual'));
-  assert.deepEqual([t.calls.bind[0].target.workspaceId, t.calls.bind[0].selectedAtOpen, t.calls.bind[0].confirmTarget], ['w2', 'w1', true]);
+  assert.deepEqual([t.calls.bind[0].target.workspaceId, t.calls.bind[0].selectedAtOpen, t.calls.bind[0].targetChosen], ['w2', 'w1', true]);
 });
 
 test('the selected workspace changes while the panel is open: a warning blocks writes until the destination is reviewed', async () => {
@@ -227,9 +233,9 @@ test('the selected workspace changes while the panel is open: a warning blocks w
   assert.equal(t.calls.bind.length, 0);
   await t.click(t.button('Usar o selecionado agora'));
   assert.doesNotMatch(t.text(), /mudou desde que/);
-  assert.equal(t.byKey('target').value, 'w2');
-  assert.equal(t.button('Vincular conversa atual').disabled, true, 'the new destination is an estimate: confirm it first');
-  const box = t.byKey('confirm'); box.checked = true; await box.fire('change');
+  assert.notEqual(t.byKey('target').value, 'w2', 'the new selection is an estimate: not proposed');
+  assert.equal(t.button('Vincular conversa atual').disabled, true, 'pick the destination first');
+  await t.choose('target', 'w2');
   await t.click(t.button('Vincular conversa atual'));
   assert.deepEqual([t.calls.bind[0].target.workspaceId, t.calls.bind[0].selectedAtOpen], ['w2', 'w2']);
 });
@@ -250,7 +256,7 @@ test('conflict: shows where the conversation lives and offers an explicit reassi
   assert.match(t.text(), /já está vinculada a w2 · app como "Plano"/);
   assert.equal(t.calls.reassign.length, 0);
   await t.click(t.button('Reassociar para w1 · api'));
-  assert.deepEqual(t.calls.reassign, [{ bindingId: other.bindingId, target: { session: 'contextdeck', workspaceId: 'w1' }, selectedAtOpen: 'w1', confirmTarget: false, confirmReassign: true }]);
+  assert.deepEqual(t.calls.reassign, [{ bindingId: other.bindingId, target: { session: 'contextdeck', workspaceId: 'w1' }, selectedAtOpen: 'w1', targetChosen: false, confirmReassign: true }]);
   assert.match(t.message.textContent, /reassociada/);
 });
 
@@ -267,15 +273,15 @@ test('unbinding takes two deliberate clicks and says the conversation in ChatGPT
   assert.match(t.message.textContent, /não foi alterada/);
 });
 
-test('editing label and category inline sends only those fields', async () => {
-  const t = mountPanel(chatsState({ bindings: [binding(1, { label: 'old', role: 'general' })] }));
+test('editing the label inline sends only the label (no category control)', async () => {
+  const t = mountPanel(chatsState({ bindings: [binding(1, { label: 'old' })] }));
   await t.open();
   await t.click(t.button('Editar'));
   const id = binding(1).bindingId;
   await t.type(`edit-label-${id}`, 'new name');
-  await t.choose(`edit-role-${id}`, 'planning');
+  assert.equal(t.byKey(`edit-role-${id}`), undefined);
   await t.click(t.button('Salvar'));
-  assert.deepEqual(t.calls.update, [{ bindingId: id, label: 'new name', role: 'planning' }]);
+  assert.deepEqual(t.calls.update, [{ bindingId: id, label: 'new name' }]);
 });
 
 test('orphans are listed with their old workspace and can be adopted into the destination or unbound', async () => {

@@ -25,17 +25,23 @@ export function createChatsPanel({ api, closeOverlay }) {
   let state = null;
   let targetId = null;
   let selectedAtOpen = null;
-  let confirmed = false;
+  let chosen = false;            // the destination was picked in this panel (or the selection is the user's own)
   let editing = null;
   let unbinding = null;
   let conflict = null;
   let busy = false;
-  let draft = { label: '', role: 'general', url: '' };
+  let draft = { label: '', url: '' };
   let anchor = null;
 
   const selectedId = () => (state && state.selected ? state.selected.workspaceId : null);
   const isStale = () => Boolean(state) && selectedId() !== selectedAtOpen;
   const target = () => ({ session: state.session, workspaceId: targetId });
+  // An estimated selection is not proposed as the destination: the user chooses one (no checkbox, no second click).
+  const defaultTarget = () => {
+    const id = selectedId();
+    const m = panelModel(state, id);
+    return m.estimated ? null : id;
+  };
 
   function say(text, isError = false) {
     message.textContent = text || '';
@@ -79,11 +85,6 @@ export function createChatsPanel({ api, closeOverlay }) {
     return i;
   }
 
-  // Same list as every other dropdown of the application (see components/dropdown.js).
-  function roleSelect(key, value, roles, onChange, label = 'Categoria') {
-    return createDropdown({ key, label, items: roles.map((r) => ({ value: r.value, text: r.text })), value, onChange }).root;
-  }
-
   // ---- actions ---------------------------------------------------------------------------------------------------
   async function run(task) {
     if (busy) return null;
@@ -98,10 +99,11 @@ export function createChatsPanel({ api, closeOverlay }) {
     return result;
   }
 
-  const common = (m) => ({ target: target(), selectedAtOpen, confirmTarget: m.needsConfirm ? confirmed : false });
+  // `targetChosen` only says the destination was picked here; main still verifies it against Herdr.
+  const common = () => ({ target: target(), selectedAtOpen, targetChosen: chosen });
 
   async function bind(source, m) {
-    const args = { source, ...common(m), label: draft.label, role: draft.role };
+    const args = { source, ...common(m), label: draft.label };
     if (source === 'url') args.url = draft.url;
     const result = await run(() => api.chatsBind(args));
     if (!result) return;
@@ -120,7 +122,7 @@ export function createChatsPanel({ api, closeOverlay }) {
   }
 
   async function saveEdit(bindingId, values) {
-    const result = await run(() => api.chatsUpdate({ bindingId, label: values.label, role: values.role }));
+    const result = await run(() => api.chatsUpdate({ bindingId, label: values.label }));
     if (!result) return;
     if (result.ok) { editing = null; say('Vínculo atualizado.'); }
     else say(result.error && result.error.message ? result.error.message : 'Não foi possível salvar.', true);
@@ -140,21 +142,20 @@ export function createChatsPanel({ api, closeOverlay }) {
     const item = el('div', `chats-item${row.here ? ' is-here' : ''}${row.statusText ? ' is-problem' : ''}`);
     item.dataset.id = row.bindingId;
     if (editing === row.bindingId) {
-      const values = { label: row.rawLabel, role: row.role };
+      const values = { label: row.rawLabel };
       item.append(input(`edit-label-${row.bindingId}`, values.label, 'Rótulo', 80, (v) => { values.label = v; }));
-      item.append(roleSelect(`edit-role-${row.bindingId}`, values.role, m.roles, (v) => { values.role = v; }));
       item.append(button('Salvar', () => void saveEdit(row.bindingId, values)), button('Cancelar', () => { editing = null; render(); }));
       return item;
     }
     const main = el('div', 'chats-item-main');
     main.append(el('span', 'chats-item-label', `${row.label}${row.here ? ' (esta página)' : ''}`));
-    const detail = [row.roleLabel, orphan ? `era de ${row.workspace}` : '', row.statusText, row.origin].filter(Boolean).join(' · ');
+    const detail = [orphan ? `era de ${row.workspace}` : '', row.statusText, row.origin].filter(Boolean).join(' · ');
     const detailNode = el('span', 'chats-item-detail', detail);
     detailNode.title = `${detail}
 ${row.url}`;   // the row is ellipsised; the tooltip has the rest
     main.append(detailNode);
     item.append(main);
-    if (orphan) item.append(button('Reassociar aqui', () => void reassign(row.bindingId, m), { disabled: !m.canWrite || isStale() || !m.targetId || (m.needsConfirm && !confirmed), title: 'Move este vínculo para o destino escolhido acima' }));
+    if (orphan) item.append(button('Reassociar aqui', () => void reassign(row.bindingId, m), { disabled: !m.canWrite || isStale() || !m.targetId || (m.needsConfirm && !chosen), title: 'Move este vínculo para o destino escolhido acima' }));
     else item.append(button('Editar', () => { editing = row.bindingId; render(); }));
     if (unbinding === row.bindingId) {
       item.append(button('Confirmar', () => void unbind(row.bindingId), { danger: true, title: 'Remove só o vínculo; a conversa no ChatGPT não é excluída' }), button('Não', () => { unbinding = null; render(); }));
@@ -170,12 +171,12 @@ ${row.url}`;   // the row is ellipsised; the tooltip has the rest
     body.textContent = '';
     if (!m.ready) { body.append(el('p', 'chats-note', m.message)); return; }
     const stale = isStale();
-    const writable = m.canWrite && !stale && Boolean(m.targetId) && !busy && (!m.needsConfirm || confirmed);
+    const writable = m.canWrite && !stale && Boolean(m.targetId) && !busy && (!m.needsConfirm || chosen);
 
     const dest = section('Destino');
     if (stale) {
       const banner = el('div', 'chats-banner');
-      banner.append(el('span', '', 'O workspace selecionado mudou desde que este painel foi aberto. Nada foi gravado; revise o destino. '), button('Usar o selecionado agora', () => { selectedAtOpen = selectedId(); targetId = selectedAtOpen; confirmed = false; conflict = null; render(); }, { key: 'review' }));
+      banner.append(el('span', '', 'O workspace selecionado mudou desde que este painel foi aberto. Nada foi gravado; revise o destino. '), button('Usar o selecionado agora', () => { selectedAtOpen = selectedId(); targetId = defaultTarget(); chosen = false; conflict = null; render(); }, { key: 'review' }));
       dest.append(banner);
     }
     const pick = createDropdown({
@@ -183,23 +184,14 @@ ${row.url}`;   // the row is ellipsised; the tooltip has the rest
       label: 'Workspace de destino',
       items: m.options.map((o) => ({ value: o.id, text: o.text })),
       value: m.targetId || undefined,
-      onChange: (value) => { targetId = value; confirmed = false; conflict = null; render(); }
+      onChange: (value) => { targetId = value; chosen = true; conflict = null; render(); }
     });
     const pickRow = el('div', 'chats-row');
     pickRow.append(pick.root);
     dest.append(pickRow);
-    if (m.targetNote) dest.append(el('p', 'chats-note', `Destino ${m.targetNote}.`));
-    if (m.blocked) dest.append(el('p', 'chats-note is-warning', m.blocked));
-    if (m.needsConfirm && m.targetId) {
-      const label = el('label', 'chats-check');
-      const box = el('input');
-      box.type = 'checkbox';
-      box.checked = confirmed;
-      box.dataset.key = 'confirm';
-      box.addEventListener('change', () => { confirmed = box.checked; render(); });
-      label.append(box, el('span', '', 'Confirmo que este é o workspace de destino (o seletor segue o foco do Herdr, que é uma estimativa)'));
-      dest.append(label);
-    }
+    if (m.estimated && !chosen) dest.append(el('p', 'chats-note is-warning', m.estimateText));
+    else if (m.targetNote) dest.append(el('p', 'chats-note', `Destino ${m.targetText} (${m.targetNote}).`));
+    if (m.blocked && !(m.estimated && !chosen)) dest.append(el('p', 'chats-note is-warning', m.blocked));
     if (m.storeNotice) dest.append(el('p', 'chats-note is-warning', m.storeNotice));
     body.append(dest);
 
@@ -211,7 +203,7 @@ ${row.url}`;   // the row is ellipsised; the tooltip has the rest
     const bindSection = section('Vincular');
     bindSection.append(el('p', 'chats-note', m.currentSummary));
     const meta = el('div', 'chats-row');
-    meta.append(input('label', draft.label, 'Rótulo (opcional)', 80, (v) => { draft.label = v; }), roleSelect('role', draft.role, m.roles, (v) => { draft.role = v; }));
+    meta.append(input('label', draft.label, 'Rótulo (opcional)', 80, (v) => { draft.label = v; }));
     bindSection.append(meta);
     const current = el('div', 'chats-row');
     current.append(button('Vincular conversa atual', () => void bind('current', m), { disabled: !writable || !m.canBindCurrent, key: 'bind-current', title: m.canBindCurrent ? '' : 'A página atual não tem uma conversa com identidade persistente' }));
@@ -247,12 +239,12 @@ ${row.url}`;   // the row is ellipsised; the tooltip has the rest
   return {
     async open(opened) {
       anchor = opened;
-      busy = false; editing = null; unbinding = null; conflict = null; confirmed = false;
-      draft = { label: '', role: 'general', url: '' };
+      busy = false; editing = null; unbinding = null; conflict = null; chosen = false;
+      draft = { label: '', url: '' };
       say('');
       state = await api.chatsState();
       selectedAtOpen = selectedId();
-      targetId = selectedAtOpen;
+      targetId = defaultTarget();
       panel.hidden = false;
       render();
       position();

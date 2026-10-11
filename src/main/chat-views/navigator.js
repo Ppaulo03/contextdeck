@@ -411,7 +411,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     const tabs = here.map((b) => {
       const v = viewOf(b);
       return {
-        bindingId: b.bindingId, label: b.label || '(sem rótulo)', role: b.role, status: b.status,
+        bindingId: b.bindingId, label: b.label || '(sem rótulo)', status: b.status,
         hint: (labelCount.get(b.label || '') || 0) > 1 ? b.conversationKey.slice(-4) : '',
         loaded: Boolean(v), loading: Boolean(v && v.page === 'loading'), failed: Boolean(v && v.page === 'error'),
         activity: v ? activityOf(v, b.conversationKey) : null,

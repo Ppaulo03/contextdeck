@@ -24,7 +24,7 @@ function setup(opts = {}) {
     notify: () => notified.push(1)
   });
   const call = (channel, args, sender = ui) => handlers.get(channel)(sender, args);
-  const bindArgs = (extra = {}) => ({ source: 'current', target: world.target('w1'), selectedAtOpen: 'w1', label: 'a', role: 'review', ...extra });
+  const bindArgs = (extra = {}) => ({ source: 'current', target: world.target('w1'), selectedAtOpen: 'w1', label: 'a', ...extra });
   return { world, handlers, call, notified, bindArgs, setUrl: (u) => { url = u; } };
 }
 
@@ -92,8 +92,8 @@ test('IPC malformed requests are rejected in main and write nothing', async () =
     }
     // Non-string label/role/target fields: refused or neutralised, never coerced.
     assert.equal((await t.call('chats:bind', t.bindArgs({ label: { toString: () => 'x' } }))).ok, true, 'a non-string label is treated as absent');
-    assert.equal((await t.call('chats:bind', t.bindArgs({ source: 'url', url: chatUrl(2), role: ['review'] }))).ok, true, 'a non-string role is treated as absent (default category)');
-    assert.equal(t.world.read().bindings[1].role, 'general');
+    assert.equal((await t.call('chats:bind', t.bindArgs({ source: 'url', url: chatUrl(2), role: 'review' }))).ok, true, 'a category sent by an old client is ignored');
+    assert.equal('role' in t.world.read().bindings[1], false);
     for (const target of [null, 'w1', { session: 'contextdeck' }, { session: 7, workspaceId: 'w1' }, { workspaceId: 'w1' }]) {
       assert.equal((await t.call('chats:bind', t.bindArgs({ source: 'url', url: chatUrl(3), target }))).error.code, 'invalid_target', JSON.stringify(target));
     }
@@ -103,7 +103,7 @@ test('IPC malformed requests are rejected in main and write nothing', async () =
     assert.equal((await t.call('chats:update', { bindingId: id })).error.code, 'invalid_request');
     assert.equal((await t.call('chats:update', { bindingId: 7, label: 'x' })).error.code, 'invalid_request');
     assert.equal((await t.call('chats:update', { bindingId: id, label: 7 })).error.code, 'invalid_request');
-    assert.equal((await t.call('chats:update', { bindingId: id, role: 'boss' })).error.code, 'invalid_role');
+    assert.equal((await t.call('chats:update', { bindingId: id, role: 'boss' })).error.code, 'invalid_request', 'no category is accepted by the update channel');
     assert.equal((await t.call('chats:unbind', { bindingId: { id } })).error.code, 'invalid_request');
     assert.equal((await t.call('chats:reassign', { bindingId: id })).error.code, 'confirmation_required');
     assert.equal(t.world.read().bindings.length, 2, 'only the two valid binds happened');

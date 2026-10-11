@@ -7,8 +7,6 @@
 // Principles: the destination workspace is always shown with its id (names can repeat); an estimated
 // destination says so; nothing here decides anything - main re-validates every write.
 
-const ROLE_LABELS = { general: 'Geral', architecture: 'Arquitetura', review: 'Revisão', planning: 'Planejamento' };
-
 const ORIGIN_NOTE = {
   dock: 'escolhido no ContextDeck',
   herdr: 'estimado pelo foco do Herdr',
@@ -34,7 +32,6 @@ const UNKNOWN_REASON = {
 
 const wsLabel = (w) => `${w.id} · ${w.label || '(sem nome)'}`;
 const findWs = (state, id) => (state && state.workspaces ? state.workspaces.find((w) => w.id === id) : null) || null;
-const roleLabel = (role) => ROLE_LABELS[role] || ROLE_LABELS.general;
 const displayLabel = (b) => b.label || '(sem rótulo)';
 
 function workspaceName(state, binding) {
@@ -81,8 +78,6 @@ function panelModel(state, targetId) {
     bindingId: b.bindingId,
     label: displayLabel(b),
     rawLabel: b.label,
-    role: b.role,
-    roleLabel: roleLabel(b.role),
     status: b.status,
     statusText: STATUS_TEXT[b.status] || '',
     url: b.url,
@@ -98,8 +93,14 @@ function panelModel(state, targetId) {
   else if (state.pending) blocked = 'Troca de workspace em andamento.';
   else if (!target) blocked = state.workspaces.length ? 'Selecione um workspace de destino.' : 'Nenhum workspace na sessão.';
   const current = state.current || { state: 'unknown', reason: 'no-page' };
+  // The selected workspace is only an estimate (it follows Herdr's focus, or was restored): it is not offered as the
+  // destination until the user picks one. `estimate` names it for the explanation.
+  const selectedWs = state.selected ? findWs(state, state.selected.workspaceId) : null;
+  const estimated = Boolean(selectedWs) && needsTargetConfirmation(state, selectedWs.id);
   return {
     ready: true,
+    estimated,
+    estimateText: estimated ? `O workspace atual (${wsLabel(selectedWs)}) vem do foco do Herdr e não foi confirmado como destino. Escolha o workspace de destino.` : '',
     targetId: target ? target.id : null,
     targetText: target ? wsLabel(target) : '',
     targetNote: target && state.selected && state.selected.workspaceId === target.id ? selectedNote : (target ? 'escolhido neste painel' : ''),
@@ -110,7 +111,6 @@ function panelModel(state, targetId) {
     canWrite,
     blocked,
     needsConfirm: Boolean(target) && needsTargetConfirmation(state, target.id),
-    roles: state.roles.map((r) => ({ value: r, text: roleLabel(r) })),
     storeNotice: state.store.notice ? state.store.notice.message : '',
     currentSummary: current.state === 'unknown'
       ? (UNKNOWN_REASON[current.reason] || 'Identidade desconhecida.')
@@ -119,4 +119,4 @@ function panelModel(state, targetId) {
   };
 }
 
-module.exports = { indicatorModel, panelModel, needsTargetConfirmation, roleLabel, wsLabel, ROLE_LABELS, ORIGIN_NOTE, STATUS_TEXT, UNKNOWN_REASON };
+module.exports = { indicatorModel, panelModel, needsTargetConfirmation, wsLabel, ORIGIN_NOTE, STATUS_TEXT, UNKNOWN_REASON };

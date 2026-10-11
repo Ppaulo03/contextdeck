@@ -2,7 +2,7 @@
 
 const crypto = require('node:crypto');
 const { parseChatUrl } = require('../chat/conversation-identity');
-const { LIMITS, ROLES, err, validWorkspaceIdentity, contextKey, sameWorkspace, normalizeLabel, normalizeRole } = require('./model');
+const { LIMITS, err, validWorkspaceIdentity, contextKey, sameWorkspace, normalizeLabel, normalizeRole } = require('./model');
 
 // Domain operations of the chat bindings (M01-I3A). Plain Node, deterministic, testable without Electron.
 //
@@ -129,7 +129,7 @@ function createChatBindings({ store, session, observer, selection, now = () => D
     const identity = parseChatUrl(url);
     if (!identity.ok) return err(slug(identity.reason), identity.message);
     const l = normalizeLabel(label); if (!l.ok) return l;
-    const r = normalizeRole(role); if (!r.ok) return r;
+    const r = role === undefined ? null : normalizeRole(role); if (r && !r.ok) return r;   // legacy callers only
     const checked = checkTarget(target, { selectedAtOpen, confirmTarget, targetChosen });
     if (!checked.ok) return checked;
     const data = store.get();
@@ -139,6 +139,11 @@ function createChatBindings({ store, session, observer, selection, now = () => D
       return sameWorkspace(existing.workspaceIdentity, target)
         ? err('already_bound', 'Esta conversa ja esta vinculada a este workspace.', { binding: view })
         : err('conflict', 'Esta conversa ja esta vinculada a outro workspace. Reassocie explicitamente para move-la.', { binding: view });
+    }
+    // A workspace whose identity is in doubt (same id, label and directory both changed) is not made trustworthy by writing
+    // into it: that would overwrite the recovery record. The user re-confirms it by reassigning one of its conversations.
+    if (data.bindings.some((b) => sameWorkspace(b.workspaceIdentity, target) && statusOf(b, checked.snapshot, data) === 'suspect')) {
+      return err('workspace_suspect', 'A identidade deste workspace nao foi verificada (parece ter sido recriado). Reassocie uma das conversas dele para reconfirma-lo antes de vincular outra.');
     }
     if (data.bindings.length >= LIMITS.bindings) return err('limit_reached', `Limite de ${LIMITS.bindings} vinculos atingido.`);
     if (data.bindings.filter((b) => sameWorkspace(b.workspaceIdentity, target)).length >= LIMITS.perWorkspace) return err('limit_reached', `Limite de ${LIMITS.perWorkspace} conversas por workspace atingido.`);
@@ -150,7 +155,7 @@ function createChatBindings({ store, session, observer, selection, now = () => D
       conversationKey: identity.conversationKey,
       url: identity.url,
       label: l.label,
-      role: r.role,
+      ...(r ? { role: r.role } : {}),
       origin: origin === 'current-page' ? 'current-page' : 'url',
       workspaceIdentity: { session: target.session, workspaceId: target.workspaceId },
       createdAt: created,
@@ -161,15 +166,13 @@ function createChatBindings({ store, session, observer, selection, now = () => D
     return { ok: true, binding: viewOf(binding, checked.snapshot, store.get()) };
   }
 
-  function update({ bindingId, label, role } = {}) {
-    if (label === undefined && role === undefined) return err('invalid_request', 'Nada para alterar.');
-    const l = label === undefined ? null : normalizeLabel(label); if (l && !l.ok) return l;
-    const r = role === undefined ? null : normalizeRole(role); if (r && !r.ok) return r;
+  function update({ bindingId, label } = {}) {
+    if (label === undefined) return err('invalid_request', 'Nada para alterar.');
+    const l = normalizeLabel(label); if (!l.ok) return l;
     if (!find(store.get(), bindingId)) return unknownBinding();
     const done = commit((draft) => {
       const b = find(draft, bindingId);
-      if (l) b.label = l.label;
-      if (r) b.role = r.role;
+      b.label = l.label;
       b.updatedAt = now();
     });
     if (!done.ok) return done;
@@ -266,7 +269,6 @@ function createChatBindings({ store, session, observer, selection, now = () => D
       selected: sel.selected ? { workspaceId: sel.selected.workspaceId, origin: sel.selected.origin } : null,
       pending: Boolean(sel.pending),
       workspaces: snapshot.workspaces.map((w) => ({ id: w.id, label: w.label, directory: w.directory || '' })),
-      roles: ROLES,
       current: describeCurrent(url, snapshot, data),
       bindings: data.bindings.map((b) => viewOf(b, snapshot, data))
     };

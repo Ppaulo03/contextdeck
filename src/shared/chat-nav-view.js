@@ -5,8 +5,6 @@
 // src/main/chat-views/navigator.js#getState). The strip never decides anything: it renders, and main re-validates
 // every click.
 
-const ROLE_LABELS = { general: 'Geral', architecture: 'Arquitetura', review: 'Revisão', planning: 'Planejamento' };
-
 const STATUS_NOTE = {
   suspect: 'A identidade deste workspace não foi verificada. Clique duas vezes para confirmar e abrir.',
   unverified: 'Herdr desconectado: o workspace não pôde ser verificado. Clique duas vezes para confirmar e abrir.'
@@ -52,7 +50,7 @@ function barModel(state, armedBindingId = null) {
   const ws = state.workspace;
   const tabs = state.tabs.map((t) => {
     const armed = armedBindingId === t.bindingId && t.needsConfirm;
-    const notes = [ROLE_LABELS[t.role] || ROLE_LABELS.general];
+    const notes = [];
     if (STATUS_NOTE[t.status]) notes.push(STATUS_NOTE[t.status]);
     if (t.failed) notes.push('Falha ao carregar: clique para tentar de novo.');
     const off = t.relation && t.relation !== 'match' && t.relation !== 'loading';
@@ -96,4 +94,4 @@ function barModel(state, armedBindingId = null) {
   };
 }
 
-module.exports = { barModel, statusItems, STATUS, ROLE_LABELS, STATUS_NOTE, RELATION_NOTE, EMPTY };
+module.exports = { barModel, statusItems, STATUS, STATUS_NOTE, RELATION_NOTE, EMPTY };

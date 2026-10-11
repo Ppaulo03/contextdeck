@@ -71,8 +71,9 @@ function validateBinding(raw) {
   if (raw.conversationKey !== identity.conversationKey) return { ok: false, reason: 'key-url-mismatch' };
   const label = normalizeLabel(raw.label);
   if (!label.ok) return { ok: false, reason: 'bad-label' };
-  const role = raw.role === undefined ? { ok: true, role: 'general' } : normalizeRole(raw.role);
-  if (!role.ok) return { ok: false, reason: 'bad-role' };
+  // `role` (the fixed category of schema 1) is no longer written or shown; a stored one is still validated and kept as is.
+  const role = raw.role === undefined ? null : normalizeRole(raw.role);
+  if (role && !role.ok) return { ok: false, reason: 'bad-role' };
   if (!finiteTime(raw.createdAt) || !finiteTime(raw.updatedAt)) return { ok: false, reason: 'bad-time' };
   return {
     ok: true,
@@ -81,7 +82,7 @@ function validateBinding(raw) {
       conversationKey: identity.conversationKey,
       url: identity.url,
       label: label.label,
-      role: role.role,
+      ...(role ? { role: role.role } : {}),
       origin: ORIGINS.includes(raw.origin) ? raw.origin : 'url',
       workspaceIdentity: { session: raw.workspaceIdentity.session, workspaceId: raw.workspaceIdentity.workspaceId },
       createdAt: Math.trunc(raw.createdAt),

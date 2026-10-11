@@ -43,7 +43,6 @@ function registerChatsIpc({ ipcMain, trusted, win, bindings, notify }) {
       url,
       origin,
       label: optionalString(args.label),
-      role: optionalString(args.role),
       selectedAtOpen: pickSelected(args.selectedAtOpen),
       confirmTarget: args.confirmTarget === true,
       targetChosen: args.targetChosen === true
@@ -52,8 +51,8 @@ function registerChatsIpc({ ipcMain, trusted, win, bindings, notify }) {
 
   ipcMain.handle('chats:update', guard((args) => {
     if (typeof args.bindingId !== 'string') return invalid();
-    if ((args.label !== undefined && typeof args.label !== 'string') || (args.role !== undefined && typeof args.role !== 'string')) return invalid();
-    return bindings.update({ bindingId: args.bindingId, label: args.label, role: args.role });
+    if (typeof args.label !== 'string') return invalid();
+    return bindings.update({ bindingId: args.bindingId, label: args.label });
   }));
 
   ipcMain.handle('chats:unbind', guard((args) => (typeof args.bindingId === 'string' ? bindings.unbind({ bindingId: args.bindingId }) : invalid())));

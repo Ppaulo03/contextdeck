@@ -1,0 +1,65 @@
+# Development (Windows)
+
+## Setup
+
+```powershell
+node --version        # 22+ (24 LTS recommended)
+git --version
+herdr --version       # needed to run the app, not to run the tests
+npm install
+npm start             # = npm run build && electron .
+```
+
+| Script | Does |
+|---|---|
+| `npm run build` | `scripts/build.js`: esbuild bundle (JS+CSS) + static files → `dist/renderer`. |
+| `npm start` | Build, then launch Electron. `dist/` must exist or startup fails with a message. |
+| `npm test` | `node --test test/*.test.js`. |
+| `npm run check` | Tests, then build. Run before every commit. |
+
+`node-pty` 1.1.0 is N-API with Windows prebuilds: it loads in Electron as is. `electron-rebuild` fails on a plain machine (winpty `GetCommitHash.bat` needs Python + VS Build Tools) and is not needed.
+
+## Repository workflow
+
+- Branches: `feature/<ticket>-<short-name>` or `fix/<ticket>-<short-name>`; never commit to `main`; rebase on `origin/main` before a PR.
+- Conventional Commits in English; one logical change per commit; run `git status`/`git diff` before staging (no blind `git add -A`).
+- The tag `m00-homologated` marks the last commit before the R00 restructuring.
+- `config.json` and `AGENTS.local.md` are local and git-ignored. Never commit `.env`, tokens, cookies or Chromium profiles.
+
+## Tests
+
+- Automated tests never use real repositories: Git tests create temporary repos (`git init` in `os.tmpdir()`), configured inline (`-c user.name=…`), and clean them up.
+- `test/structure.test.js` guards the layout: entrypoints, syntax of every source file, build output, resource paths, preload isolation, the IPC channel contract, persistent identifiers and `ui-state.json` compatibility with M00. Update it deliberately when you change those contracts.
+- Modules that need Electron are limited to `index.js`, `window.js`, `chat-view.js` and the preload (enforced by a test); keep logic in plain-Node modules so it stays testable.
+
+### What automated tests cannot prove
+
+Real keyboard auto-repeat, the Explorer paste of the ZIP file, ChatGPT login and ChatGPT accepting a pasted ZIP need a person at the keyboard. Say so explicitly in reports; never mark them as passed from synthetic events.
+
+### Driving the real app from a harness
+
+A throwaway script run with `electron <script>` can `require('src/main/index.js')` and then drive the window. Techniques that worked:
+
+- Set `CONTEXTDECK_USER_DATA` to a temp folder **before** requiring `index.js` so the real profile is untouched (the real ChatGPT login lives in `%APPDATA%\Project Dock M00`; back up `ui-state.json` before any run against it, and do not capture screenshots of the chat view: it shows personal conversations).
+- Pass `app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')`. Without it an idle/occluded window reports `visibilityState: hidden`, never paints and `capturePage()` hangs. External `PrintWindow` captures return black.
+- `capturePage()` of the main window excludes the ChatGPT `WebContentsView`; capture `webContents.getAllWebContents()` entry for chatgpt.com separately.
+- `sendInputEvent` does **not** trigger `before-input-event`; exercise the shortcut wiring with `webContents.emit('before-input-event', { preventDefault() {} }, { control: true, key: 'Tab', type: 'keyDown', isAutoRepeat: false, … })`. Typing into a focused renderer input works with `sendInputEvent`/`insertText`.
+- Electron's `clipboard.readText()` in the main process did not reflect writes in a harness; verify the clipboard from an external `powershell -STA` process (`[Windows.Forms.Clipboard]::GetText()` / `GetFileDropList()`), and `trim()` the trailing newline.
+
+## Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| `…\dist\renderer\index.html not found; run "npm run build"` | Launched `electron .` without building. Use `npm start`. |
+| Terminal shows "nested herdr is disabled" | `HERDR_*` leaked from the parent shell. Already stripped in `herdr/env.js`; if it reappears, check that module. |
+| "Herdr nao encontrado" | `herdrExecutable` not on `PATH`; set the full path in `config.json`. |
+| Window opens but is blank/black in automation | Occlusion, see harness notes. |
+| `git archive`/diff fails with ownership errors | Git `safe.directory` for that repository; fix in your Git config. |
+| Herdr logs | `%APPDATA%\herdr\herdr*.log`. |
+| Lost ChatGPT login after a change | An identifier in `persistence/identity.js` or the `userData` pin changed. Revert it. |
+
+## Windows/PowerShell pitfalls (learned the hard way)
+
+- **Do not edit source files with `Get-Content`/`Set-Content` in Windows PowerShell 5.1**: `Get-Content` without `-Encoding UTF8` reads UTF-8 as ANSI (mojibake) and `Set-Content -Encoding utf8` writes a BOM. Backticks in double-quoted strings become control characters (`` `v ``, `` `r ``). Use the editor tools, or .NET with `New-Object Text.UTF8Encoding($false)` and absolute paths (`[IO.File]` resolves relative paths against the process cwd, not PowerShell's location).
+- `node --test test/` fails on Node 24 (treated as a module); use the glob `test/*.test.js`.
+- A dependency version in `package.json` is exact-pinned; keep `package-lock.json` in sync (`npm install`).

@@ -650,3 +650,20 @@ test('M01-I3B-2H: the notice area is the existing overlay view (no new view), ne
 test('M01-I3B-2H: documentation exists', () => {
   assert.ok(fs.existsSync(path.join(ROOT, 'docs/validation/m01-i3b-2h.md')));
 });
+
+// ---- M01-I3C-1 guard rails -------------------------------------------------------------------------------------
+
+test('M01-I3C-1: documentation and decision record exist', () => {
+  for (const f of ['docs/validation/m01-i3c-1.md', 'docs/decisions/0005-view-lifecycle.md']) assert.ok(fs.existsSync(path.join(ROOT, f)), f);
+});
+
+test('M01-I3C-1: suspension never touches bindings, Herdr or the persisted state; the report reads no page', () => {
+  const code = (...p) => read(...p).replace(/^\s*\/\/.*$/gm, '');
+  for (const f of ['lifecycle.js', 'resource-report.js']) {
+    const text = code('src', 'main', 'chat-views', f);
+    assert.doesNotMatch(text, /bindings\.|selection\.|workspace\.focus|saveUiState|persist\(|require\('(electron|node:fs|fs)'\)|executeJavaScript|loadURL|\.reload\(/, f);
+  }
+  // The only things the lifecycle writes are the manager's in-memory record and its own diagnostics events.
+  assert.doesNotMatch(code('src', 'main', 'persistence', 'ui-state.js'), /suspend|lifecycle/i);
+  assert.doesNotMatch(code('src', 'main', 'chat-bindings', 'model.js') + code('src', 'main', 'chat-bindings', 'store.js'), /suspend/i);
+});

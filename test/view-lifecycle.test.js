@@ -404,6 +404,25 @@ test('with Herdr offline a conversation can still be suspended; restoring needs 
   assert.equal(w.pick(w.A[0], { confirm: true }).ok, true);
 }));
 
+test('Herdr disconnecting and reconnecting while a restoration is loading changes nothing: one page, no reload, no association', () => run(async (w) => {
+  await w.open(w.A[0]);
+  await w.open(w.A[1]);
+  assert.equal((await w.suspend(w.A[0])).ok, true);
+  w.pick(w.A[0]);
+  const back = w.fake.views.at(-1);
+  const created = w.fake.views.length;
+  const bindingsBefore = JSON.stringify(w.bindings.all().map((b) => [b.bindingId, b.url, b.workspaceIdentity]));
+  w.disconnect(); w.navigator.reconcile();
+  w.connect(); w.navigator.reconcile();
+  back.finishLoad(w.A[0].url);
+  await w.clock.advance(6000);
+  assert.equal(w.fake.views.length, created);
+  assert.deepEqual(back.loads, [w.A[0].url], 'loaded exactly once');
+  assert.equal(JSON.stringify(w.bindings.all().map((b) => [b.bindingId, b.url, b.workspaceIdentity])), bindingsBefore);
+  assert.equal(w.selectCalls.length, 0);
+  assert.equal(w.tab(w.A[0]).relation, 'match');
+}));
+
 test('a suspended conversation of a workspace id that was recreated (suspect) needs confirmation, and never opens by itself', () => run(async (w) => {
   await w.open(w.A[0]);
   await w.open(w.A[1]);

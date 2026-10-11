@@ -23,10 +23,11 @@ function startChatObservation({ contents, userDataDir, env = process.env, viewId
   if (!diagnostics) return createStateObserver({ contents, onChange: notify, phaseMs, setTimer, clearTimer });
   const log = createDiagnosticsLog({ file: path.join(userDataDir, 'diagnostics', 'chat-observer.jsonl'), tag: viewId });
   let lastControls = '';
+  let lastObs = { signals: null, at: null, dtMs: null, wide: null, busyCount: null };
   let composerSeen = false;
   let snapshots = 0;
   let timers = [];
-  let counters = { composer: { t: 0, f: 0, n: 0 }, stop: { t: 0, f: 0, n: 0 }, draft: { t: 0, f: 0, n: 0 }, via: {} };
+  let counters = { composer: { t: 0, f: 0, n: 0 }, stop: { t: 0, f: 0, n: 0 }, draft: { t: 0, f: 0, n: 0 }, stopWide: { t: 0, f: 0, n: 0 }, busy: { t: 0, f: 0, n: 0 }, via: {} };
 
   const tally = (bucket, value) => { bucket[value === true ? 't' : value === false ? 'f' : 'n'] += 1; };
 
@@ -49,13 +50,15 @@ function startChatObservation({ contents, userDataDir, env = process.env, viewId
     diagnostic: true,
     phaseMs,
     onChange: (state, prev, event) => {
-      log.transition(state, prev, event);
+      log.transition(state, prev, event, { signals: lastObs.signals, dtMs: lastObs.dtMs, wide: lastObs.wide, busyCount: lastObs.busyCount });
       notify?.(state, prev, event);
       // Every load or conversation change starts a new search for the composer.
       if ((event.type === 'page-ready' || event.type === 'navigated') && state.page === 'ready') { composerSeen = false; scheduleSnapshots(event.type); }
     },
-    onProbe: ({ signals, via, controls, form }) => {
-      if (signals) { tally(counters.composer, signals.composer); tally(counters.stop, signals.stop); tally(counters.draft, signals.draft); if (signals.composer === true) composerSeen = true; }
+    onProbe: ({ signals, via, controls, form, wide, busyCount }) => {
+      const at = Date.now();
+      lastObs = { signals: signals || null, at, dtMs: lastObs.at === null ? null : at - lastObs.at, wide: wide || null, busyCount: busyCount ?? null };
+      if (signals) { tally(counters.composer, signals.composer); tally(counters.stop, signals.stop); tally(counters.draft, signals.draft); tally(counters.stopWide, signals.stopWide); tally(counters.busy, signals.busy); if (signals.composer === true) composerSeen = true; }
       if (via) counters.via[via] = (counters.via[via] || 0) + 1;
       // The shape of the controls is logged only when it changes (this is how the stop state is discovered).
       const text = JSON.stringify([controls || [], form || []]);
@@ -66,7 +69,7 @@ function startChatObservation({ contents, userDataDir, env = process.env, viewId
   const summary = setRepeat(() => {
     const state = observer.getState();
     log.note({ summary: { ...observer.getStats(), counters, page: state.page, identity: state.identity.kind, generation: state.generation.reason } });
-    counters = { composer: { t: 0, f: 0, n: 0 }, stop: { t: 0, f: 0, n: 0 }, draft: { t: 0, f: 0, n: 0 }, via: {} };
+    counters = { composer: { t: 0, f: 0, n: 0 }, stop: { t: 0, f: 0, n: 0 }, draft: { t: 0, f: 0, n: 0 }, stopWide: { t: 0, f: 0, n: 0 }, busy: { t: 0, f: 0, n: 0 }, via: {} };
   }, SUMMARY_MS);
   summary.unref?.();
 

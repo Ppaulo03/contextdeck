@@ -26,7 +26,7 @@ function createDiagnosticsLog({ file, tag = null, now = Date.now, maxBytes = MAX
   }
 
   return {
-    transition(state, prev, event) {
+    transition(state, prev, event, extra) {
       write({
         event: event.type,
         epoch: state.epoch,
@@ -36,7 +36,11 @@ function createDiagnosticsLog({ file, tag = null, now = Date.now, maxBytes = MAX
         draft: state.draft,
         visible: state.visible,
         attention: state.attention.pending,
-        from: { generation: prev.generation.state, draft: prev.draft.state }
+        from: { generation: prev.generation.state, reason: prev.generation.reason, evidence: prev.generation.evidence, draft: prev.draft.state },
+        // M01-I3B-2R: what the decision was based on (booleans and counters only): the last signals, the consecutive-observation
+        // counts of the end rule, and the time since the previous observation.
+        endProbe: state.endProbe,
+        ...(extra || {})
       });
     },
     note: (entry) => write({ note: true, ...entry }),

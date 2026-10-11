@@ -101,6 +101,8 @@ npx electron test/electron/status-harness.js                                    
 $env:CONTEXTDECK_CHAT_STATUS='0'; npx electron test/electron/status-harness.js   # baseline, observers off -> status-report-off.json
 ```
 
+Since M01-I3B-2R the harness also runs the **document scenario** (a stop-labelled button outside the composer's form: the response must stay `responding` + `uncertain` with no attention, and end only after the stop button is removed). To supply diagnostics from a manual run see [validation/m01-i3b-2r.md](validation/m01-i3b-2r.md) §5 (`CONTEXTDECK_CHAT_OBSERVER=1`, `%APPDATA%\Project Dock M00\diagnostics\chat-observer.jsonl`).
+
 Same rules as the multi-view harness (throwaway profile, logged-out chatgpt.com, fake Herdr, no message sent). The "responding" and "draft" fixtures are the I3P synthetic ones: the page's own send/stop control gets the aria-label `Interromper geração` (matches the detector's stop labels) and the composer `textarea` gets a value through the native setter. Learned:
 
 - The model compares conversation identity by **id**, not by key: `/g/<project>/c/<id>` and `/c/<id>` are one conversation, otherwise opening a Project route would silently reset the state it had learned.

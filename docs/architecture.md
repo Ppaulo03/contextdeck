@@ -215,6 +215,10 @@ window: focus / blur / minimize / restore ──► hub.setInteractive()      us
 
 **Interface.** Each tab has a fixed-size status slot (always present, `aria-hidden`; the tab gets an accessible name and a tooltip with the same information): a ring spinner for responding (the only animation, disabled by `prefers-reduced-motion`), `●` for attention, `✎` for a draft, a dashed `?` for unknown (only for a loaded, probed view whose signals are unusable). The workspace selector shows `↻n ●m` for the *other* workspaces next to its label, and each row of the workspace menu shows the same for its workspace; a workspace with no loaded conversation has no badge. Counts are derived (`navigator.getWorkspaceActivity()`), never persisted, and ride on the Herdr state the selector already receives.
 
+### Generation reliability (M01-I3B-2R)
+
+Details, diagnosis and results: [validation/m01-i3b-2r.md](validation/m01-i3b-2r.md). Rule: **the temporary absence of a signal is not proof of an ending.** Only the strong stop signal (in the composer) starts `responding`; `stopWide` (a stop-labelled control anywhere), a bounded `busy` flag and *unusable* observations (composer missing, probe failed or timed out) only **sustain** it, flagged `uncertain` in the summary. A response ends only after `END_CONFIRMATIONS` (3) consecutive observations of "composer ready, no stop control anywhere, nothing busy"; `UNUSABLE_LIMIT` (20) observations of nothing usable drop the claim to `unknown` (never to an ending, never to attention). `ended-unclassified` is still never `completed`. Attention follows only a sustained ending. Diagnostic mode logs signals, counters, reason and observation spacing per transition.
+
 ## Persistent identifiers (do not change casually)
 
 The product was renamed from Project Dock M00 to ContextDeck. These identifiers locate user data and **keep their M00 values**; they are defined once in `src/main/persistence/identity.js` and locked by tests:

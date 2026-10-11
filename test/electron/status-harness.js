@@ -164,6 +164,21 @@ app.whenReady().then(async () => {
     check('a draft in a hidden conversation is shown without reading its content', draftAt);
     check('the draft text is untouched in the page', (await pages.A3.executeJavaScript(`document.querySelector('textarea').value`)) === 'rascunho');
     await respondingOff(pages.A2); await draftSet(pages.A3, false);
+    // ---- M01-I3B-2R: a document being written. The strong stop control (composer) is gone, a stop control lives OUTSIDE the form -------------
+    await respondingOn(pages.A3);
+    await waitFor(() => tab(A[2]).activity && tab(A[2]).activity.responding, 12000);
+    await pages.A3.executeJavaScript(`(() => { const b = document.createElement('button'); b.id = 'doc-stop'; b.setAttribute('aria-label', 'Parar de gerar'); b.style.cssText = 'position:fixed;top:0;left:0;width:40px;height:20px'; document.body.appendChild(b); return true; })()`);
+    await respondingOff(pages.A3);
+    await sleep(9000);                                       // before 2R a single quiet probe of the composer ended it
+    const docAct = tab(A[2]).activity;
+    report.steps.documentWhileStopElsewhere = docAct;
+    check('2R: stop control outside the composer keeps the response (responding, uncertain, no attention, not ended)', docAct && docAct.responding && docAct.uncertain && !docAct.attention && !docAct.ended, JSON.stringify(docAct));
+    const dEnd0 = Date.now();
+    await pages.A3.executeJavaScript(`(() => { document.getElementById('doc-stop').remove(); return true; })()`);
+    const docEnded = await waitFor(() => tab(A[2]).activity && tab(A[2]).activity.attention, 15000);
+    report.steps.documentEndDetectionMs = docEnded ? docEnded - dEnd0 : null;
+    check('2R: once the stop control is really gone the end is detected (unclassified, attention) after the confirmations', docEnded && tab(A[2]).activity.ended && !tab(A[2]).activity.responding, JSON.stringify(tab(A[2]).activity));
+    pick(A[2]); await sleep(300); pick(A[0]); await sleep(300);
     // ---- navigation inside ChatGPT --------------------------------------------------------------------------------------------------
     await respondingOn(pages.A1); await waitFor(() => tab(A[0]).activity && tab(A[0]).activity.responding, 12000);
     await bePage(pages.A1, 2);                              // the view that was A1 now shows conversation 2 (A2's tab)

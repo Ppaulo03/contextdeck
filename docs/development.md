@@ -147,3 +147,6 @@ It wires the same pieces as `src/main/index.js` (notices, activity pusher, direc
 - **Do not edit source files with `Get-Content`/`Set-Content` in Windows PowerShell 5.1**: `Get-Content` without `-Encoding UTF8` reads UTF-8 as ANSI (mojibake) and `Set-Content -Encoding utf8` writes a BOM. Backticks in double-quoted strings become control characters (`` `v ``, `` `r ``). Use the editor tools, or .NET with `New-Object Text.UTF8Encoding($false)` and absolute paths (`[IO.File]` resolves relative paths against the process cwd, not PowerShell's location).
 - `node --test test/` fails on Node 24 (treated as a module); use the glob `test/*.test.js`.
 - A dependency version in `package.json` is exact-pinned; keep `package-lock.json` in sync (`npm install`).
+
+### Electron harness exit codes (activity-harness)
+`0` every check passed; `1` a check failed or an error was recorded; `2` fewer than 20 checks ran (stopped early); `3` timeout (9 min); `77` SKIPPED because chatgpt.com is not reachable (reason printed). The report is `activity-report.json` in `HARNESS_OUT` or, by default, `%TEMP%\contextdeck-harness-out` (it used to be written into the throwaway profile and deleted, and the exit code was always 0). Known on the base commit: 2 failing checks and an unhandled script error in the logged-out environment (see validation/m01-i3b-3.md).

@@ -76,3 +76,5 @@ The trigger keeps the last known workspace label while a switch is pending; only
 and the tooltip says what is happening. Its width is fixed per breakpoint. Disconnection dims the last label instead
 of replacing it. Requested, observed and confirmed state stay distinguishable in the tooltip and the diagnostics panel;
 failures and uncertainty are never hidden.
+
+**Binding panel (M01-I3B-3).** The destination is a dropdown whose current choice is the confirmation: no checkbox. A destination that is only an estimate is not preselected; the panel says so and asks for a workspace. The Project section and the "Sem workspace" rows reuse `.chats-row`, `.chats-note`, `.chats-banner` and `.btn`; a decision that replaces or moves something is a banner with an explicit button.

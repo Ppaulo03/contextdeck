@@ -50,6 +50,8 @@ A throwaway script run with `electron <script>` can `require('src/main/index.js'
 
 Experiments that create, focus, rename or close workspaces must use a throwaway session (`herdr --session m01i1-lab` or similar), never `default` or the app's session. Techniques that worked (details in [validation/m01-i1.md](validation/m01-i1.md)): `herdr api schema --output <file>` for the contract; `herdr session list --json` for the endpoint; connect to `\\.\pipe\<socket_path>` and exchange JSON lines; point extra clients at a lab config with `HERDR_CONFIG_PATH` (for example direct `next_workspace` keys) instead of touching your Herdr config; read what a client displays by feeding its PTY output to `@xterm/headless` (install it in a temp folder, not in the project) and looking for a marker echoed into each workspace. Clean up with `herdr session stop <name>` and `herdr session delete <name>`, for your own lab sessions only.
 
+M01-I2 additions ([validation/m01-i2.md](validation/m01-i2.md)): to drive the real app, point it at a lab session through a `config.json` in a throwaway clone (not your own `config.json`) and set `CONTEXTDECK_USER_DATA`; count the focus commands the app really sends by wrapping `focusWorkspace` on the object returned by `createApiClient` *before* requiring `src/main/index.js`; switch workspace in the TUI by writing an SGR mouse report (`ESC[<0;col;rowM` + `…m`) into the PTY at the sidebar row of the workspace (`dock.writeTerminal`); choose in the dropdown by setting `select.value` and dispatching a `change` event in the renderer; in test fakes answer `session.snapshot` with the state at request time (not after a simulated delay) or staleness bugs are invisible.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

@@ -38,6 +38,10 @@ Associations are explicit (chosen by the user, shown in the UI) so a message is 
 - Workspaces can be listed and observed from outside a pane through the local API (Windows named pipe, `session.snapshot` + event signals); the endpoint comes from `herdr session list --json`.
 - The API has **no per-client focus**: ContextDeck cannot tell which workspace its own client shows when several exist. Associations must therefore never depend on following Herdr's focus.
 
+## Decision update (M01-I2): optimistic bidirectional focus sync
+
+ContextDeck is normally the only Herdr client of its session, so it follows Herdr's session focus (Auto) and may move it (`workspace.focus`) when the user picks a workspace, with a Manual mode and explicit selection as the escape hatch. This is an estimate, never presented as identification of our client; only explicit selections are persisted and no command is ever sent from observation or startup. Details: [validation/m01-i2.md](../validation/m01-i2.md).
+
 ## Open questions
 
 - How to present associations whose workspace no longer exists (design question for M01-I2).

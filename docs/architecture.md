@@ -29,8 +29,9 @@ src/main/
   web-preferences.js  The only place that defines webPreferences (isolation for every web contents).
   shortcuts.js        Ctrl+Tab decision (pure) and the before-input-event handler.
   herdr/              client.js (PTY client lifecycle), env.js (strips HERDR_* from the PTY env);
-                      api-client.js (read-only named-pipe API client), session-locator.js, workspace-reader.js
-                      (snapshot normalizer + active-workspace identification), workspace-observer.js.
+                      api-client.js (named-pipe API client: read allowlist + workspace.focus), session-locator.js,
+                      workspace-reader.js (snapshot normalizer + active-workspace identification),
+                      workspace-observer.js, workspace-selection.js (selector state and focus sync).
   git/                core.js (safe exec, repo/ref validation, diff/show/archive), refs.js (discovery and
                       selection), context.js (active repo + per-repo prefs), actions.js (copy/zip/delete),
                       artifacts.js (ZIP naming and guarded deletion).
@@ -58,7 +59,8 @@ Every handler first checks `event.sender` is the local UI window; strangers get 
 | `clipboard:read`, `clipboard:write` | invoke | Text clipboard for the terminal (≤ 1 MiB). |
 | `git:status`, `git:refs`, `git:pick-repo`, `git:set-refs` | invoke | Repository state, discovered refs + validated selection, folder picker, store refs. |
 | `git:diff`, `git:show`, `git:zip`, `git:delete-zip` | invoke | The four actions. `delete-zip` takes **no path**. |
-| `herdr:state`, `herdr:refresh` | invoke | Read-only observer state for the diagnostic panel; refresh re-reads. No channel mutates Herdr. |
+| `herdr:state`, `herdr:refresh` | invoke | Observer + selection state for the selector and diagnostics panel; refresh re-reads. Read-only. |
+| `herdr:select-workspace`, `herdr:set-sync-mode` | invoke | The user's explicit workspace choice (`workspace.focus`, validated again in main) and the Auto/Manual preference. No other Herdr write exists. |
 | main → renderer | events | `dock:mode`, `dock:focus-terminal`, `pty:data`, `pty:exit`, `chat:status`, `chat:host`, `chat:error`, `herdr:state` (throttled push). |
 
 `test/structure.test.js` pins this list: the registered channels, the preload's channels and main's emitted events must match exactly.
@@ -80,9 +82,9 @@ Every handler first checks `event.sender` is the local UI window; strangers get 
 - ZIPs live in `<userData>\artifacts` (never in the repo) with names `dock-<repo>-<sha8>-<timestamp>-<rand>.zip`. Deletion is limited to the last generated ZIP, requires that exact naming and folder, refuses symlinks, and never clears the clipboard.
 - The file clipboard uses a constant PowerShell script (`Clipboard.SetFileDropList`, STA); the path travels in an environment variable and the result is read back and verified.
 
-## Herdr workspace integration (M01-I1, read-only)
+## Herdr workspace integration (M01-I1 discovery, M01-I2 selector)
 
-Herdr remains the source of truth for sessions, workspaces, panes and agents ([ADR 0001](decisions/0001-herdr-workspaces.md)); ContextDeck only *reads* them.
+Herdr remains the source of truth for sessions, workspaces, panes and agents ([ADR 0001](decisions/0001-herdr-workspaces.md)); ContextDeck *reads* them, and performs exactly one write: moving the focus (`workspace.focus`) when the **user** picks a workspace in the selector.
 
 ```text
 workspace-observer ──subscribe (events = signals)──┐
@@ -96,6 +98,20 @@ workspace-observer ──subscribe (events = signals)──┐
 - **Reconciliation:** subscribe first, read, then treat every event only as "something changed" (coalesced, debounced re-read); a 60 s heartbeat and every reconnect re-read authoritative state; reconnect backoff 1 s → 15 s. Duplicated, delayed, reordered or lost events cannot corrupt the model.
 - **Active workspace:** `known` only when the session has exactly one workspace; otherwise `ambiguous` (session focus offered only as a candidate) or `unknown`. Herdr exposes no per-client focus, and TUI parsing or "last event wins" are deliberately not used.
 - **Boundaries:** the observer is created in `index.js`, started after the window exists and stopped on window close and quit; the remote ChatGPT page has no path to it. `HERDR_*` is stripped from the locator's child process as for the PTY.
+
+### Workspace selector (M01-I2)
+
+```text
+dropdown 'change' (user) ──► herdr:select-workspace ──► workspace-selection.select() ──► observer.focusWorkspace() ──► api-client (workspace.focus)
+        ▲                                                       │ fresh snapshot after the command (observer.refresh)
+        └── herdr:state ◄── selection state ◄── observer (events = signals, snapshots = truth)   ← TUI focus changes arrive here, never answered with a command
+```
+
+- **Single write:** `ApiClient.focusWorkspace(id)` sends only `workspace.focus` with a validated id and requires Herdr to confirm that workspace; `request()` stays on the read allowlist. Focus is session-wide in Herdr, so the command moves **every** attached client; with ContextDeck as the normal single client this is invisible.
+- **State kept apart** in `workspace-selection.js`: `selected` (+origin `dock`/`herdr`/`recovery`), `pending`, `observedId` (+reliability), `unavailableId`, `mode` (`auto` default | `manual`), connection and last error. Optimistic by design: the observed focus is the last client that moved, not proof of what our client shows.
+- **Loop-free by construction:** only `select()` (the user's `change` event) sends a command; observation, reconciliation, reconnect, mode changes and preference restore never do. A pending request is not overwritten by snapshots, is bound to a token and to the observer's connection `epoch`, and is dropped (never replayed) if the connection changed. Confirmation uses a snapshot that started after the command.
+- **Persistence:** `ui-state.json` → `herdr: { mode, lastWorkspace: { session, workspaceId } }`; only explicit selections are stored. Startup never sends a focus command.
+- **Contract additions:** `herdr:select-workspace`, `herdr:set-sync-mode`; `herdr:state` carries `selection`. Validation and results: [validation/m01-i2.md](validation/m01-i2.md).
 
 ## Persistent identifiers (do not change casually)
 

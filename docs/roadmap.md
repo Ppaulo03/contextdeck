@@ -23,7 +23,8 @@ Goal: work on two or three projects at once without mixing contexts. Direction f
 Starts with M01-I1. Out of scope: automatic prompt transfer, reading conversations, new inference integrations.
 
 - **M01-I1 — implemented, awaiting homologation.** Read-only discovery of the workspaces of the configured Herdr session, change tracking, recovery, and a diagnostic panel ([validation/m01-i1.md](validation/m01-i1.md)). Finding: Herdr's API has **no per-client focus**, so the workspace visible in ContextDeck's own client cannot be identified (reported as `ambiguous`; `known` only with a single workspace). Nothing is associated with ChatGPT yet.
-- **M01-I2 / I3 — not started.** Their shape depends on that finding; the recommendation (explicit association instead of following Herdr focus) is in the validation record and needs approval before work starts.
+- **M01-I2 — implemented, awaiting homologation.** Top-bar workspace selector with optimistic bidirectional focus sync: picking a workspace sends `workspace.focus` (the only write); TUI focus changes update the selector in Auto mode (Manual ignores them); startup/recovery never send a command. Assumes ContextDeck is normally Herdr's only client; the multi-client limitation stays explicit ([validation/m01-i2.md](validation/m01-i2.md)). Still no conversation association and no Git behaviour tied to the workspace.
+- **M01-I3 — not started.** Conversation association per workspace; needs approval before work starts.
 
 ## M02 — Not defined yet
 

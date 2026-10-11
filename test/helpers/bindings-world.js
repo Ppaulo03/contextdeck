@@ -35,7 +35,7 @@ function createWorld({ session = 'contextdeck', workspaces = [ws('w1', 'api'), w
   const store = createBindingsStore({ file, fs: fsImpl, now: tick });
   const bindings = createChatBindings({ store, session, observer, selection, now: tick, newId: () => `b_${String(++seq).padStart(16, '0')}` });
   return {
-    root, file, store, bindings, herdr, sel, session,
+    root, file, store, bindings, herdr, sel, session, observer, selection,
     select: (workspaceId, origin = 'dock') => { sel.selected = workspaceId ? { workspaceId, origin } : null; selectionListeners.forEach((l) => l()); },
     setWorkspaces: (list) => { herdr.workspaces = list; observerListeners.forEach((l) => l()); },
     disconnect: () => { herdr.connection = 'disconnected'; observerListeners.forEach((l) => l()); },

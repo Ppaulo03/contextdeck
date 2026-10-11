@@ -217,6 +217,13 @@ function createChatBindings({ store, session, observer, selection, now = () => D
     return data.bindings.filter((b) => sameWorkspace(b.workspaceIdentity, identity)).map((b) => viewOf(b, snapshot, data));
   }
 
+  // Every binding with its live status, for consumers that navigate (chat views). Read-only.
+  function all() {
+    const snapshot = live();
+    const data = store.get();
+    return data.bindings.map((b) => viewOf(b, snapshot, data));
+  }
+
   function listOrphans() {
     const snapshot = live();
     const data = store.get();
@@ -264,7 +271,7 @@ function createChatBindings({ store, session, observer, selection, now = () => D
     };
   }
 
-  return { bind, update, unbind, reassign, list, listOrphans, lookup, describeCurrent, getState };
+  return { bind, update, unbind, reassign, list, all, listOrphans, lookup, describeCurrent, getState };
 }
 
 module.exports = { createChatBindings };

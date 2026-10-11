@@ -24,6 +24,7 @@ const { fromObserverState, effectiveValue, GenerationState, DraftState, Attentio
 function createObservationHub({ manager, startObserver, now = () => Date.now(), setTimer = setTimeout, clearTimer = clearTimeout, ttlMs = 20000, sweepMs = 5000 }) {
   const entries = new Map();          // viewId -> { observer, visible, sig }
   const listeners = new Set();
+  const attentionListeners = new Set();
   const presence = { interactive: false };   // window not minimized, shown and focused
   let sweepTimer;
   let stopped = false;
@@ -64,13 +65,20 @@ function createObservationHub({ manager, startObserver, now = () => Date.now(), 
   const signature = (s) => (s ? JSON.stringify([s.phase, s.identityKey, s.identityOk, s.generation, s.generationReason, s.draft, s.attention, s.stale]) : '');
 
   // Emits only when something the UI shows changed.
+  // A NEW pending attention (none -> pending on a valid, ready view) is an event; a view that is already pending when first
+  // summarized (startup, an observer restarted) is a baseline, not an event, and a state that merely stays pending never
+  // repeats it. Reload, identity changes, lost probes and expiry reset attention in the model: they never produce one.
   function refresh(id) {
     const entry = entries.get(id);
     if (!entry) return;
-    const sig = signature(summarize(id));
-    if (sig === entry.sig) return;
-    entry.sig = sig;
-    emit();
+    const summary = summarize(id);
+    const pending = Boolean(summary && summary.attention === AttentionState.PENDING && summary.identityOk && summary.phase === 'ready');
+    const fresh = entry.known && pending && !entry.pending;
+    entry.known = true;
+    entry.pending = pending;
+    const sig = signature(summary);
+    if (sig !== entry.sig) { entry.sig = sig; emit(); }
+    if (fresh) for (const l of [...attentionListeners]) l({ viewId: id, identityKey: summary.identityKey });
   }
 
   const userVisible = (id) => presence.interactive && manager.isVisible(id);
@@ -102,7 +110,7 @@ function createObservationHub({ manager, startObserver, now = () => Date.now(), 
       let observer = null;
       try { observer = startObserver({ viewId: id, handle: manager.handleOf(id), phaseMs: phaseFor(id), onChange: () => refresh(id) }); } catch { observer = null; }
       if (!observer) continue;                                  // observation disabled or not possible: the view just has no status
-      entries.set(id, { observer, visible: false, sig: '' });
+      entries.set(id, { observer, visible: false, sig: '', known: false, pending: false });
       changed = true;
     }
     for (const [id, entry] of [...entries]) {
@@ -152,6 +160,8 @@ function createObservationHub({ manager, startObserver, now = () => Date.now(), 
     summaryOf: summarize,
     isObserved: (id) => entries.has(id),
     onChange(listener) { listeners.add(listener); return () => listeners.delete(listener); },
+    // New pending attention events (see refresh()).
+    onAttention(listener) { attentionListeners.add(listener); return () => attentionListeners.delete(listener); },
     stats() {
       let polls = 0; let probeTimeouts = 0; let signalsLost = 0;
       for (const e of entries.values()) { const s = e.observer.getStats(); polls += s.polls; probeTimeouts += s.probeTimeouts || 0; signalsLost += s.signalsLost; }
@@ -165,6 +175,7 @@ function createObservationHub({ manager, startObserver, now = () => Date.now(), 
       for (const entry of entries.values()) { try { entry.observer.stop(); } catch { /* Already gone. */ } }
       entries.clear();
       listeners.clear();
+      attentionListeners.clear();
     }
   };
 }

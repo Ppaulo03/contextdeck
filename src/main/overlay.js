@@ -21,6 +21,7 @@ function createOverlay({ getWindow, preloadPath, html, onBeforeInput, onHidden }
   let ready;
   let open = false;
   let openKind = 'workspaces';
+  let noticeOpen = false;      // the small, non-focusing notice card area (see showNotice)
   let idleTimer;
 
   const liveWindow = () => { const w = getWindow(); return w && !w.isDestroyed() ? w : null; };
@@ -51,12 +52,43 @@ function createOverlay({ getWindow, preloadPath, html, onBeforeInput, onHidden }
     clearTimeout(idleTimer);
     await ensure();
     if (!liveWindow()) return false;
+    noticeOpen = false;                   // a modal replaces the notices (they stay listed in the activity center)
     fit();
     win.contentView.addChildView(view);   // re-adding an existing child moves it to the top
     open = true;
     openKind = kind;
     view.webContents.focus();
     view.webContents.send('overlay:open', { ...anchor, kind });   // kind: 'workspaces' (menu) | 'chats' (bindings panel)
+    return true;
+  }
+
+  // Activity notices: the SAME overlay view, laid out as a small rectangle (so everything outside it keeps receiving input),
+  // added on top and NEVER focused: whatever has the keyboard (the terminal, the ChatGPT page) keeps it. A modal wins.
+  async function showNotice(rect) {
+    const win = liveWindow();
+    if (!win || open) return false;
+    clearTimeout(idleTimer);
+    await ensure();
+    if (!liveWindow() || open) return false;
+    view.setBounds(rect);
+    win.contentView.addChildView(view);
+    noticeOpen = true;
+    view.webContents.send('overlay:open', { kind: 'notice' });
+    return true;
+  }
+
+  function hideNotice() {
+    if (!noticeOpen) return false;
+    noticeOpen = false;
+    const win = liveWindow();
+    if (!open) {
+      const contents = liveContents();
+      if (contents) contents.send('overlay:open', null);
+      if (win && view) { try { win.contentView.removeChildView(view); } catch { /* Already detached. */ } }
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(release, IDLE_RELEASE_MS);
+      idleTimer.unref?.();
+    }
     return true;
   }
 
@@ -79,7 +111,7 @@ function createOverlay({ getWindow, preloadPath, html, onBeforeInput, onHidden }
 
   // Frees the extra renderer process (~115 MB measured) when the menu has not been used for a while.
   function release() {
-    if (open || !view) return;
+    if (open || noticeOpen || !view) return;
     const contents = liveContents();
     if (contents) contents.close();
     view = undefined;
@@ -90,13 +122,19 @@ function createOverlay({ getWindow, preloadPath, html, onBeforeInput, onHidden }
     show,
     hide,
     fit: () => { if (open) fit(); },
+    showNotice,
+    hideNotice,
+    isNoticeOpen: () => noticeOpen,
+    // Anything of the overlay on screen (modal or notices): where state pushes may go.
+    isShown: () => open || noticeOpen,
     // Re-adding an existing child moves it to the top: called when another view is attached while the overlay is open.
-    raise: () => { const win = liveWindow(); if (open && view && win) win.contentView.addChildView(view); },
+    raise: () => { const win = liveWindow(); if ((open || noticeOpen) && view && win) win.contentView.addChildView(view); },
     isOpen: () => open,
     isOverlay: (event) => Boolean(view) && event.sender === view.webContents,
     send: (channel, data) => { const c = liveContents(); if (c) c.send(channel, data); },
     destroy() {
       hide();
+      hideNotice();
       clearTimeout(idleTimer);
       release();
     }

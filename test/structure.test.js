@@ -88,6 +88,16 @@ test('every element id the renderer scripts look up exists in index.html (a miss
   assert.deepEqual([...used].filter((id) => !htmlIds.has(id)), []);
 });
 
+test('the selector sends workspace selection only from its user "change" handler (state updates cannot trigger a focus command)', () => {
+  const source = read('src', 'renderer', 'workspace-selector.js');
+  assert.equal([...source.matchAll(/dock\.herdrSelectWorkspace\(/g)].length, 1, 'a single call site');
+  const handler = source.slice(source.indexOf("select.addEventListener('change'"), source.indexOf("modeButton.addEventListener('click'"));
+  assert.match(handler, /dock\.herdrSelectWorkspace\(/);
+  assert.match(handler, /if \(applying/);
+  const render = source.slice(source.indexOf('function render()'), source.indexOf("select.addEventListener('change'"));
+  assert.doesNotMatch(render, /herdrSelectWorkspace|dispatchEvent|\.click\(\)/);
+});
+
 test('required documentation exists and every relative markdown link resolves', () => {
   const required = ['README.md', 'AGENTS.md', 'config.example.json', 'docs/architecture.md', 'docs/roadmap.md', 'docs/development.md', 'docs/validation/m00.md', 'docs/decisions/0001-herdr-workspaces.md'];
   for (const f of required) assert.ok(fs.existsSync(path.join(ROOT, f)), f);
@@ -163,7 +173,7 @@ test('preload only bridges named functions through contextBridge and never expos
 const HANDLE_CHANNELS = [
   'clipboard:read', 'clipboard:write', 'dock:chat-home', 'dock:external-chat', 'dock:info', 'dock:layout',
   'dock:reload-chat', 'dock:switch', 'git:delete-zip', 'git:diff', 'git:pick-repo', 'git:refs', 'git:set-refs',
-  'herdr:refresh', 'herdr:state',
+  'herdr:refresh', 'herdr:select-workspace', 'herdr:set-sync-mode', 'herdr:state',
   'git:show', 'git:status', 'git:zip', 'pty:start'
 ].sort();
 const ON_CHANNELS = ['pty:resize', 'pty:write'];
@@ -181,7 +191,7 @@ function fakeIpc() {
 function registerWithFakes(overrides = {}) {
   const { registerIpc } = require('../src/main/ipc');
   const ipc = fakeIpc();
-  const calls = { switchMode: [], footer: [], write: [], resize: [], openExternal: [], start: [], refresh: 0 };
+  const calls = { switchMode: [], footer: [], write: [], resize: [], openExternal: [], start: [], refresh: 0, select: [], syncMode: [] };
   const win = {
     isTrusted: (event) => event.trusted === true,
     switchMode: (m) => calls.switchMode.push(m),
@@ -201,7 +211,13 @@ function registerWithFakes(overrides = {}) {
   const clipboard = { writeText: () => {}, readText: () => 'CLIP' };
   registerIpc({
     electron: { ipcMain: ipc.ipcMain, shell: { openExternal: (u) => calls.openExternal.push(u) }, clipboard, dialog: { showOpenDialog: async () => ({ canceled: true, filePaths: [] }) } },
-    win, herdr, observer: { getState: () => ({ session: 'contextdeck', connection: 'stopped' }), refresh: async () => { calls.refresh += 1; } },
+    win, herdr,
+    observer: { getState: () => ({ session: 'contextdeck', connection: 'stopped' }), refresh: async () => { calls.refresh += 1; } },
+    selection: {
+      getState: () => ({ mode: 'auto' }),
+      select: async (session, workspaceId) => { calls.select.push([session, workspaceId]); return { ok: true }; },
+      setMode: (mode) => { calls.syncMode.push(mode); return { ok: true, mode }; }
+    },
     settings: { herdrSession: 'contextdeck', workingDirectory: undefined },
     uiState: require('../src/main/persistence/ui-state').sanitize(undefined), persist: () => {}, userDataDir
   });
@@ -214,17 +230,24 @@ test('IPC: exactly the contract channels are registered, each once, with the sam
   assert.deepEqual([...listeners.keys()].sort(), ON_CHANNELS);
 });
 
-test('IPC: the Herdr integration exposes read-only channels only (no workspace mutation, no method forwarding)', () => {
+test('IPC: Herdr channels are state/refresh plus the explicit selection and mode; no mutation beyond workspace.focus, no method forwarding', () => {
   const { handlers, listeners } = registerWithFakes();
   const herdrChannels = [...handlers.keys(), ...listeners.keys()].filter((c) => c.startsWith('herdr:'));
-  assert.deepEqual(herdrChannels.sort(), ['herdr:refresh', 'herdr:state']);
+  assert.deepEqual(herdrChannels.sort(), ['herdr:refresh', 'herdr:select-workspace', 'herdr:set-sync-mode', 'herdr:state']);
   const preload = read('src', 'preload', 'index.js');
-  assert.doesNotMatch(preload, /herdr[A-Za-z]*:\s*\([^)]*\)\s*=>\s*ipcRenderer\.(invoke|send)\('(?!herdr:(state|refresh)')/);
+  assert.doesNotMatch(preload, /herdr[A-Za-z]*:\s*\([^)]*\)\s*=>\s*ipcRenderer\.(invoke|send)\('(?!herdr:(state|refresh|select-workspace|set-sync-mode)')/);
   const apiClient = read('src', 'main', 'herdr', 'api-client.js');
   assert.match(apiClient, /READ_ONLY_METHODS = Object\.freeze\(\['ping', 'session\.snapshot', 'workspace\.list', 'workspace\.get'\]\)/);
-  for (const file of sourceFiles.filter((f) => f.includes(path.join('main', 'herdr')) || f.includes(path.join('main', 'ipc')))) {
-    assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /['"]workspace\.(create|focus|rename|close|move)['"]|['"]pane\.(send_text|send_keys|close)['"]|['"]server\.stop['"]/, path.relative(ROOT, file));
+  assert.match(apiClient, /FOCUS_METHOD = 'workspace\.focus'/);
+  // Only api-client.js may name the focus method; nothing may name any other mutating method.
+  const mainFiles = sourceFiles.filter((f) => f.includes(`${path.sep}main${path.sep}`));
+  const namingFocus = mainFiles.filter((f) => /['"]workspace\.focus['"]/.test(fs.readFileSync(f, 'utf8'))).map((f) => path.relative(ROOT, f));
+  assert.deepEqual(namingFocus, [path.join('src', 'main', 'herdr', 'api-client.js')]);
+  for (const file of mainFiles.filter((f) => f.includes(path.join('main', 'herdr')) || f.includes(path.join('main', 'ipc')))) {
+    assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /['"]workspace\.(create|rename|close|move|move_block|report_metadata)['"]|['"]worktree\.[a-z_]+['"]|['"]tab\.(create|close|rename|move)['"]|['"]pane\.(send_text|send_keys|send_input|close|split)['"]|['"]agent\.(prompt|start|send_keys)['"]|['"]server\.[a-z_]+['"]/, path.relative(ROOT, file));
   }
+  // The renderer cannot name a Herdr method either: it only sees the named bridge functions.
+  assert.doesNotMatch(read('src', 'renderer', 'workspace-selector.js') + read('src', 'renderer', 'herdr-panel.js'), /['"]workspace\.focus['"]|ipcRenderer/);
 });
 
 test('IPC: preload channels all exist in main, and main only sends channels the preload listens to', () => {
@@ -247,7 +270,7 @@ test('IPC: an untrusted sender is refused on every channel and triggers no side 
     assert.ok(denied(result), `${channel} -> ${JSON.stringify(result)}`);
   }
   for (const fn of listeners.values()) await fn(stranger, 'text', { cols: 80, rows: 24 });
-  assert.deepEqual(calls, { switchMode: [], footer: [], write: [], resize: [], openExternal: [], start: [], refresh: 0 });
+  assert.deepEqual(calls, { switchMode: [], footer: [], write: [], resize: [], openExternal: [], start: [], refresh: 0, select: [], syncMode: [] });
 });
 
 test('IPC: a trusted sender reaches the handlers and validation still applies', async () => {
@@ -272,9 +295,16 @@ test('IPC: a trusted sender reaches the handlers and validation still applies', 
   assert.deepEqual(calls.resize, [[120, 40]]);
   assert.deepEqual(calls.switchMode, ['chat']);
   assert.deepEqual(calls.footer, [120]);
-  assert.deepEqual(await handlers.get('herdr:state')(ui), { session: 'contextdeck', connection: 'stopped' });
-  assert.deepEqual(await handlers.get('herdr:refresh')(ui), { session: 'contextdeck', connection: 'stopped' });
+  assert.deepEqual(await handlers.get('herdr:state')(ui), { session: 'contextdeck', connection: 'stopped', selection: { mode: 'auto' } });
+  assert.deepEqual(await handlers.get('herdr:refresh')(ui), { session: 'contextdeck', connection: 'stopped', selection: { mode: 'auto' } });
   assert.equal(calls.refresh, 1);
+  // Selection: only plain strings are forwarded; anything else becomes null for main to refuse.
+  await handlers.get('herdr:select-workspace')(ui, { session: 'contextdeck', workspaceId: 'w2', method: 'workspace.close', extra: 1 });
+  await handlers.get('herdr:select-workspace')(ui, { session: { x: 1 }, workspaceId: 7 });
+  await handlers.get('herdr:select-workspace')(ui, undefined);
+  assert.deepEqual(calls.select, [['contextdeck', 'w2'], [null, null], [null, null]], 'no extra fields, no method names, no non-strings reach the controller');
+  assert.deepEqual(await handlers.get('herdr:set-sync-mode')(ui, { mode: 'manual' }), { ok: true, mode: 'manual' });
+  assert.deepEqual(calls.syncMode, ['manual']);
   const git = await handlers.get('git:status')(ui);
   assert.equal(git.configured, false);
   assert.match(git.error, /nao configurado/);

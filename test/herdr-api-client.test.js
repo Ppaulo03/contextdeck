@@ -138,3 +138,43 @@ test('close() destroys open connections and rejects later calls', { skip: !onWin
   await assert.rejects(api.subscribe(['workspace.closed'], {}), (e) => e.code === 'client_closed');
   await server.close();
 });
+
+test('focusWorkspace: the only write; validated id, exact request, confirmed by Herdr, errors surfaced', { skip: !onWindows }, async () => {
+  const server = await startFakeHerdr((method, params) => {
+    if (method !== 'workspace.focus') throw Object.assign(new Error('unexpected ' + method), { code: 'unexpected' });
+    if (params.workspace_id === 'w404') throw Object.assign(new Error('workspace w404 not found'), { code: 'workspace_not_found' });
+    if (params.workspace_id === 'w7') return { type: 'ok' };                                       // wrong shape
+    if (params.workspace_id === 'w8') return { type: 'workspace_info', workspace: { workspace_id: 'w9' } }; // someone else
+    return { type: 'workspace_info', workspace: { workspace_id: params.workspace_id, label: 'x', focused: true } };
+  });
+  const api = createApiClient({ socketPath: server.name, timeoutMs: 300 });
+  try {
+    const info = await api.focusWorkspace('w3');
+    assert.equal(info.workspace_id, 'w3');
+    assert.deepEqual(server.received.map((r) => [r.method, r.params]), [['workspace.focus', { workspace_id: 'w3' }]]);
+    await assert.rejects(api.focusWorkspace('w404'), (e) => e.code === 'workspace_not_found');
+    await assert.rejects(api.focusWorkspace('w7'), (e) => e.code === 'unexpected_response');
+    await assert.rejects(api.focusWorkspace('w8'), (e) => e.code === 'unexpected_response');
+    const sent = server.received.length;
+    for (const bad of ['', '../x', 'w1; calc', 'w 1', 'w'.repeat(80), null, undefined, 5, {}, ['w1']]) {
+      await assert.rejects(api.focusWorkspace(bad), (e) => e.code === 'invalid_workspace_id', JSON.stringify(bad));
+    }
+    assert.equal(server.received.length, sent, 'invalid ids never reach the pipe');
+    await assert.rejects(api.request('workspace.focus', { workspace_id: 'w3' }), (e) => e.code === 'method_not_allowed', 'the generic request() stays read-only');
+    assert.equal(server.received.length, sent);
+    await until(() => api.openConnections() === 0);
+  } finally { api.close(); await server.close(); }
+});
+
+test('focusWorkspace: timeout, unreachable pipe and closed client', { skip: !onWindows }, async () => {
+  const silent = await startFakeHerdr(() => SILENT);
+  const api = createApiClient({ socketPath: silent.name, timeoutMs: 120 });
+  try {
+    await assert.rejects(api.focusWorkspace('w1'), (e) => e.code === 'timeout');
+    api.close();
+    await assert.rejects(api.focusWorkspace('w1'), (e) => e.code === 'client_closed');
+  } finally { api.close(); await silent.close(); }
+  const gone = createApiClient({ socketPath: 'contextdeck-test-no-such-pipe', timeoutMs: 300 });
+  await assert.rejects(gone.focusWorkspace('w1'), (e) => e.code === 'connection_failed');
+  gone.close();
+});

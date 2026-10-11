@@ -6,66 +6,7 @@ const { createWorkspaceObserver } = require('../src/main/herdr/workspace-observe
 const { HerdrApiError } = require('../src/main/herdr/api-client');
 const fx = require('./helpers/herdr-fixtures');
 
-const settle = async () => { for (let i = 0; i < 6; i++) await new Promise((r) => setImmediate(r)); };
-
-// Deterministic world: manual clock + scheduler, fake locator and fake API connections.
-function world({ session = 'contextdeck', workspaces = [[1, 'api'], [2, 'web']], focused = 1 } = {}) {
-  let t = 1_000_000;
-  const timers = [];
-  let timerId = 0;
-  const scheduler = {
-    setTimeout: (fn, ms) => { const timer = { id: ++timerId, at: t + ms, ms, fn }; timers.push(timer); return timer.id; },
-    clearTimeout: (id) => { const i = timers.findIndex((x) => x.id === id); if (i >= 0) timers.splice(i, 1); }
-  };
-  const w = {
-    session, current: { workspaces, focused }, now: () => t,
-    locateResult: { socketPath: 'C:\\h\\herdr.sock', running: true },
-    locateError: null, locateCalls: 0,
-    apis: [], requestLog: [], snapshotError: null, snapshotDelay: null, subscribeError: null,
-    delays: () => timers.map((x) => x.ms),
-    pendingTimers: () => timers.length,
-    async advance(ms) {
-      const target = t + ms;
-      for (;;) {
-        await settle();
-        const due = timers.filter((x) => x.at <= target).sort((a, b) => a.at - b.at)[0];
-        if (!due) break;
-        timers.splice(timers.indexOf(due), 1);
-        t = due.at;
-        due.fn();
-      }
-      t = target;
-      await settle();
-    },
-    setSnapshot(workspacesNext, focusedNext) { w.current = { workspaces: workspacesNext, focused: focusedNext }; },
-    locate: async () => { w.locateCalls += 1; if (w.locateError) throw w.locateError; return w.locateResult; },
-    createApi: ({ socketPath }) => {
-      const api = {
-        socketPath, handlers: null, closed: false, subscribeCalls: 0, requests: 0,
-        async subscribe(types, handlers) {
-          api.subscribeCalls += 1; api.types = types;
-          if (w.subscribeError) throw w.subscribeError;
-          w.requestLog.push('subscribe');
-          api.handlers = handlers;
-          return { close: () => { api.subscriptionClosed = true; } };
-        },
-        async request(method) {
-          api.requests += 1; w.requestLog.push(method);
-          if (w.snapshotError) throw w.snapshotError;
-          if (w.snapshotDelay) await w.snapshotDelay;
-          return fx.snapshotResult(w.current.workspaces, w.current.focused);
-        },
-        close() { api.closed = true; },
-        emit: (event) => api.handlers.onEvent(event),
-        drop: (error = null) => api.handlers.onClose(error)
-      };
-      w.apis.push(api);
-      return api;
-    }
-  };
-  w.observer = createWorkspaceObserver({ session, locate: w.locate, createApi: w.createApi, scheduler, now: w.now });
-  return w;
-}
+const { world, settle } = require('./helpers/observer-world');
 
 test('discovery: subscribes first, then reads the authoritative snapshot, then reports connected', async () => {
   const w = world();
@@ -281,7 +222,7 @@ test('stop() releases everything: connections, subscription, timers, listeners; 
   assert.equal(api.closed, true);
   assert.equal(api.subscriptionClosed, true);
   assert.equal(w.pendingTimers(), 0);
-  assert.deepEqual(w.observer._resources(), { listeners: 0, hasSubscription: false, hasApi: false, timers: 0 });
+  assert.deepEqual(w.observer._resources(), { listeners: 0, hasSubscription: false, hasApi: false, timers: 0, waiters: 0 });
   assert.equal(w.observer.getState().connection, 'stopped');
   const before = JSON.stringify(w.observer.getState());
   api.emit(fx.events.focused(1));   // late event from the dead connection
@@ -306,7 +247,7 @@ test('stopping while a connection attempt is in flight leaves nothing behind', a
   obs.stop();
   release(); await settle();
   assert.equal(w.apis.length, 0);
-  assert.deepEqual(obs._resources(), { listeners: 0, hasSubscription: false, hasApi: false, timers: 0 });
+  assert.deepEqual(obs._resources(), { listeners: 0, hasSubscription: false, hasApi: false, timers: 0, waiters: 0 });
 });
 
 test('onChange can be unsubscribed and protocol versions are reported', async () => {
@@ -321,4 +262,77 @@ test('onChange can be unsubscribed and protocol versions are reported', async ()
   assert.equal(calls, after);
   assert.equal(w.observer.getState().model.compatibility, 'tested');
   w.observer.stop();
+});
+
+test('refresh() resolves only with a read that started AFTER the call, even when a read is already in flight', async () => {
+  const w = world();
+  w.observer.start(); await settle();
+  let release;
+  w.snapshotDelay = new Promise((r) => { release = r; });
+  w.apis[0].emit(fx.events.focused(2));
+  await w.advance(2000);                                 // starts a read that is now stuck in flight (old data)
+  w.snapshotDelay = null;
+  w.setSnapshot([[1, 'api'], [2, 'web'], [3, 'fresh']], 2);   // the world changed after that read began
+  let seenWhenResolved = null;
+  const fresh = w.observer.refresh().then(() => { seenWhenResolved = w.observer.getState().model.workspaces.length; });
+  release();                                             // the stale in-flight read finishes first
+  await fresh;
+  assert.equal(seenWhenResolved, 3, 'at the moment refresh() resolves, the model already holds the fresh snapshot (not the stale in-flight one)');
+  await settle();
+  assert.equal(w.observer._resources().waiters, 0);
+  w.observer.stop();
+});
+
+test('refresh() waiters are rejected (not left hanging) when the connection is lost or the observer stops', async () => {
+  const w = world();
+  w.observer.start(); await settle();
+  let release;
+  w.snapshotDelay = new Promise((r) => { release = r; });
+  const waiting = w.observer.refresh();
+  await settle();
+  w.liveApi().drop(new Error('pipe broke'));
+  await assert.rejects(waiting, (e) => e.code === 'closed');
+  release(); await settle();
+  assert.equal(w.observer._resources().waiters, 0);
+  w.observer.stop();
+  const w2 = world();
+  w2.observer.start(); await settle();
+  w2.snapshotDelay = new Promise(() => {});
+  const stuck = w2.observer.refresh();
+  await settle();
+  w2.observer.stop();
+  await assert.rejects(stuck, (e) => e.code === 'closed');
+});
+
+test('epoch increments when the connection is established and when it is lost', async () => {
+  const w = world();
+  assert.equal(w.observer.getState().epoch, 0);
+  w.observer.start(); await settle();
+  assert.equal(w.observer.getState().epoch, 1);
+  w.liveApi().drop(new Error('x')); await settle();
+  assert.equal(w.observer.getState().epoch, 2);
+  await w.advance(1000);
+  assert.equal(w.observer.getState().epoch, 3);
+  w.observer.stop();
+});
+
+test('focusWorkspace(): needs a live connection; server refusals keep it, transport failures drop it', async () => {
+  const w = world();
+  await assert.rejects(w.observer.focusWorkspace('w2'), (e) => e.code === 'not_connected');
+  w.observer.start(); await settle();
+  assert.equal((await w.observer.focusWorkspace('w2')).workspace_id, 'w2');
+  assert.deepEqual(w.focusCalls, ['w2']);
+  w.focusError = Object.assign(new Error('nope'), { code: 'workspace_not_found' });
+  await assert.rejects(w.observer.focusWorkspace('w2'), (e) => e.code === 'workspace_not_found');
+  assert.equal(w.observer.getState().connection, 'connected', 'a refusal is not a connection failure');
+  for (const code of ['timeout', 'connection_failed', 'closed']) {
+    const x = world();
+    x.observer.start(); await settle();
+    x.focusError = Object.assign(new Error('boom'), { code });
+    await assert.rejects(x.observer.focusWorkspace('w2'), (e) => e.code === code);
+    assert.equal(x.observer.getState().connection, 'disconnected', code);
+    x.observer.stop();
+  }
+  w.observer.stop();
+  await assert.rejects(w.observer.focusWorkspace('w1'), (e) => e.code === 'not_connected');
 });

@@ -8,11 +8,12 @@ const path = require('node:path');
 const { loadUiState, saveUiState, sanitize } = require('../src/main/persistence/ui-state');
 
 const DEFAULT_GIT = { repoDir: undefined, lastZip: undefined, repos: {} };
+const DEFAULT_HERDR = { mode: 'auto', lastWorkspace: null };
 
 test('sanitize rejects unknown modes and absurd bounds', () => {
-  assert.deepEqual(sanitize({ lastMode: 'evil', bounds: { width: 5, height: 5 } }), { lastMode: 'terminal', bounds: undefined, git: DEFAULT_GIT });
-  assert.deepEqual(sanitize({ lastMode: 'chat', bounds: { width: 1200, height: 800 } }), { lastMode: 'chat', bounds: { width: 1200, height: 800 }, git: DEFAULT_GIT });
-  assert.deepEqual(sanitize(null), { lastMode: 'terminal', bounds: undefined, git: DEFAULT_GIT });
+  assert.deepEqual(sanitize({ lastMode: 'evil', bounds: { width: 5, height: 5 } }), { lastMode: 'terminal', bounds: undefined, git: DEFAULT_GIT, herdr: DEFAULT_HERDR });
+  assert.deepEqual(sanitize({ lastMode: 'chat', bounds: { width: 1200, height: 800 } }), { lastMode: 'chat', bounds: { width: 1200, height: 800 }, git: DEFAULT_GIT, herdr: DEFAULT_HERDR });
+  assert.deepEqual(sanitize(null), { lastMode: 'terminal', bounds: undefined, git: DEFAULT_GIT, herdr: DEFAULT_HERDR });
 });
 
 test('sanitize keeps valid git preferences and drops unsafe ones', () => {
@@ -28,7 +29,7 @@ test('state round-trips (including git prefs) and tolerates missing or corrupt f
     const file = path.join(dir, 'sub', 'ui-state.json');
     assert.equal(loadUiState(file).lastMode, 'terminal');
     assert.deepEqual(loadUiState(file).git, DEFAULT_GIT);
-    const state = { lastMode: 'chat', bounds: { width: 1000, height: 700 }, git: { repoDir: 'C:\\r', lastZip: undefined, repos: { 'c:\\r': { baseRef: 'develop', revision: 'abc1234' } } } };
+    const state = { lastMode: 'chat', bounds: { width: 1000, height: 700 }, git: { repoDir: 'C:\\r', lastZip: undefined, repos: { 'c:\\r': { baseRef: 'develop', revision: 'abc1234' } } }, herdr: { mode: 'manual', lastWorkspace: { session: 'contextdeck', workspaceId: 'w4' } } };
     saveUiState(file, state);
     assert.deepEqual(loadUiState(file), state);
     fs.writeFileSync(file, '{not json');
@@ -36,4 +37,23 @@ test('state round-trips (including git prefs) and tolerates missing or corrupt f
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('herdr selector preferences: only valid explicit selections are kept, bound to their session', () => {
+  const good = { mode: 'manual', lastWorkspace: { session: 'project-dock-m00', workspaceId: 'w12' } };
+  assert.deepEqual(sanitize({ herdr: good }).herdr, good);
+  assert.deepEqual(sanitize({ herdr: { mode: 'weird' } }).herdr, DEFAULT_HERDR, 'unknown modes fall back to auto');
+  for (const bad of [
+    { session: 'bad name;x', workspaceId: 'w1' }, { session: 'ok', workspaceId: '../x' }, { session: 'ok', workspaceId: 'w'.repeat(80) },
+    { session: 5, workspaceId: 'w1' }, { session: 'ok' }, 'w1', null
+  ]) assert.equal(sanitize({ herdr: { lastWorkspace: bad } }).herdr.lastWorkspace, null, JSON.stringify(bad));
+  assert.deepEqual(sanitize({ herdr: 'junk' }).herdr, DEFAULT_HERDR);
+});
+
+test('files written before the workspace selector existed (M00-I3 / R00 shape) still load with defaults', () => {
+  const legacy = { lastMode: 'chat', bounds: { width: 1241, height: 820 }, git: { repoDir: 'C:\\Users\\u\\repo', repos: { 'c:\\users\\u\\repo': { baseRef: 'refs/heads/main', revision: 'HEAD' } } } };
+  const loaded = sanitize(legacy);
+  assert.deepEqual(loaded.herdr, DEFAULT_HERDR);
+  assert.equal(loaded.lastMode, 'chat');
+  assert.equal(loaded.git.repos['c:\\users\\u\\repo'].baseRef, 'refs/heads/main');
 });

@@ -73,6 +73,24 @@ Bindings live in `%APPDATA%\Project Dock M00\chat-bindings.json` (own file; `CON
 - The WHATWG `URL` turns a backslash in the path of an https URL into `/`, so `https://chatgpt.com/c\<uuid>` is the same address as `/c/<uuid>`; the identity parser rebuilds the URL from parsed parts, so nothing raw is stored.
 - A feature that needs the page address must read it in main (`win.getChatUrl()`), never accept it from the renderer or the remote page.
 
+### Multi-view navigation (M01-I3B-1)
+
+Unit tests use mock views (`test/helpers/views-world.js`: views whose events and load completions the test controls, a host that records attach/detach order, the real bindings service on a temporary directory). What mocks cannot prove runs in real Electron:
+
+```powershell
+npm run build
+npx electron test/electron/multiview-harness.js    # ~2-3 min, needs network (logged-out chatgpt.com), throwaway profile
+```
+
+It drives the real window controller, chat views, manager, navigator and IPC with a fake Herdr (no PTY client, no Herdr session) and writes `multiview-report.json` (set `HARNESS_OUT` to choose the folder). Never run it against the real profile and never type into the ChatGPT pages; it injects stand-in DOM (a textarea, counters) into the throwaway pages instead. Learned while building it:
+
+- A *bound* conversation address (`/c/<uuid>`) does not exist for a logged-out profile: the page redirects to `/`, so the view reports relation `left`. Use `history.pushState(…, '/c/<uuid>')` in the page to make it "be" that conversation (it fires `did-navigate-in-page`, which is what the SPA does).
+- Hiding a view is `removeChildView` (detach); the harness compares it with `setVisible(false)` on an attached view and with a visible one (timers, `requestAnimationFrame`, `MessageChannel`, draft, `performance.timeOrigin`). Do not assume the three behave alike; the numbers are in [validation/m01-i3b-1.md](validation/m01-i3b-1.md).
+- `app.getAppMetrics()` gives per-process working set and CPU; `capturePage()` of a view in an occluded window fails with `UnknownVizError`: screenshots are best effort.
+- `webContents.on('destroyed')` is not relied on for correctness (the manager closes views itself); events from a closed view are dropped by id.
+- The manager's tests assert *events never rewrite an expectation*: a transient redirect (`/c/<id>` → `/auth/…` → `/c/<id>`, seen in the I3P run as a brief `other`) must not detach a view from its conversation.
+- After editing the mutation-sensitive code (`navigator.js` scope/confirmation checks, `manager.js` attach order and destroy rules) re-run the mutation checks listed in the validation document.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

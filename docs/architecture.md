@@ -17,7 +17,7 @@ ContextDeck is an Electron app (main process in CommonJS, local UI bundled with 
 |---|---|---|
 | Local UI | `dist/renderer` (built from `src/renderer`) via `file://`, strict CSP | `contextIsolation`, sandbox, no Node; talks to main only through the `window.dock` bridge (`src/preload`). |
 | Overlay (workspace menu, chat bindings panel) | `dist/renderer/overlay.html`, local, transparent view above the ChatGPT view only while open | Same isolation as the UI window; its own preload exposes the menu channels (`state`, `choose`, `close`), the five `chats:*` channels and the push listeners. |
-| ChatGPT page + auth popups | `https://chatgpt.com` (HTTPS only) | `contextIsolation`, sandbox, no Node, **no preload**, persistent partition. Cannot reach any IPC channel. Only `clipboard-write` is granted to `chatgpt.com`; every other permission is denied. |
+| ChatGPT pages (one per loaded conversation) + auth popups | `https://chatgpt.com` (HTTPS only) | `contextIsolation`, sandbox, no Node, **no preload**, the one persistent partition (shared by every view). Cannot reach any IPC channel. Only `clipboard-write` is granted to `chatgpt.com`; every other permission is denied. |
 | Herdr TUI | Bytes from a PTY, rendered by xterm.js | Text only; input is forwarded as bytes to the PTY. |
 
 ## Source layout
@@ -30,6 +30,9 @@ src/main/
   chat-view.js        ChatGPT WebContentsView: partition, permissions, navigation and popup policy.
   chat/               Experimental, off by default (CONTEXTDECK_CHAT_OBSERVER=1): passive state model/observer of the ChatGPT page (plain Node). Diagnostic only; see validation/m01-i3p.md.
                       Always available and pure: conversation-identity.js (URL → durable conversation identity) and runtime-contract.js (transient ChatRuntime contract, no consumer yet).
+  chat-views/         manager.js (the ChatGPT views: lazy creation, one attached, destroyed only at shutdown), navigator.js (which view for which workspace;
+                      reconcile, explicit selection, temporary conversations, runtime provider). Plain Node, injected view factory and host.
+  window-metrics.js   Vertical layout shared by the window and the stylesheet (top bar + conversation strip).
   chat-bindings/      model.js (schema, validation, quarantine, migrations), store.js (chat-bindings.json: atomic write, corruption policy),
                       service.js (bind/update/unbind/reassign/list/orphans/indicator; the safety rules). Plain Node, no Electron.
   web-preferences.js  The only place that defines webPreferences (isolation for every web contents).
@@ -41,14 +44,14 @@ src/main/
   git/                core.js (safe exec, repo/ref validation, diff/show/archive), refs.js (discovery and
                       selection), context.js (active repo + per-repo prefs), actions.js (copy/zip/delete),
                       artifacts.js (ZIP naming and guarded deletion).
-  ipc/                index.js + dock.js, terminal.js, clipboard.js, git.js, herdr.js, overlay.js, chats.js (channel registration by domain; chats.js also holds the state pusher).
+  ipc/                index.js + dock.js, terminal.js, clipboard.js, git.js, herdr.js, overlay.js, chats.js, chatnav.js (channel registration by domain; chats.js/chatnav.js also hold the state pushers).
   persistence/        settings.js (config), ui-state.js (preferences), identity.js (persistent identifiers).
   platform/           executable.js (PATH/PATHEXT lookup), file-clipboard.js (CF_HDROP via PowerShell STA).
 src/preload/index.js  contextBridge API of the UI window (`window.dock`); overlay.js: the smaller bridge of the menu overlay.
 src/renderer/         index.html, app.js (entry), components/ (header, terminal-view, workspace-selector, chat-link, git-panel,
-                      herdr-panel, herdr-store, feedback, dom), overlay/ (overlay.js menu, chats-panel.js bindings panel), styles/ (tokens,
+                      herdr-panel, herdr-store, chat-strip, feedback, dom), overlay/ (overlay.js menu, chats-panel.js bindings panel), styles/ (tokens,
                       base, layout, components). See design-system.md.
-src/shared/           Pure view-models used by the UI and the overlay (workspace-view.js, chat-bindings-view.js).
+src/shared/           Pure view-models used by the UI and the overlay (workspace-view.js, chat-bindings-view.js, chat-nav-view.js).
 scripts/build.js      esbuild: app.bundle, overlay.bundle and styles.css -> dist/renderer.
 test/                 node:test suites (no real repositories; temp repos only).
 ```
@@ -71,16 +74,17 @@ Every handler first checks `event.sender` is the local UI window; strangers get 
 | `herdr:state`, `herdr:refresh` | invoke | Observer + selection state for the selector and diagnostics panel; refresh re-reads. Read-only. |
 | `herdr:select-workspace`, `herdr:set-sync-mode` | invoke | The user's explicit workspace choice (`workspace.focus`, validated again in main) and the Auto/Manual preference. No other Herdr write exists. |
 | `overlay:open-workspace-menu`, `overlay:open-chats-panel` | invoke (UI window only) | Asks main to show the workspace menu / the chat bindings panel in the overlay; the anchor rectangle is validated (four finite numbers within bounds). |
+| `chatnav:state`, `chatnav:select`, `chatnav:select-temporary`, `chatnav:new`, `chatnav:open-unscoped` | invoke (**UI window only**) | Conversation navigation (see *Multi-view conversation navigation*). Ids only: main opens the stored binding address; stale or unverified requests are refused. Never moves Herdr's focus. |
 | `chats:state` | invoke (UI window **or** overlay) | Compact binding state: store status, Herdr connection, selected workspace (+origin), workspaces, all bindings with their status, and the indicator state of the page currently loaded (computed by main from the view's URL). |
 | `chats:bind`, `chats:update`, `chats:unbind`, `chats:reassign` | invoke (UI window or overlay) | The binding operations. Arguments are picked field by field in main; "bind current" reads the address from the ChatGPT view itself. Rules in *Chat bindings* below. No path, command or Herdr method can be passed. |
 | `overlay:state`, `overlay:choose`, `overlay:close` | invoke (**overlay only**) | The menu reads state, chooses a workspace (same validated selection path) and closes. Each handler refuses the other sender. |
-| main → renderer | events | `dock:mode`, `dock:focus-terminal`, `pty:data`, `pty:exit`, `chat:status`, `chat:host`, `chat:error`, `herdr:state` (throttled push), `chats:state` (throttled, only when the content changed), `overlay:closed` (carries which overlay mode closed), and to the overlay `overlay:open`, `overlay:state-push`, `overlay:chats-push`. |
+| main → renderer | events | `dock:mode`, `dock:focus-terminal`, `pty:data`, `pty:exit`, `chat:status`, `chat:host`, `chat:error`, `herdr:state` (throttled push), `chats:state` and `chatnav:state` (throttled, only when the content changed), `overlay:closed` (carries which overlay mode closed), and to the overlay `overlay:open`, `overlay:state-push`, `overlay:chats-push`. |
 
 `test/structure.test.js` pins this list: the registered channels, the preload's channels and main's emitted events must match exactly.
 
 ## Flows
 
-**View switching.** `Ctrl+Tab` (or a tab click) → `window.js#switchMode`. The chat view is attached to / detached from the window's `contentView`; nothing is reloaded or restarted. Focus goes to the chat contents or back to the renderer (`dock:focus-terminal`). Only a fresh physical `keyDown` toggles: auto-repeat is swallowed and `keyUp` ignored, on both web contents. The footer reports its own height so the chat view's bounds always exclude it (a native view would hide any DOM overlay, so pickers open *inside* the footer).
+**View switching.** `Ctrl+Tab` (or a tab click) → `window.js#switchMode`. The visible ChatGPT view (chosen by the navigator, see *Multi-view conversation navigation*) is attached to / detached from the window's `contentView`; nothing is reloaded or restarted. Focus goes to the chat contents or back to the renderer (`dock:focus-terminal`). Only a fresh physical `keyDown` toggles: auto-repeat is swallowed and `keyUp` ignored, on both web contents. The footer reports its own height and `window-metrics.js` gives the top offset (top bar + conversation strip), so the chat view's bounds always exclude them (a native view would hide any DOM overlay, so pickers open *inside* the footer).
 
 **Terminal.** xterm.js → `pty:write` → node-pty → `herdr.exe --session <name>`; output returns by `pty:data`. Closing or reconnecting kills only the client; Herdr's server and agents survive. `HERDR_*` variables are removed from the PTY environment (otherwise Herdr refuses to nest and could attach to the outer server).
 
@@ -154,6 +158,33 @@ ChatGPT view ──getURL() (main reads it)──► chat-bindings/service ◄�
 
 **Future interface with the runtime (M01-I3B).** A runtime provider exposes `getRuntime(bindingId)` and `subscribe(listener)`; a runtime is *looked up by binding id* and never embedded in or written to a binding. The binding exposes what a runtime manager needs to start from: `bindingId`, `url`, `conversationKey`, `workspaceIdentity`, `role`. Last-selected-conversation per workspace, runtime-per-binding, indicators and several views are I3B/I3C and are deliberately absent.
 
+## Multi-view conversation navigation (M01-I3B-1)
+
+Decision record: [0003](decisions/0003-multi-view-navigation.md). Results, measurements and manual script: [validation/m01-i3b-1.md](validation/m01-i3b-1.md).
+
+```text
+selection (workspace, origin, pending) ──┐
+bindings (I3A: status per binding) ──────┼──► ChatNavigator.reconcile() ──► ChatViewManager ──host.attach/detach──► window (one view attached)
+prefs.chat.last[workspace] (ui-state) ───┘        ▲  explicit actions: select / new / temporary   │ createView() (chat-view.js, one partition)
+                                                  │  (chatnav:* from the UI window, validated)    └ events: navigation-started, navigated, loaded, load-failed, process-gone, destroyed
+```
+
+**Manager** ([chat-views/manager.js](../src/main/chat-views/manager.js)). Entries `{ id, handle, scope, expectedKey, identity, epoch, page, loadSeq, pristine }`. `create()` loads an address once; `show(id)`/`hide()` change the logical visible view; `setAttached()` is the chat tab appearing/disappearing (the logical view is kept); the only attached view is detached *before* the next one is attached. `findByKey(key)` finds the view that **shows** a conversation (identity), preferring the one opened for it; `duplicates()` reports two views on one conversation (both are kept). Page events carry no authority: a `loaded` for an older request, an aborted navigation (`ERR_ABORTED`) or anything after `destroyed` is ignored. `destroyAll()` is the only place a view is closed (window `closed`). No pool, eviction, timer or suspension exists (test-enforced).
+
+**Relation** (derived from identity, never stored): `match`, `loading`, `diverged` (a different durable conversation: the user navigated inside ChatGPT), `left` (a page without a durable id), `temporary`, `acquired` (a temporary view that received an address; *not* bound).
+
+**Navigator** ([chat-views/navigator.js](../src/main/chat-views/navigator.js)). `reconcile()` runs on selection, observer, binding and view changes and on tab changes; it is idempotent and synchronous. It (1) syncs views with bindings (a view whose binding vanished becomes temporary; one whose binding moved follows it only while it still shows that conversation; a temporary view showing a conversation bound in its own scope becomes that binding's view), (2) keeps the visible view if it is scoped to the selected workspace, otherwise (3) detaches it and chooses the explicit in-session pick, else the persisted last conversation if its binding is `linked`, creating a view only when the chat tab is showing and no switch is pending, else (4) shows the empty state. With no workspace selected it shows the unscoped M00 page. User actions (`selectBinding`, `newConversation`, `selectTemporary`, `openUnscoped`) name the workspace they were rendered for and fail with `context_changed` / `selection_pending` / `confirmation_required` / `not_in_workspace` without side effects.
+
+**State pushed to the UI** (`chatnav:state`): workspace, `tabs` (bindings of that workspace: label, role, status, hint for homonyms, loaded/loading/failed, active, needsConfirm), `temporaries` (views opened under it: label from identity, warning), `empty` (`no-workspace | no-conversations | select-conversation | not-verified`), `duplicates`. A tab is *active* when the visible view **shows** that conversation, so a page that navigated elsewhere never keeps highlighting its old tab.
+
+**Window.** `window.js` provides `host` (add/remove the child view, reset bounds, raise an open overlay) and lays the attached view out below the top bar and the conversation strip (`window-metrics.js` pins 52 + 34 px to `--topbar-h` / `--chatbar-h`). Terminal tab: the navigator is told the mode first, nothing is created, the view is detached. Chat tab: the right view is chosen *before* it is attached.
+
+**UI.** `chat-strip.js` renders the strip (`role=tablist`, roving tabindex, arrows/Home/End; spinner inside a tab while loading; the first click on an unverified conversation arms it, the second opens it), the `+` button, **Gerenciar** (opens the I3A panel) and the empty state that replaces the chat when no view is attached.
+
+**IPC (UI window only).** `chatnav:state`, `chatnav:select`, `chatnav:select-temporary`, `chatnav:new`, `chatnav:open-unscoped`; push `chatnav:state`. They take ids, never addresses; main opens the stored URL. The overlay and the remote page cannot call them.
+
+**Persistence.** `ui-state.json` → `chat: { last: { "<session>/<workspaceId>": "<bindingId>" } }` (explicit choices only; ids validated; ≤100; older files load with `{}`).
+
 ## Persistent identifiers (do not change casually)
 
 The product was renamed from Project Dock M00 to ContextDeck. These identifiers locate user data and **keep their M00 values**; they are defined once in `src/main/persistence/identity.js` and locked by tests:
@@ -169,7 +200,7 @@ The product was renamed from Project Dock M00 to ContextDeck. These identifiers 
 
 Renaming any of them would log the user out, drop preferences or orphan ZIPs. A future move to a ContextDeck-named folder requires an idempotent migration (copy once, verify, leave the old folder untouched, never delete user data) and its own decision record. `CONTEXTDECK_USER_DATA` overrides the folder for tests/harnesses only.
 
-`ui-state.json` is forward/backward tolerant: files from M00-I1, I2 (global refs) and I3 (per-repo refs) load; unknown or invalid values are dropped, never thrown.
+`ui-state.json` also holds `chat.last` (last explicit conversation per workspace, ids only) since M01-I3B-1. It is forward/backward tolerant: files from M00-I1, I2 (global refs) and I3 (per-repo refs) load; unknown or invalid values are dropped, never thrown.
 
 ## Build and configuration
 

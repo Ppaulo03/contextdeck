@@ -19,6 +19,7 @@
       <div class="view-actions">
         <div class="actions terminal-actions">
           <button id="reconnect-terminal" class="action" type="button">Reconectar Herdr</button>
+          <button id="herdr-diag" class="action" type="button" aria-expanded="false" aria-controls="herdr-panel" title="Diagn&oacute;stico (somente leitura) dos workspaces do Herdr">Workspaces</button>
         </div>
         <div class="actions chat-actions">
           <button id="chat-home" class="action" type="button">In&iacute;cio GPT</button>
@@ -31,6 +32,10 @@
     </header>
     <main class="content">
       <div id="terminal-root" aria-label="Terminal Herdr"></div>
+      <section id="herdr-panel" class="diag-panel" tabindex="-1" aria-label="Diagn&oacute;stico dos workspaces do Herdr" hidden>
+        <header class="diag-title"><strong>Workspaces do Herdr</strong><span class="diag-ro">somente leitura</span><span class="spacer"></span><button id="herdr-panel-refresh" class="action" type="button">Atualizar</button><button id="herdr-panel-close" class="action" type="button" aria-label="Fechar">&times;</button></header>
+        <div id="herdr-panel-body"></div>
+      </section>
     </main>
     <footer class="footer" id="footer">
       <div class="git-row">

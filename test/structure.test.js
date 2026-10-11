@@ -75,6 +75,19 @@ test('generated and local files are git-ignored; no build output or secrets are 
   assert.ok(!sourceFiles.some((f) => /bundle/.test(f)), 'no bundles inside src/');
 });
 
+test('every element id the renderer scripts look up exists in index.html (a missing id would break the whole UI at load)', () => {
+  const html = read('src', 'renderer', 'index.html');
+  const htmlIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+  const used = new Set();
+  for (const file of sourceFiles.filter((f) => f.includes(`${path.sep}renderer${path.sep}`))) {
+    const text = fs.readFileSync(file, 'utf8');
+    for (const [, id] of text.matchAll(/getElementById\('([^']+)'\)/g)) used.add(id);
+    for (const [, id] of text.matchAll(/\$\('([^']+)'\)/g)) used.add(id); // git-panel.js shorthand
+  }
+  assert.ok(used.size > 20, 'sanity: the scan found the ids');
+  assert.deepEqual([...used].filter((id) => !htmlIds.has(id)), []);
+});
+
 test('required documentation exists and every relative markdown link resolves', () => {
   const required = ['README.md', 'AGENTS.md', 'config.example.json', 'docs/architecture.md', 'docs/roadmap.md', 'docs/development.md', 'docs/validation/m00.md', 'docs/decisions/0001-herdr-workspaces.md'];
   for (const f of required) assert.ok(fs.existsSync(path.join(ROOT, f)), f);

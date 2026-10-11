@@ -1,4 +1,7 @@
 node_modules/
-renderer/terminal.bundle.js
-renderer/terminal.bundle.css
+dist/
 *.log
+
+# Local, machine-specific files (copy config.example.json to config.json)
+config.json
+AGENTS.local.md

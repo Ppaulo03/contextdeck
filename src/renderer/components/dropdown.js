@@ -68,15 +68,38 @@ export function createDropdown({ key, label, items, value, onChange, document: d
   // (the fake DOM of the tests has no contains(): walk up the parents instead)
   function isInside(node) { for (let n = node; n; n = n.parent || n.parentNode) if (n === root) return true; return false; }
 
+  // The list is placed with `position: fixed` from the trigger's rectangle: it floats above the panel instead of living
+  // inside its scroll area (an absolute child of a scrolling panel would extend it and add a scrollbar). Below the trigger
+  // when there is room, otherwise above; its height is limited to the room available.
+  function place() {
+    const rect = trigger.getBoundingClientRect();
+    const box = { left: rect.left, top: rect.top, width: rect.width, bottom: rect.bottom !== undefined ? rect.bottom : rect.top + rect.height };
+    const viewport = typeof globalThis.innerHeight === 'number' ? globalThis.innerHeight : 800;
+    const gap = 4;
+    const below = viewport - box.bottom - 12;
+    const above = box.top - 12;
+    const wanted = Math.min(220, items.length * 28 + 16);
+    const up = below < wanted && above > below;
+    const room = Math.max(96, Math.min(220, (up ? above : below) - 16));
+    popup.style.left = `${Math.round(box.left)}px`;
+    popup.style.minWidth = `${Math.round(box.width)}px`;
+    if (up) { popup.style.top = 'auto'; popup.style.bottom = `${Math.round(viewport - box.top + gap)}px`; } else { popup.style.bottom = 'auto'; popup.style.top = `${Math.round(box.bottom + gap)}px`; }
+    list.style.maxHeight = `${room}px`;
+  }
+  const onMove = () => { if (open) close(false); };   // the panel scrolled or the window changed: the placement is stale
+
   function openList() {
     if (open || !items.length) return;
     open = true;
+    place();
     popup.hidden = false;
     trigger.setAttribute('aria-expanded', 'true');
     active = Math.max(0, items.findIndex((i) => i.value === current));
     keyboard = false;
     paint();
     doc.addEventListener('mousedown', onOutside);
+    doc.addEventListener('scroll', onMove, true);
+    globalThis.addEventListener?.('resize', onMove);
   }
 
   function close(refocus) {
@@ -86,6 +109,8 @@ export function createDropdown({ key, label, items, value, onChange, document: d
     active = -1;
     trigger.setAttribute('aria-expanded', 'false');
     doc.removeEventListener('mousedown', onOutside);
+    doc.removeEventListener('scroll', onMove, true);
+    globalThis.removeEventListener?.('resize', onMove);
     paint();
     if (refocus) trigger.focus();
   }

@@ -45,9 +45,10 @@
 }
 .dd { position: relative; display: block; flex: 1; min-width: 120px; }
 .dd .dd-trigger { width: 100%; }
-.dd-popup { position: absolute; top: calc(100% + var(--space-2)); left: 0; z-index: var(--z-menu); min-width: 100%; max-width: 360px; }
+/* Placed by dropdown.js from the trigger's rectangle (fixed: it floats above its panel, never inside its scroll area). */
+.dd-popup { position: fixed; z-index: var(--z-menu); max-width: 360px; }
 .dd-popup[hidden] { display: none; }
-.dd-popup .menu { max-height: min(220px, 40vh); outline: none; }
+.dd-popup .menu { max-height: 220px; outline: none; }
 
 /* Select-like trigger. Its width is fixed per breakpoint so label changes never move the top bar. */
 .select {

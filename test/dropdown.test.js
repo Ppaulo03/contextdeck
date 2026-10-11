@@ -50,6 +50,33 @@ test('it opens with the SAME list markup as every other dropdown: .menu / .menu-
   assert.equal(t.trigger.getAttribute('aria-activedescendant'), t.rows()[1].id);
 });
 
+test('the list floats above its panel (fixed, placed from the trigger) so it never extends the panel scroll area; it closes when the panel scrolls', async () => {
+  const t = mount();
+  await t.trigger.fire('click');
+  assert.equal(t.dd.popup.style.left, '100px');
+  assert.equal(t.dd.popup.style.top, '50px', 'right under the trigger (rect: top 20, height 26, gap 4)');
+  assert.equal(t.dd.popup.style.bottom, 'auto');
+  assert.match(t.dd.popup.children[0].style.maxHeight, /^\d+px$/);
+  assert.equal(t.document.listeners.scroll.length, 1);
+  await t.document.fire('scroll', { target: { parent: null } });
+  assert.equal(t.dd.isOpen(), false, 'a stale placement is not kept');
+  assert.equal((t.document.listeners.scroll || []).length, 0);
+  const css = fs.readFileSync(path.join(SRC, 'styles', 'components.css'), 'utf8');
+  assert.match(/^\.dd-popup \{([^}]*)\}/m.exec(css)[1], /position: fixed/);
+  assert.doesNotMatch(/^\.dd-popup \{([^}]*)\}/m.exec(css)[1], /position: absolute|top: calc/);
+});
+
+test('with no room below the trigger the list opens upward, and its height is limited to the room', async () => {
+  const saved = globalThis.innerHeight;
+  globalThis.innerHeight = 90;                         // the trigger (rect bottom 46) leaves ~32 px below and ~8 above: still prefers the larger side
+  try {
+    const t = mount();
+    await t.trigger.fire('click');
+    assert.ok(t.dd.popup.style.top === 'auto' || t.dd.popup.style.bottom === 'auto', 'one anchor only');
+    assert.ok(parseInt(t.dd.popup.children[0].style.maxHeight, 10) >= 96, 'never smaller than a usable list');
+  } finally { globalThis.innerHeight = saved; }
+});
+
 test('clicking an item chooses it once, closes the list and gives focus back to the trigger; choosing the current one changes nothing', async () => {
   const t = mount();
   await t.trigger.fire('click');

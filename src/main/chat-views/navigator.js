@@ -231,7 +231,20 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     return true;
   }
 
-  // "Voltar" on a conflict: the page keeps its view but moves to the workspace the conversation belongs to; what the user was
+  // "Voltar" on a conflict. If the page itself came from another conversation of this workspace (the user clicked the sidebar
+  // inside it), going back in ITS history returns to that conversation: it is still the same page and tab. Otherwise the page
+  // moves to its own workspace and the last active page of this one comes back.
+  function backFromConflict(viewId) {
+    const v = typeof viewId === 'string' ? manager.get(viewId) : null;
+    if (!v || v.page === 'destroyed') return fail('view_not_found', 'Conversa nao encontrada.');
+    const hasPrevious = manager.list().some((x) => x.scope === v.scope && x.id !== v.id && x.lastShownAt > 0);
+    // 1. the page was a conversation's tab and navigated away (expectedKey): its own history leads back to that conversation;
+    // 2. otherwise the last other active page of this workspace; 3. a page with nothing else to return to goes back in history.
+    if ((v.expectedKey || !hasPrevious) && manager.canGoBack(v.id) && manager.goBack(v.id)) return { ok: true, viewId: v.id, how: 'history' };
+    return moveToBinding(viewId);
+  }
+
+  // Variant kept for the case without history: "Voltar" on a conflict: the page keeps its view but moves to the workspace the conversation belongs to; what the user was
   // doing in this workspace comes back. Nothing is rebound.
   function moveToBinding(viewId) {
     const v = typeof viewId === 'string' ? manager.get(viewId) : null;
@@ -547,7 +560,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
 
   return {
     reconcile, getWorkspaceActivity, getGlobalActivity, resolveActivityTarget, setMode, selectBinding, newConversation, selectTemporary, openUnscoped, getState,
-    getUnbound, openUnbound, releaseConversation, contextViews, confirmAdopted, moveToBinding,
+    getUnbound, openUnbound, releaseConversation, contextViews, confirmAdopted, moveToBinding, backFromConflict,
     setNoteProvider: (fn) => { notes = typeof fn === 'function' ? fn : null; },
     // Read-only view of one page for the creation service: scope, identity (from the URL only), epoch and lifecycle.
     viewInfo: (viewId) => (typeof viewId === 'string' ? manager.get(viewId) : null),

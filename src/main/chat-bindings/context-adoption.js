@@ -115,7 +115,7 @@ function createContextAdoption({ session, navigator, bindings, selection }) {
     return { ok: true };
   }
 
-  const back = ({ viewId } = {}) => navigator.moveToBinding(viewId);
+  const back = ({ viewId } = {}) => navigator.backFromConflict(viewId);
   // The user removed the binding of this conversation: leave it unbound while a page shows it.
   const decline = (key) => { if (typeof key === 'string') declined.add(key); };
 

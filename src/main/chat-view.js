@@ -101,6 +101,9 @@ function createChatView({ onBeforeInput, onEvent, status, onNavigated }) {
     goHome: () => { if (alive()) contents.loadURL(CHAT_HOME).catch((error) => status?.('chat:error', error.message)); },
     reload: () => { if (alive()) contents.reload(); },
     focus: () => { if (alive()) contents.focus(); },
+    // Browser history of this page (the user's own navigation inside it); used by the conflict modal's "Voltar".
+    canGoBack: () => alive() && contents.navigationHistory.canGoBack(),
+    goBack: () => { if (alive() && contents.navigationHistory.canGoBack()) { contents.navigationHistory.goBack(); return true; } return false; },
     isDestroyed: () => !alive(),
     destroy: () => { if (alive()) contents.close(); }
   };

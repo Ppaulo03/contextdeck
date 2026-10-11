@@ -35,9 +35,13 @@ function createFakeViews() {
       if (contents.probeGate) await contents.probeGate;
       return reply;
     };
+    const history = [];
     const handle = {
       id, initialUrl: url, onEvent, contents,
       loads: [],
+      history,
+      canGoBack: () => !gone && history.length > 1,
+      goBack: () => { if (gone || history.length < 2) return false; history.pop(); current = history[history.length - 1]; contents.url = current; onEvent('navigated', { url: current }); return true; },
       getUrl: () => current,
       loadURL: (u) => {
         handle.loads.push(u); log.push(['load', id, u]);
@@ -49,14 +53,14 @@ function createFakeViews() {
       destroy() { gone = true; log.push(['destroy', id]); contents.emit('destroyed'); },
       // test controls
       navigate(u, { inPage = true } = {}) {
-        current = u; contents.url = u;
+        current = u; contents.url = u; history.push(u);
         onEvent('navigated', { url: u });
         if (inPage) contents.emit('did-navigate-in-page', {}, u, true); else contents.emit('did-navigate', {}, u);
       },
       finishLoad(u) {
         const p = pending.shift();
         if (!p) return;
-        current = u || p.url; contents.url = current;
+        current = u || p.url; contents.url = current; history.push(current);
         onEvent('navigated', { url: current });
         contents.emit('did-navigate', {}, current);
         contents.loading = false; contents.emit('did-stop-loading');

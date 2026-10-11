@@ -261,6 +261,9 @@ function createChatViewManager({ createView, host, now = () => Date.now() }) {
     findByKey, findLoadingFor, findNeverReached, duplicates, runtimeOf, destroyAll,
     get: (id) => (entries.has(id) ? snapshot(entries.get(id)) : null),
     list: () => [...entries.values()].filter(alive).map(snapshot),
+    // History of one page (explicit user action only; selecting a view never navigates it).
+    canGoBack: (id) => { const e = entries.get(id); return Boolean(alive(e) && e.handle.canGoBack && e.handle.canGoBack()); },
+    goBack: (id) => { const e = entries.get(id); return Boolean(alive(e) && e.handle.goBack && e.handle.goBack()); },
     handleOf: (id) => (entries.has(id) ? entries.get(id).handle : null),
     getVisibleId: () => visibleId,
     getAttachedId: () => attachedId,

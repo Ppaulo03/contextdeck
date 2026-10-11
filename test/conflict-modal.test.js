@@ -164,6 +164,29 @@ test('Voltar returns to the page that was active before the conflicting one (not
   } finally { w.cleanup0(); }
 });
 
+test('Voltar from a tab that navigated away (sidebar click inside the same page) returns THAT page to its conversation', () => {
+  const w = createStatusWorld({ workspaces: [ws('w1', 'api'), ws('w2', 'app')] });
+  try {
+    w.select('w1'); const [c1] = bindMany(w, [1]);
+    w.select('w2'); const [d] = bindMany(w, [4]);
+    w.select('w1');
+    w.navigator.setMode('chat');
+    const adoption = createContextAdoption({ session: w.session, navigator: w.navigator, bindings: w.bindings, selection: w.selection });
+    const id = w.navigator.selectBinding({ bindingId: c1.bindingId, workspaceKey: WK('w1') }).viewId;
+    const view = w.fake.views.find((v) => v.id === id);
+    view.finishLoad(c1.url);
+    view.navigate(d.url);                                           // the user clicked a chat of w2 in the sidebar
+    assert.equal(w.navigator.getState().conflict.viewId, id);
+    assert.equal(adoption.back({ viewId: id }).how, 'history');
+    assert.equal(w.navigator.getState().conflict, null);
+    assert.equal(w.manager.get(id).identity.key, c1.conversationKey, 'the same page shows the conversation it had');
+    assert.equal(w.manager.getVisibleId(), id, 'and it is still on screen: not the empty state');
+    assert.equal(w.manager.get(id).scope, WK('w1'));
+    assert.equal(w.fake.views.length, 1);
+    assert.equal(w.bindings.lookup(d.url).workspaceIdentity.workspaceId, 'w2', 'the other binding is untouched');
+  } finally { w.cleanup0(); }
+});
+
 test('the strip does not duplicate the modal: only a pending association is offered there', () => {
   const strip = fs.readFileSync('src/renderer/components/chat-strip.js', 'utf8');
   assert.match(strip, /model\.banner\.kind === 'pending'/);

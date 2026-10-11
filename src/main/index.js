@@ -97,7 +97,7 @@ async function bootstrap() {
   const unbound = createUnboundActions({ navigator: { openUnbound: (a) => navigatorOf().openUnbound(a) }, showChatTab: () => win.switchMode('chat'), getMode: () => win.getMode() });
   // Workspace-first association: a page opened in a workspace's context gets that workspace's binding (context-adoption.js).
   const nav = () => navigatorOf();
-  const adoption = createContextAdoption({ session: settings.herdrSession, bindings, selection, projects, navigator: { urlOf: (v) => nav().urlOf(v), viewInfo: (v) => nav().viewInfo(v), contextViews: () => nav().contextViews(), confirmAdopted: (v) => nav().confirmAdopted(v), backFromConflict: (v) => nav().backFromConflict(v), pagesShowing: (k) => nav().pagesShowing(k), focusExisting: (a, b) => nav().focusExisting(a, b), releasePage: (v) => nav().releasePage(v), canGoBack: (v) => nav().canGoBack(v), goBackPage: (v) => nav().goBackPage(v), reconcile: () => nav().reconcile() } });
+  const adoption = createContextAdoption({ session: settings.herdrSession, bindings, selection, projects, navigator: { urlOf: (v) => nav().urlOf(v), viewInfo: (v) => nav().viewInfo(v), contextViews: () => nav().contextViews(), confirmAdopted: (v) => nav().confirmAdopted(v), backFromConflict: (v) => nav().backFromConflict(v), pagesShowing: (k) => nav().pagesShowing(k), isBusy: (v) => nav().isBusy(v), focusExisting: (a, b) => nav().focusExisting(a, b), releasePage: (v) => nav().releasePage(v), canGoBack: (v) => nav().canGoBack(v), goBackPage: (v) => nav().goBackPage(v), reconcile: () => nav().reconcile() } });
   // The user's decision on a page (retry its association, or resolve a conflict).
   const resolveChat = async ({ viewId, action }) => {
     if (action === 'retry') return adoption.retry({ viewId });
@@ -109,6 +109,10 @@ async function bootstrap() {
     const info = nav().viewInfo(viewId);
     const b = info && info.identity.state === 'durable' ? bindings.lookup(info.identity.url) : null;
     if (!conflict || conflict.viewId !== viewId || !b || !conflict.boundTo.openable) return { ok: false, error: { code: 'not_available', message: 'Nao foi possivel ir ate o workspace desta conversa.' } };
+    // Everything that can be checked is checked BEFORE the page leaves: if the destination cannot be opened, the page stays and the
+    // modal says why (it would be worse to go back and then fail with nowhere to show the error).
+    if (b.status !== 'linked') return { ok: false, error: { code: 'confirmation_required', message: b.status === 'suspect' ? 'A identidade do workspace de destino nao foi verificada. Use Transferir ou Voltar.' : 'O Herdr esta desconectado: o workspace de destino nao pode ser verificado. Use Transferir ou Voltar.' } };
+    if (selection.getState().pending) return { ok: false, error: { code: 'selection_pending', message: 'Uma troca de workspace esta em andamento. Tente de novo.' } };
     // Local "Voltar" first (this workspace gets its page back), then the other workspace opens the conversation.
     const left = await adoption.leave({ viewId });
     if (!left.ok) return left;

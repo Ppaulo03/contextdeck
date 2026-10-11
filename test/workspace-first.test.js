@@ -701,3 +701,83 @@ test('"Agora não" / "Vincular Project" / "Deixar sem vínculo" each emit the ne
   assert.equal(again.ok, false, 'nothing left to link');
   assert.equal(states.at(-1).pending, null, 'and the state is re-emitted so a stale modal closes');
 }));
+
+// ---- a page with an unsent draft is never navigated away by the app --------------------------------------------------------------------------------------
+test('Voltar on a conflict: a page with a draft is kept as it is (moved to its conversation\'s workspace), not sent back in history', () => run(async (w) => {
+  const first = w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') });
+  const v = w.view(first.viewId);
+  v.finishLoad(w.A[0].url);
+  v.navigate(w.B[0].url);
+  Object.assign(v.contents.signals, { draft: true });
+  await w.clock.advance(7000);
+  assert.equal(w.navigator.isBusy(v.id), true);
+  const r = w.adoption.back({ viewId: v.id });
+  assert.equal(r.ok, true);
+  assert.notEqual(r.how, 'history');
+  assert.equal(w.manager.get(v.id).identity.key, w.B[0].conversationKey, 'the page still shows what the user was writing in');
+  assert.equal(w.manager.get(v.id).scope, WK('w2'));
+  assert.equal(v.loads.length, 1);
+}));
+
+test('an already-open conversation reached from a page with a draft: the page is kept (leaves the workspace), the existing tab is shown', () => run(async (w) => {
+  const c2 = (bindMany(w, [2]), w.bindings.lookup(chatUrl(2)));
+  const v1 = w.view(w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') }).viewId);
+  v1.finishLoad(w.A[0].url);
+  const v2 = w.view(w.navigator.selectBinding({ bindingId: c2.bindingId, workspaceKey: WK('w1') }).viewId);
+  v2.finishLoad(c2.url);
+  w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') });
+  Object.assign(v1.contents.signals, { draft: true });
+  await w.clock.advance(7000);
+  v1.navigate(c2.url);
+  await w.clock.advance(7000);
+  assert.equal(w.manager.getVisibleId(), v2.id);
+  assert.equal(w.manager.get(v1.id).scope, null, 'kept outside any workspace, with its draft');
+  assert.equal(w.manager.get(v1.id).identity.key, c2.conversationKey, 'not navigated');
+  assert.equal(w.fake.log.some((l) => l[0] === 'destroy'), false);
+}));
+
+test('transfer from a page with a draft keeps that page as the tab and releases the other one', () => run(async (w) => {
+  w.select('w2');
+  const own = w.view(w.navigator.selectBinding({ bindingId: w.B[0].bindingId, workspaceKey: WK('w2') }).viewId);
+  own.finishLoad(w.B[0].url);
+  w.select('w1');
+  const page = w.view(w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') }).viewId);
+  page.finishLoad(w.A[0].url);
+  page.navigate(w.B[0].url);
+  Object.assign(page.contents.signals, { draft: true });
+  await w.clock.advance(7000);
+  assert.equal((await w.adoption.transfer({ viewId: page.id })).ok, true);
+  assert.equal(w.manager.get(page.id).identity.key, w.B[0].conversationKey, 'the draft page was not navigated');
+  assert.equal(w.manager.get(page.id).expectedKey, w.B[0].conversationKey);
+  assert.equal(w.manager.get(own.id).scope, null);
+}));
+
+// ---- identity of the destination: nothing is bound when it is not proven ------------------------------------------------------------------------------------
+test('an orphan destination (workspace gone) never receives an automatic association; the page waits in its workspace', () => run(async (w) => {
+  const v = w.newChat();
+  v.finishLoad(w.HOME);
+  w.setWorkspaces([ws('w2', 'app')]);                                // w1 is gone
+  v.navigate(chatUrl(7));
+  assert.equal(w.bound(7), null);
+  assert.match(w.navigator.getState().pending ? w.navigator.getState().pending.text : '', /nao existe mais/);
+}));
+
+test('a reused workspace id (recreated session) is suspect: no automatic association; re-confirming it lets the pending one complete', () => run(async (w) => {
+  const v = w.newChat();
+  v.finishLoad(w.HOME);
+  w.setWorkspaces([ws('w1', 'other', 'D:/other'), ws('w2', 'app')]);
+  v.navigate(chatUrl(7));
+  assert.equal(w.bound(7), null);
+  w.bindings.reassign({ bindingId: w.A[0].bindingId, target: w.target('w1'), selectedAtOpen: 'w1', confirmReassign: true });
+  w.adoption.resolve();
+  assert.equal(w.bound(7).workspaceIdentity.workspaceId, 'w1');
+}));
+
+test('adoption never moves a binding that was reassigned meanwhile: it reports a conflict', () => run(async (w) => {
+  const v = w.newChat();
+  v.finishLoad(w.HOME);
+  w.bindings.bind({ target: w.target('w2'), url: chatUrl(7), origin: 'url', selectedAtOpen: 'w1', targetChosen: true });   // someone bound it elsewhere first
+  v.navigate(chatUrl(7));
+  assert.equal(w.bound(7).workspaceIdentity.workspaceId, 'w2');
+  assert.equal(w.navigator.getState().conflict.boundTo.id, 'w2');
+}));

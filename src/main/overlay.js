@@ -23,6 +23,7 @@ function createOverlay({ getWindow, preloadPath, html, onBeforeInput, onHidden }
   let openKind = 'workspaces';
   let noticeOpen = false;      // the small, non-focusing notice card area (see showNotice)
   let idleTimer;
+  let boundsFn = null;         // a modal that covers only part of the window (decisions: the chat area), see show()
 
   const liveWindow = () => { const w = getWindow(); return w && !w.isDestroyed() ? w : null; };
   const liveContents = () => (view && !view.webContents.isDestroyed() ? view.webContents : null);
@@ -42,17 +43,21 @@ function createOverlay({ getWindow, preloadPath, html, onBeforeInput, onHidden }
   function fit() {
     const win = liveWindow();
     if (!win || !view) return;
+    if (boundsFn) { view.setBounds(boundsFn()); return; }
     const { width, height } = win.getContentBounds();
     view.setBounds({ x: 0, y: 0, width, height });
   }
 
-  async function show(anchor, kind = 'workspaces') {
+  // `bounds` (optional, () => rect): the modal covers only that rectangle, so the rest of the window (top bar, conversation strip)
+  // keeps working and can be used to leave the question (another tab, another conversation, another workspace).
+  async function show(anchor, kind = 'workspaces', { bounds = null } = {}) {
     const win = liveWindow();
     if (!win) return false;
     clearTimeout(idleTimer);
     await ensure();
     if (!liveWindow()) return false;
     noticeOpen = false;                   // a modal replaces the notices (they stay listed in the activity center)
+    boundsFn = bounds;
     fit();
     win.contentView.addChildView(view);   // re-adding an existing child moves it to the top
     open = true;
@@ -95,6 +100,7 @@ function createOverlay({ getWindow, preloadPath, html, onBeforeInput, onHidden }
   function hide() {
     if (!open) return false;
     open = false;
+    boundsFn = null;
     const contents = liveContents();
     if (contents) contents.send('overlay:open', null);   // the page hides itself before the view is removed
     const win = liveWindow();

@@ -145,7 +145,7 @@ function createContextAdoption({ session, navigator, bindings, selection, projec
       // Going back only makes sense for a page that was another conversation's tab (it returns to that tab). A page that was a
       // new conversation has nothing of its own to return to - going back would leave a blank "Nova conversa" tab behind - so it
       // stays as the tab and the other page leaves.
-      if (v.expectedKey && navigator.canGoBack(viewId) && navigator.goBackPage(viewId) && (await waitLeft(viewId, key))) { navigator.reconcile(); return { ok: true }; }
+      if (v.expectedKey && !navigator.isBusy(viewId) && navigator.canGoBack(viewId) && navigator.goBackPage(viewId) && (await waitLeft(viewId, key))) { navigator.reconcile(); return { ok: true }; }
       for (const o of others) navigator.releasePage(o.viewId);
     }
     navigator.confirmAdopted(viewId);

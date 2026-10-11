@@ -21,14 +21,24 @@ app.setPath('userData', tmp);
 const outDir = process.env.HARNESS_OUT || path.join(os.tmpdir(), 'contextdeck-harness-out');
 fs.mkdirSync(outDir, { recursive: true });
 // Exit codes (a harness that did not run must never look like a pass): 0 every check passed; 1 a check failed or an error was
-// recorded; 2 too few checks ran (it stopped early); 3 timeout; 77 SKIPPED with a stated reason (no network to chatgpt.com).
+// recorded; 2 too few checks ran (it stopped early); 3 timeout; 77 SKIPPED with a stated reason (no network to chatgpt.com);
+// 78 BLOCKED: the main ContextDeck application is open (its windows/focus would corrupt the focus checks).
 const EXPECTED_MIN_CHECKS = 20;
+// Is the real application (an electron.exe without --type=, not this harness) running? Windows only; unknown -> null (not blocked).
+function mainAppRunning() {
+  if (process.platform !== 'win32') return null;
+  try {
+    const out = require('node:child_process').execFileSync('powershell.exe', ['-NoProfile', '-Command', "Get-CimInstance Win32_Process -Filter \"Name='electron.exe'\" | ForEach-Object { $_.ProcessId.ToString() + '|' + $_.CommandLine }"], { encoding: 'utf8', timeout: 20000 });
+    return out.split(/\r?\n/).filter(Boolean).map((l) => ({ pid: Number(l.slice(0, l.indexOf('|'))), cmd: l.slice(l.indexOf('|') + 1) }))
+      .filter((p) => p.pid !== process.pid && !/--type=/.test(p.cmd) && !/activity-harness|smoke-start/.test(p.cmd));
+  } catch { return null; }
+}
 let current = null;
 const finishWith = (code, extra = {}) => {
   const r = Object.assign(current || { steps: {}, checks: [], errors: [] }, extra, { exitCode: code });
   try { fs.writeFileSync(path.join(outDir, 'activity-report.json'), JSON.stringify(r, null, 2)); } catch { /* Diagnostics only. */ }
   const failed = (r.checks || []).filter((c) => !c.ok).map((c) => c.name);
-  console.log(`activity-harness: exit ${code}; ${(r.checks || []).length - failed.length}/${(r.checks || []).length} checks passed${r.skipped ? '; SKIPPED: ' + r.skipped : ''}${r.fatal ? '; FATAL: ' + r.fatal : ''}; report: ${path.join(outDir, 'activity-report.json')}`);
+  console.log(`activity-harness: exit ${code}; ${(r.checks || []).length - failed.length}/${(r.checks || []).length} checks passed${r.skipped ? '; SKIPPED: ' + r.skipped : ''}${r.blocked ? '; BLOCKED: ' + r.blocked : ''}${r.fatal ? '; FATAL: ' + r.fatal : ''}; report: ${path.join(outDir, 'activity-report.json')}`);
   for (const f of failed) console.log(`  FAILED: ${f}`);
   try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* Best effort. */ }
   app.exit(code);
@@ -59,6 +69,8 @@ app.on('window-all-closed', () => {});
 app.whenReady().then(async () => {
   const report = { electron: process.versions.electron, steps: {}, checks: [], errors: [] };
   current = report;
+  const other = mainAppRunning();
+  if (other && other.length) return finishWith(78, { blocked: `the main ContextDeck application is open (pid ${other.map((p) => p.pid).join(', ')}); close it and run again. Results obtained with it open are not valid.` });
   try {
     const probe = await electron.net.fetch('https://chatgpt.com/', { method: 'HEAD', signal: AbortSignal.timeout(10000) });
     report.networkProbe = probe.status;

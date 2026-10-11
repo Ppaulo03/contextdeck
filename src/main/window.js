@@ -76,6 +76,13 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     chat.view.setBounds(next);
   }
 
+  // The rectangle the ChatGPT page occupies; the decision modals cover exactly this.
+  function chatArea() {
+    const { width, height } = mainWindow.getContentBounds();
+    const top = TOPBAR_HEIGHT + CHATBAR_HEIGHT;
+    return { x: 0, y: top, width: Math.max(width, 1), height: Math.max(height - top - footerHeight, 1) };
+  }
+
   // How the manager shows and hides a view in this window.
   const host = {
     attach(handle) {
@@ -136,7 +143,8 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
       decisionOpen = true;
       conflictOpen = sticky;
       lastConflictText = text;
-      void overlay.show({ banner }, 'conflict');
+      // Only the chat area is covered: the Terminal tab, the workspace selector and the conversation strip stay usable.
+      void overlay.show({ banner }, 'conflict', { bounds: chatArea });
       return;
     }
     if (decisionOpen) {
@@ -185,8 +193,7 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
 
   async function create() {
     const toggleShortcut = createShortcutHandler(() => switchMode(activeMode === 'terminal' ? 'chat' : 'terminal'));
-    // While the conflict modal is open the tab shortcut is swallowed: there is nothing to do but decide.
-    const handleShortcuts = (event, input) => { if (conflictOpen) { if (input && input.control && (input.key || '').toLowerCase() === 'tab') event.preventDefault(); return; } toggleShortcut(event, input); };
+    const handleShortcuts = toggleShortcut;
     mainWindow = new BrowserWindow({
       width: uiState.bounds?.width ?? 1240,
       height: uiState.bounds?.height ?? 820,

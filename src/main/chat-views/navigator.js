@@ -235,13 +235,27 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
 
   // The user opened, inside page `viewId`, a conversation that already has its tab (`otherId`) here: show that tab and send this
   // page back to what it showed (its own history); a page with nothing to go back to leaves the workspace (kept, unscoped).
+  // A page with an unsent draft or an answer in progress is never navigated away by the app (going back in history would drop what is
+  // in it): it is kept as it is and moved instead.
+  // The reading of a page is dropped when its address changes (it was about another conversation), so what it said just BEFORE the
+  // navigation is remembered: that is the moment the question "is there something to lose here?" is asked.
+  const busyMemo = new Map();
+  function rememberBusy() {
+    for (const v of manager.list()) { const a = activityOf(v); if (a) busyMemo.set(v.id, Boolean(a.draft || a.responding)); }
+  }
+  const isBusy = (viewId) => {
+    const v = typeof viewId === 'string' ? manager.get(viewId) : null;
+    const a = v ? activityOf(v) : null;
+    return a ? Boolean(a.draft || a.responding) : Boolean(busyMemo.get(viewId));
+  };
+
   function focusExisting(viewId, otherId) {
     const v = typeof viewId === 'string' ? manager.get(viewId) : null;
     const other = typeof otherId === 'string' ? manager.get(otherId) : null;
     if (!v || !other || v.page === 'destroyed' || other.page === 'destroyed' || !other.scope) return false;
     choice.set(other.scope, other.id);
     manager.show(other.id);
-    if (!(manager.canGoBack(v.id) && manager.goBack(v.id))) releasePage(v.id);
+    if (isBusy(v.id) || !(manager.canGoBack(v.id) && manager.goBack(v.id))) releasePage(v.id);
     reconcile();
     activity?.visit(other.id);
     return true;
@@ -272,14 +286,14 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     // from (the Project page, a conversation); with no history it leaves the workspace and the last active page comes back.
     const bound = v.identity.state === 'durable' && mine(bindings.all()).some((b) => b.conversationKey === v.identity.key);
     if (!bound) {
-      if (manager.canGoBack(v.id) && manager.goBack(v.id)) return { ok: true, viewId: v.id, how: 'history' };
+      if (!isBusy(v.id) && manager.canGoBack(v.id) && manager.goBack(v.id)) return { ok: true, viewId: v.id, how: 'history' };
       const previousPage = manager.list().filter((x) => x.scope === v.scope && x.id !== v.id && x.lastShownAt > 0).sort((p, q) => q.lastShownAt - p.lastShownAt)[0];
       if (previousPage) choice.set(v.scope, previousPage.id); else choice.delete(v.scope);
       releasePage(v.id);
       reconcile();
       return { ok: true, viewId: v.id, how: 'released' };
     }
-    if ((v.expectedKey || !hasPrevious) && manager.canGoBack(v.id) && manager.goBack(v.id)) return { ok: true, viewId: v.id, how: 'history' };
+    if ((v.expectedKey || !hasPrevious) && !isBusy(v.id) && manager.canGoBack(v.id) && manager.goBack(v.id)) return { ok: true, viewId: v.id, how: 'history' };
     return moveToBinding(viewId);
   }
 
@@ -589,7 +603,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
 
   const offManager = manager.onChange(() => reconcile());
   // A status change redraws the strip; it never reconciles (observing cannot change which view is shown).
-  const offActivity = activity ? activity.onChange(() => emit()) : () => {};
+  const offActivity = activity ? activity.onChange(() => { rememberBusy(); emit(); }) : () => {};
   // New pending attention, translated to what the user needs to see (which conversation, in which workspace).
   const offAttention = activity && onAttention ? activity.onAttention(({ viewId }) => {
     const v = manager.get(viewId);
@@ -602,7 +616,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
 
   return {
     reconcile, getWorkspaceActivity, getGlobalActivity, resolveActivityTarget, setMode, selectBinding, newConversation, selectTemporary, openUnscoped, getState,
-    getUnbound, openUnbound, releaseConversation, contextViews, confirmAdopted, moveToBinding, backFromConflict, pagesShowing, releasePage, focusExisting,
+    getUnbound, openUnbound, releaseConversation, contextViews, confirmAdopted, moveToBinding, backFromConflict, pagesShowing, releasePage, focusExisting, isBusy,
     urlOf: (viewId) => { const h = typeof viewId === 'string' ? manager.handleOf(viewId) : null; return h && !h.isDestroyed() ? h.getUrl() : ''; },
     canGoBack: (viewId) => manager.canGoBack(viewId),
     goBackPage: (viewId) => manager.goBack(viewId),

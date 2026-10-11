@@ -129,10 +129,11 @@ test('conflict:resolve is overlay-only, validated, and takes only the known deci
   assert.equal(calls.length, 1);
 });
 
-test('the window keeps the modal STATE-driven: shortcut swallowed, re-shown when closed by a resize, closed only when the conflict is gone', () => {
+test('the window keeps the modal STATE-driven: covers only the chat area, re-shown when closed by a resize, closed only when the conflict is gone', () => {
   const win = fs.readFileSync('src/main/window.js', 'utf8').replace(/^\s*\/\/.*$/gm, '');
   assert.match(win, /function syncConflict\(\)/);
-  assert.match(win, /if \(conflictOpen\) \{ if \(input && input\.control/, 'the tab shortcut is swallowed while the modal is open');
+  assert.doesNotMatch(win, /event.preventDefault(); return; }/, 'the tab shortcut is NOT swallowed: the Terminal stays reachable');
+  assert.match(win, /{ bounds: chatArea }/, 'only the chat area is covered: top bar and conversation strip keep working');
   assert.match(win, /if \(kind === 'conflict'\) \{ decisionOpen = false; conflictOpen = false;/, 'closed by anything else -> shown again');
   assert.match(win, /navigator\.onChange\(\(state\) => \{ lastNavState = state; onNavChange\?\.\(\); syncConflict\(\); \}\)/);
   assert.match(win, /const sticky = banner\.kind === 'conflict'/, 'only a conflict is undismissible');

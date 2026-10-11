@@ -15,7 +15,7 @@ const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArr
 
 // `newConversation` (optional) replaces the navigator call of chatnav:new: main uses it to start the conversation in the
 // workspace's Project. Its only input is still the workspace key.
-function registerChatNavIpc({ ipcMain, trusted, win, newConversation = null }) {
+function registerChatNavIpc({ ipcMain, trusted, win, newConversation = null, resolve = null }) {
   const nav = () => win.getNavigator();
   const guarded = (fn) => (event, args) => {
     if (!trusted(event)) return denied;
@@ -40,6 +40,14 @@ function registerChatNavIpc({ ipcMain, trusted, win, newConversation = null }) {
   ipcMain.handle('chatnav:new', guarded((navigator, args) => {
     if (typeof args.workspaceKey !== 'string' || !KEY_RE.test(args.workspaceKey)) return invalid();
     return newConversation ? newConversation({ workspaceKey: args.workspaceKey }) : navigator.newConversation({ workspaceKey: args.workspaceKey });
+  }));
+
+  // The user's decision on a page of the workspace: retry its association, or resolve a conflict (go to the other workspace,
+  // transfer the binding here, go back). The arguments are the page and the action; main decides everything else.
+  ipcMain.handle('chatnav:resolve', guarded((navigator, args) => {
+    if (!resolve) return { ok: false, error: { code: 'not_ready', message: 'O ChatGPT ainda nao esta pronto.' } };
+    if (typeof args.viewId !== 'string' || !VIEW_RE.test(args.viewId) || !['retry', 'go', 'transfer', 'back'].includes(args.action)) return invalid();
+    return resolve({ viewId: args.viewId, action: args.action });
   }));
 
   ipcMain.handle('chatnav:open-unscoped', (event) => {

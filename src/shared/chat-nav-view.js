@@ -45,8 +45,24 @@ function statusItems(activity) {
 
 const workspaceName = (w) => (w ? (w.label || w.id) : null);
 
-function barModel(state, armedBindingId = null) {
-  if (!state) return { ready: false, title: 'ChatGPT', workspaceTitle: '', workspaceKey: null, tabs: [], temporaries: [], empty: null, canCreate: false, createLabel: 'Nova conversa', duplicates: 0 };
+// What the user must decide about the page on screen: a conversation that belongs to another workspace (go / transfer / back),
+// or one that could not be bound yet (retry). Words only; nothing is decided here.
+const wsText = (w) => (w.label ? `${w.label} (${w.id})` : w.id);
+function bannerOf(state, armedTransfer) {
+  const c = state.conflict;
+  if (c) {
+    const actions = [];
+    if (c.boundTo.openable) actions.push({ action: 'go', label: `Ir para ${c.boundTo.label || c.boundTo.id}`, title: 'Troca de workspace e abre esta conversa la' });
+    if (c.transferable) actions.push({ action: 'transfer', label: armedTransfer ? 'Confirmar transferência' : 'Transferir vínculo…', armed: Boolean(armedTransfer), title: 'Move o vínculo desta conversa para o workspace atual' });
+    actions.push({ action: 'back', label: 'Voltar', title: 'Volta ao que você via neste workspace; a conversa fica no workspace dela' });
+    return { kind: 'conflict', viewId: c.viewId, text: `Esta conversa pertence ao workspace ${wsText(c.boundTo)}. Você está em ${wsText(c.current)}.`, actions };
+  }
+  if (state.pending) return { kind: 'pending', viewId: state.activeViewId, text: state.pending, actions: [{ action: 'retry', label: 'Tentar vincular', title: 'Tenta associar esta conversa ao workspace' }] };
+  return null;
+}
+
+function barModel(state, armedBindingId = null, armedTransfer = false) {
+  if (!state) return { ready: false, banner: null, title: 'ChatGPT', workspaceTitle: '', workspaceKey: null, tabs: [], temporaries: [], empty: null, canCreate: false, createLabel: 'Nova conversa', duplicates: 0 };
   const ws = state.workspace;
   const tabs = state.tabs.map((t) => {
     const armed = armedBindingId === t.bindingId && t.needsConfirm;
@@ -77,13 +93,9 @@ function barModel(state, armedBindingId = null) {
   }));
   return {
     ready: true,
-    // A conversation opened from "Sem workspace" is shown as such: the selected Herdr workspace is a different thing and
-    // must not look like its owner.
-    title: state.visibleUnbound ? 'ChatGPT · Sem workspace' : (ws ? `ChatGPT · ${workspaceName(ws)}` : 'ChatGPT · sem workspace'),
-    workspaceTitle: state.visibleUnbound
-      ? `Esta conversa não pertence a nenhum workspace.${ws ? ` O workspace selecionado no Herdr é ${ws.id}, independente dela.` : ''}`
-      : (ws ? `Workspace ${ws.id}${ws.pending ? ' (troca em andamento)' : ''}` : 'Nenhum workspace selecionado'),
-    unbound: Boolean(state.visibleUnbound),
+    title: ws ? `ChatGPT · ${workspaceName(ws)}` : 'ChatGPT · sem workspace',
+    workspaceTitle: ws ? `Workspace ${ws.id}${ws.pending ? ' (troca em andamento)' : ''}` : 'Nenhum workspace selecionado',
+    banner: bannerOf(state, armedTransfer),
     workspaceKey: ws ? ws.key : null,
     tabs,
     temporaries,

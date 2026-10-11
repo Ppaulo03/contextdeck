@@ -20,8 +20,6 @@ contextBridge.exposeInMainWorld('overlay', {
   activityOpen: (args) => ipcRenderer.invoke('activity:open', args),
   activityDismiss: (args) => ipcRenderer.invoke('activity:dismiss', args),
   activityOpenUnbound: (args) => ipcRenderer.invoke('activity:open-unbound', args),
-  activityBindUnbound: (args) => ipcRenderer.invoke('activity:bind-unbound', args),
-  activityNewUnbound: () => ipcRenderer.invoke('activity:new-unbound'),
   chatsState: () => ipcRenderer.invoke('chats:state'),
   chatsBind: (args) => ipcRenderer.invoke('chats:bind', args),
   chatsUpdate: (args) => ipcRenderer.invoke('chats:update', args),

@@ -36,37 +36,23 @@ function indicatorModel(payload) {
   };
 }
 
-const workspaceTitle = (g) => (g.id === null ? 'Sem workspace' : `${g.label || '(sem nome)'} · ${g.id}`);
+const workspaceTitle = (g) => (g.id === null ? 'Fora de um workspace' : `${g.label || '(sem nome)'} · ${g.id}`);
 
 // Groups by workspace (name AND id, so homonyms are told apart); each item lists its states with text, not only glyphs.
-// "Sem workspace" (M01-I3B-3): conversations that belong to no workspace, ALWAYS listed (idle ones too), because the section is
-// the only way back to them. They are never attached to the selected workspace by being listed here.
+// Pages that live in no workspace (M01-I3B-3, exceptional: opened while no workspace was selected, or left over). Listed ONLY
+// when there are some, so nothing becomes unreachable; this is not a category of the interface and has no management actions:
+// opening one while a workspace is selected puts it in that workspace's context.
 function unboundModel(g) {
   const list = Array.isArray(g.unbound) ? g.unbound : [];
+  if (!list.length) return null;
   const items = list.map((u) => {
     const states = ['responding', 'attention', 'draft'].filter((k) => u[k]).map((kind) => ({ kind, glyph: GLYPH[kind], text: STATE_TEXT[kind] }));
-    const status = u.failed ? 'Falha ao carregar' : u.loading ? 'Carregando' : u.identity === 'durable' ? 'Ociosa' : 'Sem identidade persistente ainda';
+    const status = u.failed ? 'Falha ao carregar' : u.loading ? 'Carregando' : 'Ociosa';
     const stateText = states.length ? states.map((s) => s.text).join(' · ') : status;
     const label = `${u.label} · ${u.hint}`;
-    return {
-      viewId: u.viewId,
-      label,
-      states,
-      stateText,
-      bindable: u.bindable,
-      bindHint: u.bindable ? '' : 'Envie a primeira mensagem para que a conversa ganhe identidade e possa ser vinculada.',
-      warning: u.duplicate ? 'Outra aba mostra a mesma conversa.' : '',
-      active: Boolean(u.active),
-      aria: `Sem workspace, ${label}: ${stateText}`
-    };
+    return { viewId: u.viewId, label, states, stateText, warning: u.duplicate ? 'Outra aba mostra a mesma conversa.' : '', active: Boolean(u.active), aria: `Fora de um workspace, ${label}: ${stateText}` };
   });
-  return {
-    title: `Sem workspace (${items.length})`,
-    items,
-    empty: items.length ? '' : 'Nenhuma conversa sem workspace.',
-    workspaces: (Array.isArray(g.workspaces) ? g.workspaces : []).map((w) => ({ id: w.id, text: `${w.id} · ${w.label || '(sem nome)'}` })),
-    selectedId: g.selectedId === undefined ? null : g.selectedId
-  };
+  return { title: `Fora de um workspace (${items.length})`, items };
 }
 
 function centerModel(payload, armedViewId = null) {
@@ -107,7 +93,7 @@ function centerModel(payload, armedViewId = null) {
 }
 
 function noticeModel(notice) {
-  const where = notice.workspaceId ? `${notice.workspaceLabel || '(sem nome)'} · ${notice.workspaceId}` : 'Sem workspace';
+  const where = notice.workspaceId ? `${notice.workspaceLabel || '(sem nome)'} · ${notice.workspaceId}` : 'Fora de um workspace';
   return {
     id: notice.id,
     title: 'Atividade para revisar',

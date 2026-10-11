@@ -8,7 +8,6 @@
 // All data comes from main (`activity:state`); text is always set with textContent.
 import { $, el } from '../components/dom.js';
 import { centerModel, noticesModel } from '../../shared/activity-view.js';
-import { createDropdown } from '../components/dropdown.js';
 
 export function createActivityOverlay({ api, closeOverlay }) {
   const panel = $('activity');
@@ -20,7 +19,6 @@ export function createActivityOverlay({ api, closeOverlay }) {
   let anchor = null;
   let armed = null;
   let busy = false;
-  let binding = null;           // { viewId, workspaceId, label } while the "Vincular" form of an unbound conversation is open
 
   function say(text, isError = false) {
     message.textContent = text || '';
@@ -75,19 +73,12 @@ export function createActivityOverlay({ api, closeOverlay }) {
   }
 
   const openUnbound = (item) => runUnbound(() => api.activityOpenUnbound({ viewId: item.viewId }), () => { void closeOverlay(); });
-  const createUnbound = () => runUnbound(() => api.activityNewUnbound(), () => { void closeOverlay(); });
-  const bindUnbound = (item, model) => runUnbound(
-    () => api.activityBindUnbound({ viewId: item.viewId, workspaceId: binding.workspaceId, label: binding.label, selectedAtOpen: model.selectedId }),
-    () => { binding = null; say('Conversa vinculada.'); renderCenter(); }
-  );
-
   function unboundSection(model) {
     const u = model.unbound;
     const section = el('section', 'act-group act-unbound');
     const head = el('h3', 'act-group-title');
     head.append(el('span', 'act-group-name', u.title));
     section.append(head);
-    if (u.empty) section.append(el('p', 'act-empty', u.empty));
     for (const item of u.items) {
       const row = el('div', 'act-item');
       const states = el('span', 'act-item-states');
@@ -102,56 +93,10 @@ export function createActivityOverlay({ api, closeOverlay }) {
       open.dataset.key = `unbound:${item.viewId}`;
       open.setAttribute('aria-label', `Abrir: ${item.aria}`);
       open.addEventListener('click', () => void openUnbound(item));
-      const bind = el('button', 'btn', 'Vincular');
-      bind.type = 'button';
-      bind.disabled = busy || !item.bindable;
-      bind.title = item.bindable ? 'Vincular esta conversa a um workspace' : item.bindHint;
-      bind.dataset.key = `unbound-bind:${item.viewId}`;
-      bind.setAttribute('aria-label', `Vincular a workspace: ${item.aria}`);
-      bind.addEventListener('click', () => { binding = binding && binding.viewId === item.viewId ? null : { viewId: item.viewId, workspaceId: u.selectedId || (u.workspaces[0] ? u.workspaces[0].id : null), label: '' }; renderCenter(); });
-      row.append(states, text, open, bind);
+      row.append(states, text, open);
       section.append(row);
-      if (binding && binding.viewId === item.viewId) section.append(bindForm(item, model));
     }
-    const create = el('button', 'btn', 'Nova conversa sem workspace');
-    create.type = 'button';
-    create.disabled = busy;
-    create.dataset.key = 'unbound-new';
-    create.title = 'Abre uma conversa que não pertence a nenhum workspace';
-    create.addEventListener('click', () => void createUnbound());
-    section.append(create);
     return section;
-  }
-
-  // The destination is chosen here, by name and id; nothing is bound to "the selected workspace" implicitly.
-  function bindForm(item, model) {
-    const form = el('div', 'act-bind');
-    const pick = createDropdown({
-      key: `unbound-target:${item.viewId}`,
-      label: 'Workspace de destino',
-      items: model.unbound.workspaces.map((w) => ({ value: w.id, text: w.text })),
-      value: binding.workspaceId || undefined,
-      onChange: (value) => { binding.workspaceId = value; renderCenter(); }
-    });
-    const label = el('input', 'control');
-    label.type = 'text';
-    label.value = binding.label;
-    label.placeholder = 'Rótulo (opcional)';
-    label.maxLength = 80;
-    label.spellcheck = false;
-    label.dataset.key = `unbound-label:${item.viewId}`;
-    label.addEventListener('input', () => { binding.label = label.value; });
-    const ok = el('button', 'btn', 'Vincular a este workspace');
-    ok.type = 'button';
-    ok.disabled = busy || !binding.workspaceId;
-    ok.dataset.key = `unbound-confirm:${item.viewId}`;
-    ok.addEventListener('click', () => void bindUnbound(item, model.unbound));
-    const cancel = el('button', 'btn', 'Cancelar');
-    cancel.type = 'button';
-    cancel.dataset.key = `unbound-cancel:${item.viewId}`;
-    cancel.addEventListener('click', () => { binding = null; renderCenter(); });
-    form.append(pick.root, label, ok, cancel);
-    return form;
   }
 
   function renderCenter() {
@@ -226,7 +171,7 @@ export function createActivityOverlay({ api, closeOverlay }) {
     async openCenter(opened) {
       mode = 'center';
       anchor = opened;
-      armed = null; busy = false; binding = null;
+      armed = null; busy = false;
       noticeBox.hidden = true;
       say('');
       state = await api.activityState();

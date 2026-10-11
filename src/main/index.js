@@ -9,6 +9,7 @@ const { USER_DATA_DIRNAME, UI_STATE_FILE, CHAT_BINDINGS_FILE, PROJECT_BINDINGS_F
 const projectModel = require('./project-bindings/model');
 const { createProjectBindings } = require('./project-bindings/service');
 const { createProjectCreation } = require('./project-bindings/creation');
+const { createContextAdoption } = require('./chat-bindings/context-adoption');
 const { createBindingsStore } = require('./chat-bindings/store');
 const { createChatBindings } = require('./chat-bindings/service');
 const { startChatsPusher } = require('./ipc/chats');
@@ -93,7 +94,21 @@ async function bootstrap() {
     showChatTab: () => win.switchMode('chat'),
     getMode: () => win.getMode()
   });
-  const unbound = createUnboundActions({ session: settings.herdrSession, bindings, navigator: { openUnbound: (a) => navigatorOf().openUnbound(a), newUnbound: () => navigatorOf().newUnbound(), unboundTarget: (v) => navigatorOf().unboundTarget(v), reconcile: () => navigatorOf().reconcile() }, showChatTab: () => win.switchMode('chat'), getMode: () => win.getMode() });
+  const unbound = createUnboundActions({ navigator: { openUnbound: (a) => navigatorOf().openUnbound(a) }, showChatTab: () => win.switchMode('chat'), getMode: () => win.getMode() });
+  // Workspace-first association: a page opened in a workspace's context gets that workspace's binding (context-adoption.js).
+  const nav = () => navigatorOf();
+  const adoption = createContextAdoption({ session: settings.herdrSession, bindings, selection, navigator: { contextViews: () => nav().contextViews(), confirmAdopted: (v) => nav().confirmAdopted(v), moveToBinding: (v) => nav().moveToBinding(v), reconcile: () => nav().reconcile() } });
+  // The user's decision on a page (retry its association, or resolve a conflict).
+  const resolveChat = async ({ viewId, action }) => {
+    if (action === 'retry') return adoption.retry({ viewId });
+    if (action === 'transfer') return adoption.transfer({ viewId });
+    if (action === 'back') return adoption.back({ viewId });
+    const conflict = nav().getState().conflict;
+    const info = nav().viewInfo(viewId);
+    const b = info && info.identity.state === 'durable' ? bindings.lookup(info.identity.url) : null;
+    if (!conflict || conflict.viewId !== viewId || !b || !conflict.boundTo.openable) return { ok: false, error: { code: 'not_available', message: 'Nao foi possivel ir ate o workspace desta conversa.' } };
+    return directOpen.open({ workspaceId: conflict.boundTo.id, bindingId: b.bindingId });
+  };
   const getActivityPayload = () => (navigatorOf() ? { global: navigatorOf().getGlobalActivity(), notices: notices.getState() } : null);
   const activityPusher = startActivityPusher({ getPayload: getActivityPayload, send: (payload) => { win.send('activity:state', payload); win.sendToOverlay('overlay:activity-push', payload); } });
   notices.onChange((s) => { win.setNotices(s.items.length + s.more); activityPusher.notify(); });
@@ -116,7 +131,7 @@ async function bootstrap() {
     onClosed: shutdown,
     onChatNavigated: () => chatsPusher.notify(),
     onNavChange: () => {
-      creation?.resolve();
+      adoption?.resolve();
       navPusher.notify();
       chatsPusher.notify();
       const text = JSON.stringify(activity());
@@ -129,10 +144,10 @@ async function bootstrap() {
     chats: { session: settings.herdrSession, bindings, selection, onAttention: (event) => notices.push(event) }
   });
 
-  creation = projectsOn ? createProjectCreation({ session: settings.herdrSession, navigator: { newConversation: (a) => win.getNavigator().newConversation(a), selectTemporary: (a) => win.getNavigator().selectTemporary(a), viewInfo: (v) => win.getNavigator().viewInfo(v), reconcile: () => win.getNavigator().reconcile(), releaseToUnbound: (v) => win.getNavigator().releaseToUnbound(v) }, bindings, projects, selection }) : null;
-  if (creation) win.getNavigator().setNoteProvider((viewId) => creation.noteFor(viewId));
+  creation = projectsOn ? createProjectCreation({ session: settings.herdrSession, navigator: { newConversation: (a) => win.getNavigator().newConversation(a) }, projects }) : null;
+  win.getNavigator().setNoteProvider((viewId) => adoption.noteOf(viewId));
   navPusher = startChatNavPusher({ getState: () => win.getNavigator()?.getState(), send: (channel, data) => win.send(channel, data) });
-  registerIpc({ electron, win, herdr, observer, selection, activity, activityIpc: { getPayload: getActivityPayload, directOpen, notices, unbound }, bindings, projects, newConversation: creation ? (a) => creation.start(a) : null, notifyChats: () => { chatsPusher.notify(); win.getNavigator()?.reconcile(); }, settings, uiState, persist, userDataDir });
+  registerIpc({ electron, win, herdr, observer, selection, activity, activityIpc: { getPayload: getActivityPayload, directOpen, notices, unbound }, bindings, projects, newConversation: creation ? (a) => creation.start(a) : null, resolveChat, notifyChats: () => { chatsPusher.notify(); win.getNavigator()?.reconcile(); }, settings, uiState, persist, userDataDir });
   app.on('second-instance', () => win.focus());
   app.on('before-quit', shutdown);
   await win.create();

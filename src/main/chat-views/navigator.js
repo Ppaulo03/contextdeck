@@ -29,11 +29,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
   let reconciling = false;
   let again = false;
   const choice = new Map();          // workspace key -> id of a temporary view the user picked there
-  // An unbound conversation (scope null) the user opened on purpose while a workspace is selected. It stays on screen
-  // only for as long as that same workspace stays selected; any other choice, or a change of workspace, ends it.
-  let notes = null;                  // optional (viewId) -> text: why a temporary page was not bound (set by the creation service)
-  let unboundChoice = null;
-  let unboundSel = null;
+  let notes = null;                  // optional (viewId) -> text: why a page in a workspace is not bound yet (set by the adoption service)
 
   const selectedWorkspace = () => {
     const sel = selection.getState();
@@ -57,7 +53,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
         }
       } else if (v.identity.state === 'durable') {
         const b = byKey.get(v.identity.key);
-        // A conversation bound later (or by navigating to a bound one) leaves "Sem workspace" with its view intact.
+        // A conversation bound later (or by navigating to a bound one) leaves the exceptional unscoped list with its view intact.
         if (b && v.scope === null) { manager.setScope(v.id, wsKeyOf(b)); manager.setExpected(v.id, v.identity.key); }
         else if (b && v.scope !== null && wsKeyOf(b) === v.scope) manager.setExpected(v.id, v.identity.key);
       }
@@ -108,10 +104,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
         const wk = keyFor(sel.id);
         const visibleId = manager.getVisibleId();
         const visible = visibleId ? manager.get(visibleId) : null;
-        if (unboundChoice && (sel.id !== unboundSel || !visible || visible.id !== unboundChoice || visible.scope !== null)) unboundChoice = null;
-        if (unboundChoice) {
-          // The user opened an unbound conversation under this very selection: it stays on screen.
-        } else if (!wk) {
+        if (!wk) {
           // No workspace to scope to (Herdr not connected / nothing selected): the M00 behaviour, the unscoped page.
           if (!visible || visible.scope !== null) {
             const unscoped = manager.list().find((v) => v.scope === null);
@@ -152,7 +145,6 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     const entry = manager.get(id);
     if (entry && entry.page === 'error') manager.reloadFailed(id, b.url);
     choice.delete(g.wk);
-    unboundChoice = null;
     manager.show(id);
     prefs.setLast(g.wk, b.bindingId);
     reconcile();
@@ -167,13 +159,16 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
   function newConversation({ workspaceKey, entryUrl } = {}) {
     const g = guard(workspaceKey);
     if (!g.ok) return g;
-    const pristine = entryUrl ? null : manager.list().find((v) => v.scope === null && v.pristine && v.relation === REL.TEMPORARY);
+    // A second click while the first page is still waiting for its conversation shows that page: no second view.
+    const waiting = manager.list().find((v) => v.scope === g.wk && (contextual.get(v.id) || {}).pending && v.identity.state !== 'durable' && v.page !== 'destroyed');
+    const pristine = waiting || entryUrl ? null : manager.list().find((v) => v.scope === null && v.pristine && v.relation === REL.TEMPORARY);
     let id;
-    if (pristine) { manager.setScope(pristine.id, g.wk); id = pristine.id; }
+    if (waiting) id = waiting.id;
+    else if (pristine) { manager.setScope(pristine.id, g.wk); id = pristine.id; }
     else id = manager.create({ url: entryUrl || homeUrl, scope: g.wk });
     if (!id) return fail('open_failed', 'Nao foi possivel abrir uma nova conversa.');
+    contextual.set(id, { pending: true });
     choice.set(g.wk, id);
-    unboundChoice = null;
     manager.show(id);
     reconcile();
     activity?.visit(id);
@@ -186,7 +181,6 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     const v = typeof viewId === 'string' ? manager.get(viewId) : null;
     if (!v || v.scope !== g.wk || v.page === 'destroyed') return fail('view_not_found', 'Conversa temporaria nao encontrada.');
     choice.set(g.wk, v.id);
-    unboundChoice = null;
     manager.show(v.id);
     reconcile();
     activity?.visit(v.id);
@@ -205,11 +199,58 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     return { ok: true, viewId: id };
   }
 
-  // ---- conversations without a workspace (M01-I3B-3) --------------------------------------------------------------------
-  // "Sem workspace" is a projection of the views whose scope is null (never a second registry): a conversation the user
-  // opened without attaching it to a workspace. It is NOT whatever workspace happens to be selected, and it is not an
-  // orphan or suspect binding (those keep their workspace scope). The application's initial, never-shown page is not a
-  // conversation yet and is left out. A view without a durable id keeps its runtime id until the page gets one.
+  // ---- workspace-first context (M01-I3B-3) -----------------------------------------------------------------------------------
+  // A page that lives under a workspace (scope) was opened IN that workspace's context by the user. The navigator only keeps
+  // the facts (which views are contextual, whether the user started a creation there that has not got its id yet); the
+  // association itself is decided and written by activity/context-adoption.js through the chat bindings service, never here.
+  //   pending  the user clicked "Nova conversa" in this workspace and the page has not shown a conversation id yet: when it
+  //            does, it belongs to THAT workspace even if another one is selected by then.
+  const contextual = new Map();       // viewId -> { pending }
+
+  function contextViews() {
+    const visibleId = manager.getVisibleId();
+    return manager.list().filter((v) => v.scope !== null).map((v) => ({
+      viewId: v.id,
+      workspaceId: wsIdOf(v.scope),
+      scope: v.scope,
+      identity: { ...v.identity },
+      expectedKey: v.expectedKey,
+      relation: v.relation,
+      visible: v.id === visibleId && manager.isAttached(),
+      pending: Boolean((contextual.get(v.id) || {}).pending)
+    }));
+  }
+
+  // The adoption (or an existing binding of the same workspace) made this page the view of that conversation.
+  function confirmAdopted(viewId) {
+    const v = typeof viewId === 'string' ? manager.get(viewId) : null;
+    if (!v || v.page === 'destroyed' || v.identity.state !== 'durable') return false;
+    manager.setExpected(v.id, v.identity.key);
+    const c = contextual.get(v.id);
+    if (c) c.pending = false;
+    return true;
+  }
+
+  // "Voltar" on a conflict: the page keeps its view but moves to the workspace the conversation belongs to; what the user was
+  // doing in this workspace comes back. Nothing is rebound.
+  function moveToBinding(viewId) {
+    const v = typeof viewId === 'string' ? manager.get(viewId) : null;
+    if (!v || v.page === 'destroyed' || v.identity.state !== 'durable') return fail('view_not_found', 'Conversa nao encontrada.');
+    const b = mine(bindings.all()).find((x) => x.conversationKey === v.identity.key);
+    if (!b) return fail('not_bound', 'Esta conversa nao tem vinculo.');
+    manager.setScope(v.id, wsKeyOf(b));
+    manager.setExpected(v.id, v.identity.key);
+    contextual.delete(v.id);
+    choice.delete(v.scope);
+    reconcile();
+    return { ok: true, viewId: v.id };
+  }
+
+  // ---- pages without a workspace (exceptional) -----------------------------------------------------------------------------
+  // Only pages opened while NO workspace was selected (the application's M00 behaviour) or left over from before. They are not
+  // a category of the interface: they are listed (and only when there are some) so that nothing becomes unreachable. Opening
+  // one while a workspace is selected puts it in that workspace's context (the user's explicit action), where the normal
+  // rules decide its binding.
   const unboundViews = () => manager.list().filter((v) => v.scope === null && !v.pristine);
   const unboundView = (viewId) => {
     const v = typeof viewId === 'string' ? manager.get(viewId) : null;
@@ -224,10 +265,9 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
       const durable = v.identity.state === 'durable';
       return {
         viewId: v.id,
-        label: durable ? 'Conversa avulsa' : 'Nova conversa',
-        hint: durable ? v.identity.key.slice(-4) : `#${v.id.slice(1)}`,
+        label: durable ? 'Conversa' : 'Nova conversa',
+        hint: durable ? v.identity.key.slice(-4) : '#' + v.id.slice(1),
         identity: v.identity.state,
-        bindable: durable,
         responding: Boolean(a && a.responding), attention: Boolean(a && a.attention), draft: Boolean(a && a.draft),
         loading: v.page === 'loading', failed: v.page === 'error',
         duplicate: duplicated.has(v.id),
@@ -236,60 +276,23 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     });
   }
 
-  // Shows an unbound conversation for what it is. No workspace.focus, no binding, no navigation of the page.
   function openUnbound({ viewId } = {}) {
     if (mode !== 'chat') return fail('not_in_chat', 'A aba ChatGPT nao esta ativa.');
     const v = unboundView(viewId);
-    if (!v) return fail('view_not_found', 'Esta conversa nao existe mais ou ja foi vinculada a um workspace.');
+    if (!v) return fail('view_not_found', 'Esta conversa nao existe mais ou ja pertence a um workspace.');
     const sel = selectedWorkspace();
     if (sel.pending) return fail('selection_pending', 'Uma troca de workspace esta em andamento.');
     if (v.page === 'error') manager.reloadFailed(v.id, homeUrl);
-    unboundChoice = v.id;
-    unboundSel = sel.id;
+    if (sel.id) {
+      const wk = keyFor(sel.id);
+      manager.setScope(v.id, wk);
+      contextual.set(v.id, { pending: false });
+      choice.set(wk, v.id);
+    }
     manager.show(v.id);
     reconcile();
     activity?.visit(v.id);
     return { ok: true, viewId: v.id };
-  }
-
-  // A fresh page that belongs to no workspace (the initial page is handed over first, without navigating it).
-  function newUnbound() {
-    if (mode !== 'chat') return fail('not_in_chat', 'A aba ChatGPT nao esta ativa.');
-    const sel = selectedWorkspace();
-    if (sel.pending) return fail('selection_pending', 'Uma troca de workspace esta em andamento.');
-    const pristine = manager.list().find((v) => v.scope === null && v.pristine && v.relation === REL.TEMPORARY);
-    const id = pristine ? pristine.id : manager.create({ url: homeUrl, scope: null });
-    if (!id) return fail('open_failed', 'Nao foi possivel abrir uma nova conversa.');
-    unboundChoice = id;
-    unboundSel = sel.id;
-    manager.show(id);
-    reconcile();
-    activity?.visit(id);
-    return { ok: true, viewId: id };
-  }
-
-  // A temporary page whose association could not be trusted leaves its workspace and becomes an unbound conversation: it
-  // appears in "Sem workspace" (always listed), keeps its view, draft and activity, and stays on screen if it was being
-  // looked at. Pages that belong to a binding (suspect, orphan, unverified) are never released: they keep their workspace.
-  function releaseToUnbound(viewId) {
-    const v = typeof viewId === 'string' ? manager.get(viewId) : null;
-    if (!v || v.page === 'destroyed') return fail('view_not_found', 'Conversa nao encontrada.');
-    if (v.scope === null) return { ok: true, viewId: v.id, already: true };
-    if (v.expectedKey) return fail('bound_view', 'Esta pagina pertence a um vinculo.');
-    // Marked BEFORE the scope changes: the change itself triggers a reconcile that would otherwise hide the page.
-    if (manager.getVisibleId() === v.id) { unboundChoice = v.id; unboundSel = selectedWorkspace().id; }
-    manager.setScope(v.id, null);
-    reconcile();
-    return { ok: true, viewId: v.id };
-  }
-
-  // What binding an unbound conversation needs: its address (from the view's own identity, never from the renderer).
-  // The write itself is done by activity/unbound.js through the I3A operation; this module never writes bindings.
-  function unboundTarget(viewId) {
-    const v = unboundView(viewId);
-    if (!v) return fail('view_not_found', 'Esta conversa nao existe mais ou ja foi vinculada a um workspace.');
-    if (v.identity.state !== 'durable') return fail('identity_pending', 'Esta conversa ainda nao tem identidade persistente. Envie a primeira mensagem para poder vincula-la.');
-    return { ok: true, viewId: v.id, url: v.identity.url, key: v.identity.key };
   }
 
   // ---- activity (status of the loaded views) ---------------------------------------------------------------------
@@ -369,7 +372,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
         viewId: v.id,
         bindingId: bound ? b.bindingId : null,
         kind: bound ? 'binding' : 'temporary',
-        label: bound ? (b.label || '(sem rótulo)') : (v.identity.state === 'durable' ? 'Conversa não vinculada' : 'Nova conversa'),
+        label: bound ? (b.label || 'Conversa') : (v.identity.state === 'durable' ? 'Conversa' : 'Nova conversa'),
         responding: a.responding, attention: a.attention, draft: a.draft,
         status: bound ? b.status : null,
         needsConfirm: bound ? b.status !== 'linked' : false,
@@ -381,8 +384,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     list.sort((x, y) => (x.id === null) - (y.id === null) || String(x.id).localeCompare(String(y.id), undefined, { numeric: true }));
     return {
       totals, selectedId: sel.id, groups: list,
-      unbound: getUnbound(),
-      workspaces: sel.options.map((o) => ({ id: o.id, label: o.label }))
+      unbound: getUnbound()
     };
   }
 
@@ -408,6 +410,23 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     manager.setAttached(next === 'chat');
   }
 
+  // The page on screen shows a conversation that is bound to ANOTHER workspace than the one the page lives in. Nothing is
+  // changed by detecting it: the UI offers going there, an explicit transfer, or going back.
+  function conflictOf(visible, all, sel) {
+    if (!visible || !visible.scope || visible.identity.state !== 'durable' || !manager.isAttached()) return null;
+    const b = all.find((x) => x.conversationKey === visible.identity.key);
+    if (!b || wsKeyOf(b) === visible.scope) return null;
+    const labelOf = new Map(sel.options.map((o) => [o.id, o.label]));
+    const here = wsIdOf(visible.scope);
+    const there = b.workspaceIdentity.workspaceId;
+    return {
+      viewId: visible.id,
+      boundTo: { id: there, label: labelOf.has(there) ? labelOf.get(there) : b.workspaceLabel, status: b.status, openable: b.status !== 'orphan' && b.status !== 'other-session' },
+      current: { id: here, label: labelOf.get(here) || '' },
+      transferable: here === sel.id
+    };
+  }
+
   function getState() {
     const sel = selectedWorkspace();
     const wk = keyFor(sel.id);
@@ -429,7 +448,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     const tabs = here.map((b) => {
       const v = viewOf(b);
       return {
-        bindingId: b.bindingId, label: b.label || '(sem rótulo)', status: b.status,
+        bindingId: b.bindingId, label: b.label || 'Conversa', status: b.status,
         hint: (labelCount.get(b.label || '') || 0) > 1 ? b.conversationKey.slice(-4) : '',
         loaded: Boolean(v), loading: Boolean(v && v.page === 'loading'), failed: Boolean(v && v.page === 'error'),
         activity: v ? activityOf(v, b.conversationKey) : null,
@@ -444,7 +463,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
       const other = v.identity.state === 'durable' ? byKey.get(v.identity.key) : null;
       const elsewhere = other && wsKeyOf(other) !== wk ? other : null;
       let label = 'Nova conversa';
-      if (v.identity.state === 'durable') label = other ? `${other.label || '(sem rótulo)'}${elsewhere ? ` · ${elsewhere.workspaceIdentity.workspaceId}` : ''}` : 'Conversa não vinculada';
+      if (v.identity.state === 'durable') label = other ? `${other.label || 'Conversa'}${elsewhere ? ` · ${elsewhere.workspaceIdentity.workspaceId}` : ''}` : 'Conversa';
       return {
         viewId: v.id, label, relation: v.relation, active: v.id === visibleId, loading: v.page === 'loading', failed: v.page === 'error',
         activity: activityOf(v),
@@ -462,7 +481,8 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
       workspace: sel.id ? { key: wk, id: sel.id, label: option ? option.label : '', origin: sel.origin, pending: sel.pending } : null,
       tabs, temporaries, empty,
       activeViewId: visible ? visible.id : null,
-      visibleUnbound: Boolean(visible && visible.scope === null && !visible.pristine && manager.isAttached()),
+      conflict: conflictOf(visible, all, sel),
+      pending: visible && notes && visible.scope ? (notes(visible.id) || null) : null,
       visibleRelation: visible ? visible.relation : null,
       duplicates: manager.duplicates().length
     };
@@ -507,7 +527,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
 
   return {
     reconcile, getWorkspaceActivity, getGlobalActivity, resolveActivityTarget, setMode, selectBinding, newConversation, selectTemporary, openUnscoped, getState,
-    getUnbound, openUnbound, newUnbound, unboundTarget, releaseToUnbound,
+    getUnbound, openUnbound, contextViews, confirmAdopted, moveToBinding,
     setNoteProvider: (fn) => { notes = typeof fn === 'function' ? fn : null; },
     // Read-only view of one page for the creation service: scope, identity (from the URL only), epoch and lifecycle.
     viewInfo: (viewId) => (typeof viewId === 'string' ? manager.get(viewId) : null),

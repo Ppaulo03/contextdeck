@@ -7,8 +7,7 @@
 //   activity:state    UI window or overlay   { global, notices } (also pushed: `activity:state` to the UI, `overlay:activity-push`)
 //   activity:open     overlay only           the activity center's "Abrir"
 //   activity:dismiss  overlay only           closes a notice card (does NOT acknowledge the attention)
-//   activity:open-unbound / activity:bind-unbound / activity:new-unbound   overlay only   conversations without a workspace
-//                     (M01-I3B-3): open one (never moves Herdr), bind one to a workspace the user picked, start a blank one
+//   activity:open-unbound  overlay only     a page that lives in no workspace (exceptional, M01-I3B-3): open it; never moves Herdr
 const denied = { ok: false, error: { code: 'untrusted', message: 'Untrusted IPC caller' } };
 const invalid = (message = 'Pedido invalido.') => ({ ok: false, error: { code: 'invalid_request', message } });
 
@@ -41,16 +40,6 @@ function registerActivityIpc({ ipcMain, trustedUi, trustedOverlay, getPayload, d
   ipcMain.handle('activity:open-unbound', unboundGuard((args) => {
     if (!isPlainObject(args) || typeof args.viewId !== 'string' || !VIEW_RE.test(args.viewId)) return invalid();
     return unbound.open({ viewId: args.viewId });
-  }));
-
-  ipcMain.handle('activity:new-unbound', unboundGuard(() => unbound.create()));
-
-  ipcMain.handle('activity:bind-unbound', unboundGuard((args) => {
-    if (!isPlainObject(args) || typeof args.viewId !== 'string' || !VIEW_RE.test(args.viewId)) return invalid();
-    if (typeof args.workspaceId !== 'string' || !WORKSPACE_RE.test(args.workspaceId)) return invalid();
-    if (args.label !== undefined && (typeof args.label !== 'string' || args.label.length > 200)) return invalid();
-    if (args.selectedAtOpen !== null && typeof args.selectedAtOpen !== 'string') return invalid();
-    return unbound.bind({ viewId: args.viewId, workspaceId: args.workspaceId, label: args.label, selectedAtOpen: args.selectedAtOpen, confirmTarget: args.confirmTarget === true });
   }));
 
   ipcMain.handle('activity:dismiss', (event, args) => {

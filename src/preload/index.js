@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('dock', {
   chatNavSelect: (args) => ipcRenderer.invoke('chatnav:select', args),
   chatNavSelectTemporary: (args) => ipcRenderer.invoke('chatnav:select-temporary', args),
   chatNavNew: (args) => ipcRenderer.invoke('chatnav:new', args),
+  chatNavResolve: (args) => ipcRenderer.invoke('chatnav:resolve', args),
   chatNavOpenUnscoped: () => ipcRenderer.invoke('chatnav:open-unscoped'),
   activityState: () => ipcRenderer.invoke('activity:state'),
   openActivityCenter: (anchor) => ipcRenderer.invoke('overlay:open-activity-center', anchor),

@@ -34,6 +34,8 @@ contextBridge.exposeInMainWorld('dock', {
   chatNavSelectTemporary: (args) => ipcRenderer.invoke('chatnav:select-temporary', args),
   chatNavNew: (args) => ipcRenderer.invoke('chatnav:new', args),
   chatNavOpenUnscoped: () => ipcRenderer.invoke('chatnav:open-unscoped'),
+  activityState: () => ipcRenderer.invoke('activity:state'),
+  openActivityCenter: (anchor) => ipcRenderer.invoke('overlay:open-activity-center', anchor),
   chatsState: () => ipcRenderer.invoke('chats:state'),
   chatsBind: (args) => ipcRenderer.invoke('chats:bind', args),
   chatsUpdate: (args) => ipcRenderer.invoke('chats:update', args),
@@ -53,6 +55,7 @@ contextBridge.exposeInMainWorld('dock', {
   onHerdrState: (cb) => listen('herdr:state', cb),
   onChatsState: (cb) => listen('chats:state', cb),
   onChatNavState: (cb) => listen('chatnav:state', cb),
+  onActivityState: (cb) => listen('activity:state', cb),
   onChatStatus: (cb) => listen('chat:status', cb),
   onChatHost: (cb) => listen('chat:host', cb),
   onChatError: (cb) => listen('chat:error', cb)

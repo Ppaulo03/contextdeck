@@ -6,6 +6,7 @@
 // selected when the panel opened (`selectedAtOpen`) so a change in between forces a review.
 import { $, el } from '../components/dom.js';
 import { panelModel } from '../../shared/chat-bindings-view.js';
+import { createDropdown } from '../components/dropdown.js';
 
 // Depth-first lookup by data-key (the panel is rebuilt on every render; this restores the focused control).
 function findByKey(root, key) {
@@ -78,13 +79,9 @@ export function createChatsPanel({ api, closeOverlay }) {
     return i;
   }
 
-  function roleSelect(key, value, roles, onChange) {
-    const s = el('select', 'control');
-    s.dataset.key = key;
-    for (const r of roles) { const o = el('option', '', r.text); o.value = r.value; s.append(o); }
-    s.value = value;
-    s.addEventListener('change', () => onChange(s.value));
-    return s;
+  // Same list as every other dropdown of the application (see components/dropdown.js).
+  function roleSelect(key, value, roles, onChange, label = 'Categoria') {
+    return createDropdown({ key, label, items: roles.map((r) => ({ value: r.value, text: r.text })), value, onChange }).root;
   }
 
   // ---- actions ---------------------------------------------------------------------------------------------------
@@ -181,14 +178,15 @@ ${row.url}`;   // the row is ellipsised; the tooltip has the rest
       banner.append(el('span', '', 'O workspace selecionado mudou desde que este painel foi aberto. Nada foi gravado; revise o destino. '), button('Usar o selecionado agora', () => { selectedAtOpen = selectedId(); targetId = selectedAtOpen; confirmed = false; conflict = null; render(); }, { key: 'review' }));
       dest.append(banner);
     }
-    const pick = el('select', 'control');
-    pick.dataset.key = 'target';
-    pick.setAttribute('aria-label', 'Workspace de destino');
-    for (const o of m.options) { const opt = el('option', '', o.text); opt.value = o.id; pick.append(opt); }
-    if (m.targetId) pick.value = m.targetId;
-    pick.addEventListener('change', () => { targetId = pick.value; confirmed = false; conflict = null; render(); });
+    const pick = createDropdown({
+      key: 'target',
+      label: 'Workspace de destino',
+      items: m.options.map((o) => ({ value: o.id, text: o.text })),
+      value: m.targetId || undefined,
+      onChange: (value) => { targetId = value; confirmed = false; conflict = null; render(); }
+    });
     const pickRow = el('div', 'chats-row');
-    pickRow.append(pick);
+    pickRow.append(pick.root);
     dest.append(pickRow);
     if (m.targetNote) dest.append(el('p', 'chats-note', `Destino ${m.targetNote}.`));
     if (m.blocked) dest.append(el('p', 'chats-note is-warning', m.blocked));
@@ -243,6 +241,8 @@ ${row.url}`;   // the row is ellipsised; the tooltip has the rest
     if (active) { const again = findByKey(body, active); if (again) again.focus(); }
     position();
   }
+
+  $('chats-close').addEventListener('click', () => void closeOverlay());
 
   return {
     async open(opened) {

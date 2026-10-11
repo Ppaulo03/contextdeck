@@ -25,9 +25,20 @@ function createWorld({ session = 'contextdeck', workspaces = [ws('w1', 'api'), w
     getState: () => ({ connection: herdr.connection, model: herdr.connection === 'connected' || herdr.model ? { workspaces: herdr.workspaces } : null, epoch: 1 }),
     onChange: (l) => { observerListeners.add(l); return () => observerListeners.delete(l); }
   };
+  // `select` is the explicit user selection (the M01-I2 controller): by default it succeeds and the workspace becomes the
+  // selected one (origin dock); a test replaces `selectImpl` to make it fail, wait, or settle somewhere else.
+  const selectCalls = [];
+  const world0 = { selectImpl: null };
   const selection = {
     getState: () => ({ selected: sel.selected, pending: sel.pending, options: herdr.workspaces }),
-    onChange: (l) => { selectionListeners.add(l); return () => selectionListeners.delete(l); }
+    onChange: (l) => { selectionListeners.add(l); return () => selectionListeners.delete(l); },
+    select: async (s, workspaceId) => {
+      selectCalls.push([s, workspaceId]);
+      if (world0.selectImpl) return world0.selectImpl(s, workspaceId);
+      sel.selected = { workspaceId, origin: 'dock' };
+      selectionListeners.forEach((l) => l());
+      return { ok: true, confirmed: true };
+    }
   };
   let clock = 1000;
   let seq = 0;
@@ -35,7 +46,8 @@ function createWorld({ session = 'contextdeck', workspaces = [ws('w1', 'api'), w
   const store = createBindingsStore({ file, fs: fsImpl, now: tick });
   const bindings = createChatBindings({ store, session, observer, selection, now: tick, newId: () => `b_${String(++seq).padStart(16, '0')}` });
   return {
-    root, file, store, bindings, herdr, sel, session, observer, selection,
+    root, file, store, bindings, herdr, sel, session, observer, selection, selectCalls, world0,
+    setSelectImpl: (fn) => { world0.selectImpl = fn; },
     select: (workspaceId, origin = 'dock') => { sel.selected = workspaceId ? { workspaceId, origin } : null; selectionListeners.forEach((l) => l()); },
     setWorkspaces: (list) => { herdr.workspaces = list; observerListeners.forEach((l) => l()); },
     disconnect: () => { herdr.connection = 'disconnected'; observerListeners.forEach((l) => l()); },

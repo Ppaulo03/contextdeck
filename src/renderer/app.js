@@ -11,6 +11,7 @@ import { initHerdrPanel } from './components/herdr-panel.js';
 import { initWorkspaceSelector } from './components/workspace-selector.js';
 import { initChatLink } from './components/chat-link.js';
 import { initChatStrip } from './components/chat-strip.js';
+import { initActivityIndicator } from './components/activity-indicator.js';
 
 const dock = window.dock;
 const feedback = createFeedback();
@@ -20,6 +21,7 @@ const header = initHeader({ dock, onReconnect: () => void terminal.start() });
 const herdrPanel = initHerdrPanel({ dock, store });
 initWorkspaceSelector({ dock, store, feedback });
 const chatLink = initChatLink({ dock, feedback });
+initActivityIndicator({ dock, feedback });
 initChatStrip({ dock, feedback, openChatsPanel: (trigger) => void chatLink.openPanel(trigger) });
 initGitPanel({ dock, feedback });
 

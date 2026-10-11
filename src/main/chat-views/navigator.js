@@ -23,7 +23,7 @@ const fail = (code, message, extra) => ({ ok: false, error: { code, message, ...
 // `activity` (optional, the observation hub): per-view status (responding / draft / attention) shown on tabs and
 // aggregated per workspace. It is read-only here: the navigator never starts, stops or feeds an observer, and an
 // explicit user action that shows a view is reported as a visit (which acknowledges that view's pending attention).
-function createChatNavigator({ manager, session, bindings, selection, prefs, homeUrl, activity = null }) {
+function createChatNavigator({ manager, session, bindings, selection, prefs, homeUrl, activity = null, onAttention = null }) {
   const listeners = new Set();
   let mode = 'terminal';
   let reconciling = false;
@@ -233,6 +233,64 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     return out;
   }
 
+  // ---- global activity (M01-I3B-2H) --------------------------------------------------------------------------------
+  // A projection of the SAME per-view summaries, across every workspace: totals for the top bar and groups for the
+  // activity center. Derived on demand, never stored, never loads a view; a conversation that was never loaded is absent.
+  const STATE_ORDER = ['responding', 'attention', 'draft'];
+
+  function getGlobalActivity() {
+    const sel = selectedWorkspace();
+    const all = mine(bindings.all());
+    const byKey = new Map(all.map((b) => [b.conversationKey, b]));
+    const labelOf = new Map(sel.options.map((o) => [o.id, o.label]));
+    const totals = { responding: 0, attention: 0, drafts: 0, observed: 0, loaded: 0 };
+    const groups = new Map();
+    for (const v of manager.list()) {
+      totals.loaded += 1;
+      const a = activityOf(v);
+      if (!a) continue;
+      totals.observed += 1;
+      if (a.responding) totals.responding += 1;
+      if (a.attention) totals.attention += 1;
+      if (a.draft) totals.drafts += 1;
+      if (!(a.responding || a.attention || a.draft)) continue;
+      const wsId = wsIdOf(v.scope);
+      const gk = wsId || '';
+      const b = v.identity.state === 'durable' ? byKey.get(v.identity.key) : null;
+      const bound = Boolean(b && v.scope && wsKeyOf(b) === v.scope);
+      if (!groups.has(gk)) {
+        const fallback = all.find((x) => x.workspaceIdentity.workspaceId === wsId);
+        groups.set(gk, { id: wsId, key: v.scope, label: wsId ? (labelOf.has(wsId) ? labelOf.get(wsId) : (fallback ? fallback.workspaceLabel : '')) : '', items: [] });
+      }
+      groups.get(gk).items.push({
+        viewId: v.id,
+        bindingId: bound ? b.bindingId : null,
+        kind: bound ? 'binding' : 'temporary',
+        label: bound ? (b.label || '(sem rótulo)') : (v.identity.state === 'durable' ? 'Conversa não vinculada' : 'Nova conversa'),
+        responding: a.responding, attention: a.attention, draft: a.draft,
+        status: bound ? b.status : null,
+        needsConfirm: bound ? b.status !== 'linked' : false,
+        openable: Boolean(v.scope) && (!bound || (b.status !== 'orphan' && b.status !== 'other-session'))
+      });
+    }
+    const rank = (i) => (i.responding ? 0 : i.attention ? 1 : 2);
+    const list = [...groups.values()].map((g) => ({ ...g, items: g.items.sort((x, y) => rank(x) - rank(y) || x.label.localeCompare(y.label)) }));
+    list.sort((x, y) => (x.id === null) - (y.id === null) || String(x.id).localeCompare(String(y.id), undefined, { numeric: true }));
+    return { totals, selectedId: sel.id, groups: list };
+  }
+
+  // Resolves what the user asked to open from the activity center against the CURRENT state (never trusting ids alone).
+  function resolveActivityTarget({ workspaceId, bindingId, viewId } = {}) {
+    if (typeof workspaceId !== 'string') return null;
+    const wk = keyFor(workspaceId);
+    if (bindingId !== undefined) {
+      const b = mine(bindings.all()).find((x) => x.bindingId === bindingId && wsKeyOf(x) === wk);
+      return b ? { kind: 'binding', wk, binding: b } : null;
+    }
+    const v = typeof viewId === 'string' ? manager.get(viewId) : null;
+    return v && v.scope === wk && v.page !== 'destroyed' ? { kind: 'temporary', wk, viewId: v.id } : null;
+  }
+
   // ---- mode and state ------------------------------------------------------------------------------------------
   // The chat tab appears or disappears. On appearing, the right view is chosen BEFORE it is attached, so a stale
   // chat of another workspace is never on screen, not even for a frame.
@@ -328,17 +386,25 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
   const offManager = manager.onChange(() => reconcile());
   // A status change redraws the strip; it never reconciles (observing cannot change which view is shown).
   const offActivity = activity ? activity.onChange(() => emit()) : () => {};
+  // New pending attention, translated to what the user needs to see (which conversation, in which workspace).
+  const offAttention = activity && onAttention ? activity.onAttention(({ viewId }) => {
+    const v = manager.get(viewId);
+    if (!v || !v.scope) return;
+    const g = getGlobalActivity().groups.find((x) => x.key === v.scope);
+    const item = g && g.items.find((i) => i.viewId === viewId);
+    if (item) onAttention({ viewId, workspaceId: g.id, workspaceLabel: g.label, label: item.label, bindingId: item.bindingId, kind: item.kind, openable: item.openable });
+  }) : () => {};
   const offSelection = selection.onChange(() => reconcile());
 
   return {
-    reconcile, getWorkspaceActivity, setMode, selectBinding, newConversation, selectTemporary, openUnscoped, getState,
+    reconcile, getWorkspaceActivity, getGlobalActivity, resolveActivityTarget, setMode, selectBinding, newConversation, selectTemporary, openUnscoped, getState,
     getVisibleUrl: () => { const id = manager.getVisibleId(); const h = id && manager.isAttached() ? manager.handleOf(id) : null; return h && !h.isDestroyed() ? h.getUrl() : ''; },
     onChange(l) { listeners.add(l); return () => listeners.delete(l); },
     runtime: provider,
     _debugViews: () => manager.list(),
     // The user can see the visible view now (chat tab shown, window interactive): acknowledges its pending attention.
     visitVisible: () => (activity ? activity.visitVisible() : false),
-    stop() { offManager(); offSelection(); offActivity(); listeners.clear(); }
+    stop() { offManager(); offSelection(); offActivity(); offAttention(); listeners.clear(); }
   };
 }
 

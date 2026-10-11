@@ -34,6 +34,13 @@ function registerOverlayIpc({ ipcMain, trustedUi, trustedOverlay, win, observer,
     if (!rect) return { ok: false, error: { code: 'invalid_anchor', message: 'Posicao do painel invalida.' } };
     return { ok: await win.openMenu(rect, 'chats') };
   });
+  // The global activity center: the same overlay view, a third page mode.
+  ipcMain.handle('overlay:open-activity-center', async (event, anchor) => {
+    if (!trustedUi(event)) return denied;
+    const rect = sanitizeAnchor(anchor);
+    if (!rect) return { ok: false, error: { code: 'invalid_anchor', message: 'Posicao do painel invalida.' } };
+    return { ok: await win.openMenu(rect, 'activity') };
+  });
   ipcMain.handle('overlay:state', (event) => (trustedOverlay(event) ? herdrState(observer, selection, extra) : null));
   ipcMain.handle('overlay:choose', (event, args) => {
     if (!trustedOverlay(event)) return denied;

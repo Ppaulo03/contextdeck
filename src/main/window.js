@@ -28,6 +28,8 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
   let navigator;
   let initialViewId = null;
   let hub = null;               // per-view status observation (see chat-views/observation.js)
+  let noticeCount = 0;          // activity notices wanted on screen (see syncNotices)
+  let interactive = false;
   let overlay;
   let lastChatBounds = null;
   let activeMode = 'terminal';
@@ -87,8 +89,23 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
   // Can the user look at the window right now? Not minimized, shown and focused. A response that ends while this is
   // false is "not seen", even if its view is the attached one.
   function updatePresence() {
-    if (!hub) return;
-    hub.setInteractive(alive() && mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused());
+    interactive = alive() && mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused();
+    if (hub) hub.setInteractive(interactive);
+    syncNotices();
+  }
+
+  // Activity notices: small cards in the overlay view, top right under the bars. Shown only while the user can see the
+  // window and no modal owns the overlay; never focused, so typing in the terminal or the page is not interrupted.
+  const NOTICE_WIDTH = 372;
+  const NOTICE_ROW = 78;
+  function syncNotices() {
+    if (!overlay || !alive()) return;
+    if (noticeCount === 0 || !interactive || overlay.isOpen()) { overlay.hideNotice(); return; }
+    const { width } = mainWindow.getContentBounds();
+    const top = TOPBAR_HEIGHT + (activeMode === 'chat' ? CHATBAR_HEIGHT : 0) + 6;
+    const rows = Math.min(noticeCount, 3);
+    const rect = { x: Math.max(0, width - NOTICE_WIDTH - 12), y: top, width: NOTICE_WIDTH, height: rows * NOTICE_ROW + 8 + (noticeCount > 3 ? 22 : 0) };
+    void overlay.showNotice(rect);
   }
 
   function focusChat() {
@@ -107,6 +124,7 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     navigator.setMode(mode);       // picks the right conversation for the workspace, THEN attaches it (or detaches)
     resizeChat();
     updatePresence();
+    syncNotices();
     if (mode === 'chat' && user) navigator.visitVisible();
     persist();
     send('dock:mode', mode);
@@ -146,10 +164,10 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
       preloadPath: overlayPreloadPath,
       html: overlayHtml,
       onBeforeInput: handleShortcuts,
-      onHidden: (kind) => send('overlay:closed', kind)
+      onHidden: (kind) => { send('overlay:closed', kind); syncNotices(); }
     });
     // A menu is modal and anchored to the current layout: any geometry change closes it.
-    const relayout = () => { overlay.hide(); resizeChat(); };
+    const relayout = () => { overlay.hide(); resizeChat(); syncNotices(); };
     mainWindow.on('resize', relayout);
     mainWindow.on('maximize', relayout);
     mainWindow.on('unmaximize', relayout);
@@ -200,6 +218,7 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     navigator = createChatNavigator({
       manager,
       activity: hub,
+      onAttention: chats.onAttention,
       session: chats.session,
       bindings: chats.bindings,
       selection: chats.selection,
@@ -235,7 +254,9 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     // The workspace menu overlay (see overlay.js). The anchor is the trigger's rectangle in the UI window.
     openMenu: (anchor, kind) => (overlay ? overlay.show(anchor, kind) : Promise.resolve(false)),
     closeMenu: () => (overlay ? overlay.hide() : false),
-    sendToOverlay: (channel, data) => { if (overlay && overlay.isOpen()) overlay.send(channel, data); },
+    sendToOverlay: (channel, data) => { if (overlay && overlay.isShown()) overlay.send(channel, data); },
+    // How many activity notices the overlay should show (0 hides them).
+    setNotices: (count) => { noticeCount = Math.max(0, Math.min(Number(count) || 0, 50)); syncNotices(); },
     focus: () => {
       if (!alive()) return;
       if (mainWindow.isMinimized()) mainWindow.restore();

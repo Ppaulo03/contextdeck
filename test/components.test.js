@@ -140,10 +140,13 @@ test('dispose removes the store subscription and the overlay listener (no duplic
 // ---- menu overlay ------------------------------------------------------------------------------------------
 
 function mountOverlay(initial = state(), { innerWidth = 1000 } = {}) {
-  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message']);
+  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message', 'chats-close', 'activity', 'activity-body', 'activity-message', 'activity-close', 'notices']);
   document.getElementById('scrim').hidden = true;
   document.getElementById('chats').hidden = true;
   document.getElementById('chats-message').hidden = true;
+  document.getElementById('activity').hidden = true;
+  document.getElementById('activity-message').hidden = true;
+  document.getElementById('notices').hidden = true;
   const calls = { choose: [], close: 0 };
   let openCb; let stateCb; let chooseResult = { ok: true };
   const window = {
@@ -155,6 +158,7 @@ function mountOverlay(initial = state(), { innerWidth = 1000 } = {}) {
       onOpen: (cb) => { openCb = cb; return () => {}; },
       onState: (cb) => { stateCb = cb; return () => {}; },
       onChatsState: () => () => {},
+      activityState: async () => null, activityOpen: async () => ({ ok: false }), activityDismiss: async () => ({ ok: true }), onActivityState: () => () => {},
       chatsState: async () => null, chatsBind: async () => ({ ok: false }), chatsUpdate: async () => ({ ok: false }), chatsUnbind: async () => ({ ok: false }), chatsReassign: async () => ({ ok: false })
     }
   };

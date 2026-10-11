@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { initGitPanel } from './git-panel.js';
 import { initHerdrPanel } from './herdr-panel.js';
+import { initWorkspaceSelector } from './workspace-selector.js';
 
 const dock = window.dock;
 const app = document.getElementById('app');
@@ -137,6 +138,7 @@ document.getElementById('external-chat').addEventListener('click', () => void do
 
 initGitPanel({ dock, setNotice });
 const herdrPanel = initHerdrPanel({ dock });
+initWorkspaceSelector({ dock, setNotice });
 
 async function init() {
   const info = await dock.info();

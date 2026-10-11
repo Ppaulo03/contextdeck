@@ -14,7 +14,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; color: var(--text); font
 .product { font-size: 13px; font-weight: 700; white-space: nowrap; }
 .version { padding: 2px 5px; border: 1px solid var(--border); color: var(--muted); border-radius: 4px; font-size: 10px; vertical-align: 1px; }
 .tabs { display: flex; gap: 6px; align-self: stretch; align-items: end; }
-.tab { height: 41px; min-width: 148px; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; padding: 7px 12px; font: inherit; color: var(--muted); background: transparent; cursor: pointer; }
+.tab { height: 41px; min-width: 112px; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; padding: 7px 12px; font: inherit; color: var(--muted); background: transparent; cursor: pointer; }
 .tab:hover { background: #263247; color: var(--text); }
 .tab.active { color: white; background: #253854; border-color: #3c5981; box-shadow: inset 0 2px var(--accent); }
 .unlinked { margin-left: auto; color: #e4c28c; border: 1px solid #654f37; padding: 4px 7px; border-radius: 4px; font-size: 10px; white-space: nowrap; }
@@ -93,3 +93,16 @@ html, body { margin: 0; height: 100%; overflow: hidden; color: var(--text); font
 .diag-id { font-family: Consolas, monospace; }
 .diag-dir { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: Consolas, monospace; font-size: 11px; }
 .diag-mark { color: #f7768e; width: 16px; text-align: center; }
+
+/* Workspace selector (M01-I2) */
+.ws-picker { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 0 1 auto; }
+.ws-label { color: var(--muted); font-size: 11px; }
+#ws-select { min-width: 150px; max-width: 220px; font: 12px/1.2 Consolas, monospace; color: var(--text); background: #0d121b; border: 1px solid #3b485e; border-radius: 4px; padding: 5px 6px; cursor: pointer; text-overflow: ellipsis; }
+#ws-select:disabled { opacity: .6; cursor: default; }
+#ws-select:focus-visible, .ws-mode:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ws-mode { font: 11px/1 system-ui, "Segoe UI", sans-serif; color: var(--muted); background: transparent; border: 1px solid #3b485e; border-radius: 10px; padding: 4px 8px; cursor: pointer; }
+.ws-mode[aria-pressed="true"] { color: #9ece6a; border-color: #4d6b36; }
+.ws-mode:disabled { opacity: .5; cursor: default; }
+.ws-busy { color: var(--accent); font-size: 14px; animation: ws-pulse 1s ease-in-out infinite; }
+@keyframes ws-pulse { 50% { opacity: .25; } }
+@media (max-width: 1500px) { .unlinked { display: none; } }

@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { isSafeRef } = require('../git/core');
+const { WORKSPACE_ID_RE } = require('../herdr/api-client');
 
 const MODES = new Set(['terminal', 'chat']);
 const MAX_REPOS = 50;
@@ -43,10 +44,23 @@ function sanitizeGit(value) {
   return { repoDir, lastZip: pathOrUndefined(g.lastZip), repos };
 }
 
-// Only non-sensitive UI preferences live here (last tab, window size, git settings).
+// Herdr workspace selector (M01-I2): sync mode and the last workspace the user picked *explicitly*
+// (never an inferred one), bound to the session it belongs to.
+function sanitizeHerdr(value) {
+  const h = value && typeof value === 'object' ? value : {};
+  const last = h.lastWorkspace;
+  const valid = last && typeof last === 'object' && typeof last.session === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(last.session) &&
+    typeof last.workspaceId === 'string' && WORKSPACE_ID_RE.test(last.workspaceId);
+  return {
+    mode: h.mode === 'manual' ? 'manual' : 'auto',
+    lastWorkspace: valid ? { session: last.session, workspaceId: last.workspaceId } : null
+  };
+}
+
+// Only non-sensitive UI preferences live here (last tab, window size, git and workspace settings).
 // Credentials and cookies stay inside Chromium's own partition storage.
 function sanitize(value) {
-  const state = { lastMode: 'terminal', bounds: undefined, git: sanitizeGit(undefined) };
+  const state = { lastMode: 'terminal', bounds: undefined, git: sanitizeGit(undefined), herdr: sanitizeHerdr(undefined) };
   if (!value || typeof value !== 'object') return state;
   if (MODES.has(value.lastMode)) state.lastMode = value.lastMode;
   const b = value.bounds;
@@ -55,6 +69,7 @@ function sanitize(value) {
     state.bounds = { width: b.width, height: b.height };
   }
   state.git = sanitizeGit(value.git);
+  state.herdr = sanitizeHerdr(value.herdr);
   return state;
 }
 

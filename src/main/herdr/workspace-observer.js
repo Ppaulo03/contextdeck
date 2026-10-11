@@ -1,6 +1,6 @@
 'use strict';
 
-const { createApiClient, SUBSCRIPTION_TYPES } = require('./api-client');
+const { createApiClient, HerdrApiError, SUBSCRIPTION_TYPES } = require('./api-client');
 const { readWorkspaces, identifyActiveWorkspace } = require('./workspace-reader');
 
 const DEFAULTS = Object.freeze({
@@ -10,6 +10,9 @@ const DEFAULTS = Object.freeze({
   minSyncIntervalMs: 1000,  // upper bound on event-driven re-reads
   heartbeatMs: 60000        // reconciles lost events; deliberately slow, never aggressive polling
 });
+
+// Errors that mean the pipe itself cannot be trusted (as opposed to Herdr refusing a request).
+const TRANSPORT_ERRORS = new Set(['timeout', 'connection_failed', 'closed', 'invalid_json', 'response_too_large']);
 
 function workspaceIdOf(data) {
   if (!data) return null;
@@ -47,10 +50,15 @@ function createWorkspaceObserver({
   let syncing = null;
   let rerun = null;
   let lastSyncStartedAt = 0;
+  let readsStarted = 0;
+  const waiters = [];       // callers of sync()/refresh() waiting for a read that starts after their call
 
   const state = {
     session,
     connection: 'stopped',
+    // Increments whenever the connection is established or lost; operations remember the epoch they
+    // started in and are dropped if it changed (see workspace-selection.js).
+    epoch: 0,
     lastError: null,
     attempts: 0,
     model: null,
@@ -77,6 +85,7 @@ function createWorkspaceObserver({
     api = undefined;
     syncing = null;
     rerun = null;
+    rejectWaiters(new HerdrApiError('closed', 'Connection closed before the read completed'));
     if (refreshTimer) { scheduler.clearTimeout(refreshTimer); refreshTimer = undefined; }
     if (heartbeatTimer) { scheduler.clearTimeout(heartbeatTimer); heartbeatTimer = undefined; }
   }
@@ -93,6 +102,7 @@ function createWorkspaceObserver({
     if (stopped) return;
     teardownConnection();
     connecting = false;
+    if (state.connection === 'connected') state.epoch += 1;
     state.connection = 'disconnected';
     setError(error);
     emit();
@@ -101,14 +111,19 @@ function createWorkspaceObserver({
 
   function scheduleHeartbeat() {
     if (stopped || heartbeatTimer) return;
-    heartbeatTimer = scheduler.setTimeout(() => { heartbeatTimer = undefined; void sync('heartbeat'); }, cfg.heartbeatMs);
+    heartbeatTimer = scheduler.setTimeout(() => { heartbeatTimer = undefined; syncQuietly('heartbeat'); }, cfg.heartbeatMs);
   }
 
-  // Single-flight read: a request made while one is running is merged into one trailing re-read.
-  function sync(reason) {
-    if (stopped || !api) return Promise.resolve();
-    if (syncing) { rerun = reason; return syncing; }
+  function settleWaiters(upToSerial) {
+    for (let i = waiters.length - 1; i >= 0; i--) if (waiters[i].serial <= upToSerial) waiters.splice(i, 1)[0].resolve();
+  }
+  function rejectWaiters(error) {
+    while (waiters.length) waiters.shift().reject(error);
+  }
+
+  function startRead(reason) {
     const mine = generation;
+    const serial = ++readsStarted;
     lastSyncStartedAt = now();
     syncing = readWorkspaces(api, { session, now })
       .then((model) => {
@@ -116,8 +131,9 @@ function createWorkspaceObserver({
         state.model = model;
         state.lastSync = { at: now(), reason };
         state.syncCount += 1;
-        if (state.connection !== 'connected') { state.connection = 'connected'; setError(null); attempts = 0; state.attempts = 0; }
+        if (state.connection !== 'connected') { state.connection = 'connected'; state.epoch += 1; setError(null); attempts = 0; state.attempts = 0; }
         emit();
+        settleWaiters(serial);
       })
       .catch((error) => { if (mine === generation) handleDisconnect(error); })
       .finally(() => {
@@ -125,15 +141,26 @@ function createWorkspaceObserver({
         syncing = null;
         if (heartbeatTimer) { scheduler.clearTimeout(heartbeatTimer); heartbeatTimer = undefined; }
         if (state.connection === 'connected') scheduleHeartbeat();
-        if (rerun) { const next = rerun; rerun = null; void sync(next); }
+        if (rerun) { const next = rerun; rerun = null; startRead(next); }
       });
-    return syncing;
   }
+
+  // Single-flight read. The returned promise resolves when a read that STARTS after this call has
+  // completed (a read already in flight is not enough: it may predate a change the caller just made).
+  // Requests made while a read is running are merged into one trailing re-read.
+  function sync(reason) {
+    if (stopped || !api) return Promise.resolve();
+    const serial = readsStarted + 1;
+    const done = new Promise((resolve, reject) => waiters.push({ serial, resolve, reject }));
+    if (syncing) rerun = reason; else startRead(reason);
+    return done;
+  }
+  const syncQuietly = (reason) => { sync(reason).catch(() => {}); };
 
   function scheduleRefresh() {
     if (stopped || refreshTimer || !api) return;
     const wait = Math.max(cfg.debounceMs, cfg.minSyncIntervalMs - (now() - lastSyncStartedAt));
-    refreshTimer = scheduler.setTimeout(() => { refreshTimer = undefined; void sync('event'); }, wait);
+    refreshTimer = scheduler.setTimeout(() => { refreshTimer = undefined; syncQuietly('event'); }, wait);
   }
 
   async function connect() {
@@ -193,13 +220,26 @@ function createWorkspaceObserver({
       if (retryTimer) { scheduler.clearTimeout(retryTimer); retryTimer = undefined; }
       return connect();
     },
+    // The only write operation of the observer: moves Herdr's session focus (workspace.focus).
+    // Transport-level failures mark the connection as lost; server-level refusals (e.g. unknown
+    // workspace) do not. The caller reconciles afterwards with refresh().
+    async focusWorkspace(workspaceId) {
+      if (stopped || !api || state.connection !== 'connected') throw new HerdrApiError('not_connected', 'Not connected to the Herdr session');
+      const mine = generation;
+      try {
+        return await api.focusWorkspace(workspaceId);
+      } catch (error) {
+        if (mine === generation && TRANSPORT_ERRORS.has(error.code)) handleDisconnect(error);
+        throw error;
+      }
+    },
     onChange(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
     getState: snapshotState,
     // Test hook: how many resources are still held.
-    _resources: () => ({ listeners: listeners.size, hasSubscription: Boolean(subscription), hasApi: Boolean(api), timers: [retryTimer, refreshTimer, heartbeatTimer].filter(Boolean).length })
+    _resources: () => ({ listeners: listeners.size, hasSubscription: Boolean(subscription), hasApi: Boolean(api), timers: [retryTimer, refreshTimer, heartbeatTimer].filter(Boolean).length, waiters: waiters.length })
   };
 }
 

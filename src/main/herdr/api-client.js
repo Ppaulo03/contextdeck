@@ -2,7 +2,8 @@
 
 const net = require('node:net');
 
-// Read-only client for Herdr's local socket API (protocol verified against Herdr 0.9.3 / protocol 22).
+// Client for Herdr's local socket API (protocol verified against Herdr 0.9.3 / protocol 22).
+// Reads are limited to an allowlist; the ONLY write is focusWorkspace() (workspace.focus).
 //
 // Transport on Windows: a named pipe at \\.\pipe\<socket_path> where <socket_path> is the value
 // reported by `herdr session list --json` (the .sock file on disk is only a descriptor).
@@ -10,8 +11,12 @@ const net = require('node:net');
 // {id, error: {code, message}}. After `events.subscribe` the same connection streams
 // {event, data} lines. See docs/validation/m01-i1.md for the captured exchanges.
 //
-// Only an explicit allowlist of read methods can be sent, so this module can never mutate a session.
+// request() accepts only this allowlist of read methods. The single permitted write, workspace.focus,
+// has its own entry point with a validated argument; no other method can be sent.
 const READ_ONLY_METHODS = Object.freeze(['ping', 'session.snapshot', 'workspace.list', 'workspace.get']);
+const FOCUS_METHOD = 'workspace.focus';
+// Herdr ids are opaque handles shaped like "w3"; anything else is refused before it reaches the pipe.
+const WORKSPACE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/;
 
 // Subscriptions that signal workspace, tab or pane topology/focus changes. The stream is used as a
 // *signal* to re-read authoritative state: events carry no sequence number and no client id.
@@ -74,11 +79,9 @@ function createApiClient({ socketPath, connect = net.connect, platform = process
     return new HerdrApiError('connection_failed', `Cannot reach Herdr (${error.code || error.message})`, { cause: error.code });
   }
 
-  function request(method, params = {}) {
+  // One request/response exchange on a fresh connection. Callers decide which methods may use it.
+  function exchange(method, params) {
     if (closed) return Promise.reject(new HerdrApiError('client_closed', 'API client is closed'));
-    if (!READ_ONLY_METHODS.includes(method)) {
-      return Promise.reject(new HerdrApiError('method_not_allowed', `Method "${method}" is not allowed: this client is read-only`));
-    }
     return new Promise((resolve, reject) => {
       const id = `cd-${++sequence}`;
       const socket = track(connect(address));
@@ -102,6 +105,26 @@ function createApiClient({ socketPath, connect = net.connect, platform = process
       socket.on('error', (error) => finish(reject, fromSocketError(error)));
       socket.on('close', () => finish(reject, new HerdrApiError('closed', 'Herdr closed the connection before answering')));
     });
+  }
+
+  function request(method, params = {}) {
+    if (!READ_ONLY_METHODS.includes(method)) {
+      return Promise.reject(new HerdrApiError('method_not_allowed', `Method "${method}" is not allowed: request() is read-only`));
+    }
+    return exchange(method, params);
+  }
+
+  // The only write: moves Herdr's session focus (and, because focus is session-wide, the view of every
+  // attached client). Resolves with the workspace as Herdr reports it after the change.
+  async function focusWorkspace(workspaceId) {
+    if (typeof workspaceId !== 'string' || !WORKSPACE_ID_RE.test(workspaceId)) {
+      throw new HerdrApiError('invalid_workspace_id', 'Workspace id is not a valid Herdr handle');
+    }
+    const result = await exchange(FOCUS_METHOD, { workspace_id: workspaceId });
+    if (!result || result.type !== 'workspace_info' || !result.workspace || result.workspace.workspace_id !== workspaceId) {
+      throw new HerdrApiError('unexpected_response', 'workspace.focus did not confirm the requested workspace');
+    }
+    return result.workspace;
   }
 
   // Opens a dedicated connection, subscribes and resolves once Herdr acknowledged. Afterwards
@@ -150,7 +173,7 @@ function createApiClient({ socketPath, connect = net.connect, platform = process
     open.clear();
   }
 
-  return { request, subscribe, close, openConnections: () => open.size, address };
+  return { request, focusWorkspace, subscribe, close, openConnections: () => open.size, address };
 }
 
-module.exports = { createApiClient, HerdrApiError, pipeAddress, READ_ONLY_METHODS, SUBSCRIPTION_TYPES };
+module.exports = { createApiClient, HerdrApiError, pipeAddress, READ_ONLY_METHODS, SUBSCRIPTION_TYPES, FOCUS_METHOD, WORKSPACE_ID_RE };

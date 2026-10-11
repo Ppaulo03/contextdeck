@@ -12,6 +12,7 @@ const { registerIpc } = require('./ipc');
 const { startStatePusher } = require('./ipc/herdr');
 const { createSessionLocator } = require('./herdr/session-locator');
 const { createWorkspaceObserver } = require('./herdr/workspace-observer');
+const { createWorkspaceSelection } = require('./herdr/workspace-selection');
 const { PROJECT_ROOT, PRELOAD, RENDERER_HTML } = require('./paths');
 
 const { app } = electron;
@@ -39,9 +40,15 @@ async function bootstrap() {
   let win;
   let stopPusher = () => {};
   const herdr = createHerdrClient({ settings, homeDir: app.getPath('home'), send: (channel, data) => win.send(channel, data) });
-  // Read-only discovery of the workspaces of the configured Herdr session (M01-I1).
+  // Discovery of the workspaces of the configured Herdr session (M01-I1) and the selector state that
+  // sits on top of it (M01-I2). Only the user's explicit selection ever sends workspace.focus.
   const observer = createWorkspaceObserver({ session: settings.herdrSession, locate: createSessionLocator({ herdrExecutable: settings.herdrExecutable }) });
-  const shutdown = () => { herdr.stop(); stopPusher(); observer.stop(); };
+  const selection = createWorkspaceSelection({
+    session: settings.herdrSession,
+    observer,
+    preferences: { get: () => uiState.herdr, set: (patch) => { Object.assign(uiState.herdr, patch); persist(); } }
+  });
+  const shutdown = () => { herdr.stop(); stopPusher(); selection.stop(); observer.stop(); };
   win = createWindowController({
     uiState,
     uiStateFile,
@@ -50,11 +57,12 @@ async function bootstrap() {
     onClosed: shutdown
   });
 
-  registerIpc({ electron, win, herdr, observer, settings, uiState, persist, userDataDir });
+  registerIpc({ electron, win, herdr, observer, selection, settings, uiState, persist, userDataDir });
   app.on('second-instance', () => win.focus());
   app.on('before-quit', shutdown);
   await win.create();
-  stopPusher = startStatePusher({ observer, send: (channel, data) => win.send(channel, data) });
+  stopPusher = startStatePusher({ observer, selection, send: (channel, data) => win.send(channel, data) });
+  selection.start();
   observer.start();
 }
 

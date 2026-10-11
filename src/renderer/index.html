@@ -16,6 +16,12 @@
         <button id="tab-terminal" class="tab active" role="tab" aria-selected="true" type="button">Herdr</button>
         <button id="tab-chat" class="tab" role="tab" aria-selected="false" type="button">ChatGPT</button>
       </div>
+      <div class="ws-picker">
+        <label for="ws-select" class="ws-label">Workspace</label>
+        <select id="ws-select" aria-label="Workspace do Herdr" disabled><option value="" disabled selected>Herdr desconectado</option></select>
+        <button id="ws-mode" class="ws-mode" type="button" aria-pressed="true" disabled>Auto</button>
+        <span id="ws-busy" class="ws-busy" role="status" aria-label="Trocando de workspace" hidden>…</span>
+      </div>
       <div class="view-actions">
         <div class="actions terminal-actions">
           <button id="reconnect-terminal" class="action" type="button">Reconectar Herdr</button>

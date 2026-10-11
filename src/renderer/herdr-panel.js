@@ -53,6 +53,15 @@ export function initHerdrPanel({ dock }) {
     box.append(el('div', 'diag-note', `${ACTIVE_TEXT[active.status]} (${REASON_TEXT[active.reason] || active.reason}; evidencia: ${active.evidence})`));
     body.append(box);
 
+    const sel = state.selection;
+    if (sel) {
+      const origin = { dock: 'escolhido no ContextDeck', herdr: 'acompanhando o foco do Herdr', recovery: 'recuperado' };
+      body.append(row('Seletor', `${sel.mode === 'auto' ? 'automatico' : 'manual'} · ${sel.selected ? `${sel.selected.workspaceId} (${origin[sel.selected.origin] || sel.selected.origin})` : (sel.unavailableId ? `${sel.unavailableId} indisponivel` : 'nenhum')}`, 'Automatico segue o ultimo foco da sessao; manual so muda por escolha explicita.'));
+      body.append(row('Foco observado', `${sel.observedId || '-'} · confiabilidade: ${{ only_workspace: 'certa (workspace unico)', last_writer: 'estimativa (ultimo cliente que mudou)', none: 'sem dados' }[sel.reliability] || sel.reliability}`));
+      if (sel.pending) body.append(row('Troca pendente', `${sel.pending.workspaceId} desde ${time(sel.pending.startedAt)}`));
+      if (sel.lastError) body.append(row('Ultimo erro do seletor', `${sel.lastError.code}: ${sel.lastError.message}`));
+    }
+
     const table = el('table', 'diag-table');
     const header = el('tr');
     for (const h of ['', 'ID', 'Nome', 'Diretorio', 'Tabs/Panes']) header.append(el('th', '', h));

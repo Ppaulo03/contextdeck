@@ -145,12 +145,12 @@ async function bootstrap() {
   });
 
   creation = projectsOn ? createProjectCreation({ session: settings.herdrSession, navigator: { newConversation: (a) => win.getNavigator().newConversation(a) }, projects }) : null;
-  win.getNavigator().setNoteProvider((viewId) => adoption.noteOf(viewId));
   navPusher = startChatNavPusher({ getState: () => win.getNavigator()?.getState(), send: (channel, data) => win.send(channel, data) });
   registerIpc({ electron, win, herdr, observer, selection, activity, activityIpc: { getPayload: getActivityPayload, directOpen, notices, unbound }, bindings, projects, newConversation: creation ? (a) => creation.start(a) : null, resolveChat, notifyChats: () => { chatsPusher.notify(); win.getNavigator()?.reconcile(); }, settings, uiState, persist, userDataDir });
   app.on('second-instance', () => win.focus());
   app.on('before-quit', shutdown);
   await win.create();
+  win.getNavigator().setNoteProvider((viewId) => adoption.noteOf(viewId));   // the navigator exists only after the window is created
   // State goes to the UI window and, while the workspace menu is open, to the menu overlay too.
   stopPusher = startStatePusher({
     observer,

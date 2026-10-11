@@ -370,39 +370,52 @@ test('banner model: transfer needs its own second click, pending offers one dire
 });
 
 // ---- unbinding the conversation that is open --------------------------------------------------------------------------------------------------
-test('unbinding the open conversation sticks: it is not bound again while the page shows it', () => run(async (w) => {
+// What main does on chats:unbind (index.js): decline the key, then release the pages that show it.
+const unbindOpen = (w, binding) => {
+  w.bindings.unbind({ bindingId: binding.bindingId });
+  w.adoption.decline(binding.conversationKey);
+  return w.navigator.releaseConversation(binding.conversationKey);
+};
+
+test('unbinding the open conversation removes its tab and leaves the workspace; the page is kept, not destroyed or rebound', () => run(async (w) => {
   const r = w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') });
   const v = w.view(r.viewId);
   v.finishLoad(w.A[0].url);
-  const key = w.A[0].conversationKey;
-  assert.equal(w.bindings.unbind({ bindingId: w.A[0].bindingId }).ok, true);
-  w.adoption.decline(key);                                          // what the chats:unbind handler does
-  w.navigator.reconcile();
+  Object.assign(v.contents.signals, { draft: true });
+  assert.equal(unbindOpen(w, w.A[0]), 1);
   v.navigate(w.A[0].url);
   w.adoption.resolve();
-  assert.equal(w.bound(1, w.A[0].url), null, 'still unbound');
-  assert.equal(w.bindings.all().length, 1);
-  assert.equal(w.manager.get(v.id).expectedKey, null);
-  assert.equal(v.loads.length, 1, 'the page was kept');
-  assert.equal(w.navigator.getState().pending, null, 'and it is not reported as a failure');
+  const s = w.navigator.getState();
+  assert.deepEqual([s.tabs.length, s.temporaries.length], [0, 0], 'no tab, no chip in the workspace');
+  assert.equal(w.bound(1, w.A[0].url), null, 'not bound again');
+  assert.equal(w.manager.get(v.id).scope, null);
+  assert.equal(w.manager.get(v.id).page !== 'destroyed', true);
+  assert.equal(w.fake.log.some((l) => l[0] === 'destroy'), false);
+  assert.equal(v.loads.length, 1);
+  assert.equal(w.manager.getAttachedId(), null, 'the page is no longer on screen under this workspace');
+  assert.equal(s.empty, 'no-conversations');
+  assert.deepEqual(w.navigator.getUnbound().map((u) => u.viewId), [v.id], 'still reachable (exceptional list)');
 }));
 
-test('after unbinding, opening the conversation again later (page left it) is a new act; an explicit retry also binds', () => run(async (w) => {
+test('after unbinding, the workspace shows its other conversations again', () => run(async (w) => {
+  w.bindings.bind({ target: w.target('w1'), url: chatUrl(2), origin: 'url', selectedAtOpen: 'w1', targetChosen: true });
+  const other = w.bindings.lookup(chatUrl(2));
+  w.navigator.selectBinding({ bindingId: other.bindingId, workspaceKey: WK('w1') });
+  const r = w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') });
+  w.view(r.viewId).finishLoad(w.A[0].url);
+  unbindOpen(w, w.A[0]);
+  assert.deepEqual(w.navigator.getState().tabs.map((t) => t.bindingId), [other.bindingId]);
+}));
+
+test('opening the released page again in a workspace is the user\'s act: it is bound again', () => run(async (w) => {
   const r = w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') });
   const v = w.view(r.viewId);
   v.finishLoad(w.A[0].url);
-  w.bindings.unbind({ bindingId: w.A[0].bindingId });
-  w.adoption.decline(w.A[0].conversationKey);
-  w.navigator.reconcile();
+  unbindOpen(w, w.A[0]);
   assert.equal(w.bound(1, w.A[0].url), null);
-  assert.equal(w.adoption.retry({ viewId: v.id }).ok, true, 'the user asks for it');
+  assert.equal(w.navigator.openUnbound({ viewId: v.id }).ok, true);
   assert.equal(w.bound(1, w.A[0].url).workspaceIdentity.workspaceId, 'w1');
-  w.bindings.unbind({ bindingId: w.bound(1, w.A[0].url).bindingId });
-  w.adoption.decline(w.A[0].conversationKey);
-  v.navigate(chatUrl(8));                                           // the page leaves the conversation
-  assert.equal(w.bound(8).workspaceIdentity.workspaceId, 'w1');
-  v.navigate(w.A[0].url);                                           // and comes back: opened again in the context
-  assert.equal(w.bound(1, w.A[0].url).workspaceIdentity.workspaceId, 'w1');
+  assert.equal(w.manager.get(v.id).scope, WK('w1'));
 }));
 
 test('chats:unbind tells main which conversation was unbound, only on success', () => {

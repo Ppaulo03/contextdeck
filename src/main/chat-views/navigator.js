@@ -246,6 +246,23 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     return { ok: true, viewId: v.id };
   }
 
+  // The user unbound a conversation: its page leaves the workspace (no tab, nothing shown there) but is NOT destroyed - a draft,
+  // a running answer or its attention may still be in it, and views are only ever closed at shutdown. It becomes an unscoped
+  // page, reachable from the exceptional list, and is bound again only if the user opens it in a workspace.
+  function releaseConversation(key) {
+    let released = 0;
+    for (const v of manager.list()) {
+      if (v.scope === null || v.identity.state !== 'durable' || v.identity.key !== key) continue;
+      choice.delete(v.scope);
+      manager.setExpected(v.id, null);
+      manager.setScope(v.id, null);
+      contextual.delete(v.id);
+      released += 1;
+    }
+    if (released) reconcile();
+    return released;
+  }
+
   // ---- pages without a workspace (exceptional) -----------------------------------------------------------------------------
   // Only pages opened while NO workspace was selected (the application's M00 behaviour) or left over from before. They are not
   // a category of the interface: they are listed (and only when there are some) so that nothing becomes unreachable. Opening
@@ -527,7 +544,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
 
   return {
     reconcile, getWorkspaceActivity, getGlobalActivity, resolveActivityTarget, setMode, selectBinding, newConversation, selectTemporary, openUnscoped, getState,
-    getUnbound, openUnbound, contextViews, confirmAdopted, moveToBinding,
+    getUnbound, openUnbound, releaseConversation, contextViews, confirmAdopted, moveToBinding,
     setNoteProvider: (fn) => { notes = typeof fn === 'function' ? fn : null; },
     // Read-only view of one page for the creation service: scope, identity (from the URL only), epoch and lifecycle.
     viewInfo: (viewId) => (typeof viewId === 'string' ? manager.get(viewId) : null),

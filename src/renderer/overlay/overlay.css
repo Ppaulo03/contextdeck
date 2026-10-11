@@ -24,6 +24,28 @@ html, body.overlay { background: transparent; }
 .menu-message { margin: 0; padding: 0 var(--space-4) var(--space-2); font-size: var(--text-xs); color: var(--text-muted); }
 .menu-message.is-error { color: var(--danger-soft); }
 
+/* Activity center and notices (M01-I3B-2H). */
+.activity-panel { width: 460px; max-width: calc(100vw - 16px); max-height: calc(100vh - 80px); overflow-y: auto; gap: var(--space-4); }
+.activity-panel[hidden], .notices[hidden] { display: none; }
+.act-group { display: flex; flex-direction: column; gap: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.act-group:first-child { padding-top: 0; border-top: 0; }
+.act-group-title { display: flex; align-items: center; gap: var(--space-3); margin: 0; font-size: var(--text-xs); color: var(--text-muted); }   /* names and ids are shown exactly as they are (homonyms) */
+.act-item { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.act-item-states { display: inline-flex; flex: none; align-items: center; gap: var(--space-2); min-width: 28px; }
+.act-item-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.act-item-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); }
+.act-item-state, .act-item-hint { font-size: var(--text-2xs); color: var(--text-muted); }
+.act-item-hint { color: var(--warning-soft); }
+.act-empty { margin: 0; font-size: var(--text-sm); color: var(--text-muted); }
+.notices { position: fixed; top: 0; right: 0; width: 100%; display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-2); }
+.act-notice { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-3) var(--space-4); background: var(--bg-raised); border: 1px solid var(--warning-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-popover); }
+.act-notice-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.act-notice-title { font-size: var(--text-sm); font-weight: 600; }
+.act-notice-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-xs); color: var(--text-muted); }
+.act-notice-error { font-size: var(--text-xs); color: var(--danger-soft); }
+.act-notice-actions { display: flex; flex: none; gap: var(--space-2); }
+.act-notice-more { margin: 0; font-size: var(--text-xs); color: var(--text-muted); text-align: center; }
+
 /* Chat bindings panel (second mode of the overlay). */
 .chats-panel { width: 440px; max-width: calc(100vw - 16px); max-height: calc(100vh - 80px); overflow-y: auto; gap: var(--space-4); }
 .chats-panel[hidden], .menu-panel[hidden] { display: none; }

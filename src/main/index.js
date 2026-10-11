@@ -10,6 +10,9 @@ const { createBindingsStore } = require('./chat-bindings/store');
 const { createChatBindings } = require('./chat-bindings/service');
 const { startChatsPusher } = require('./ipc/chats');
 const { startChatNavPusher } = require('./ipc/chatnav');
+const { startActivityPusher } = require('./ipc/activity');
+const { createNoticeController } = require('./activity/notices');
+const { createDirectOpen } = require('./activity/direct-open');
 const { createHerdrClient } = require('./herdr/client');
 const { createWindowController } = require('./window');
 const { registerIpc } = require('./ipc');
@@ -64,6 +67,24 @@ async function bootstrap() {
   // selector already receives; it is re-sent only when it actually changed.
   const activity = () => (win && win.getNavigator() ? win.getNavigator().getWorkspaceActivity() : {});
   let lastActivity = '{}';
+  // Global activity (M01-I3B-2H): a projection of the hub's summaries (top bar indicator, activity center), the in-app notices
+  // and the "open this conversation" flow. No second source of truth: everything is derived from the navigator on demand.
+  const notices = createNoticeController();
+  const navigatorOf = () => win.getNavigator();
+  const directOpen = createDirectOpen({
+    session: settings.herdrSession,
+    selection,
+    navigator: {
+      resolveActivityTarget: (a) => navigatorOf().resolveActivityTarget(a),
+      selectBinding: (a) => navigatorOf().selectBinding(a),
+      selectTemporary: (a) => navigatorOf().selectTemporary(a)
+    },
+    showChatTab: () => win.switchMode('chat'),
+    getMode: () => win.getMode()
+  });
+  const getActivityPayload = () => (navigatorOf() ? { global: navigatorOf().getGlobalActivity(), notices: notices.getState() } : null);
+  const activityPusher = startActivityPusher({ getPayload: getActivityPayload, send: (payload) => { win.send('activity:state', payload); win.sendToOverlay('overlay:activity-push', payload); } });
+  notices.onChange((s) => { win.setNotices(s.items.length + s.more); activityPusher.notify(); });
   const chatsPusher = startChatsPusher({
     bindings,
     observer,
@@ -71,7 +92,7 @@ async function bootstrap() {
     getUrl: () => win.getChatUrl(),
     send: (channel, data) => { win.send(channel, data); win.sendToOverlay('overlay:chats-push', data); }
   });
-  const shutdown = () => { herdr.stop(); stopPusher(); chatsPusher.stop(); navPusher.stop(); selection.stop(); observer.stop(); };
+  const shutdown = () => { herdr.stop(); stopPusher(); chatsPusher.stop(); navPusher.stop(); activityPusher.stop(); notices.stop(); selection.stop(); observer.stop(); };
   win = createWindowController({
     uiState,
     uiStateFile,
@@ -86,12 +107,16 @@ async function bootstrap() {
       chatsPusher.notify();
       const text = JSON.stringify(activity());
       if (text !== lastActivity) { lastActivity = text; stopPusher.notify?.(); }
+      // A notice is only for attention that is still pending: a visit (or a reload) retires it.
+      const pending = new Set(navigatorOf().getGlobalActivity().groups.flatMap((g) => g.items.filter((i) => i.attention).map((i) => i.viewId)));
+      notices.retain((n) => pending.has(n.viewId));
+      activityPusher.notify();
     },
-    chats: { session: settings.herdrSession, bindings, selection }
+    chats: { session: settings.herdrSession, bindings, selection, onAttention: (event) => notices.push(event) }
   });
 
   navPusher = startChatNavPusher({ getState: () => win.getNavigator()?.getState(), send: (channel, data) => win.send(channel, data) });
-  registerIpc({ electron, win, herdr, observer, selection, activity, bindings, notifyChats: () => { chatsPusher.notify(); win.getNavigator()?.reconcile(); }, settings, uiState, persist, userDataDir });
+  registerIpc({ electron, win, herdr, observer, selection, activity, activityIpc: { getPayload: getActivityPayload, directOpen, notices }, bindings, notifyChats: () => { chatsPusher.notify(); win.getNavigator()?.reconcile(); }, settings, uiState, persist, userDataDir });
   app.on('second-instance', () => win.focus());
   app.on('before-quit', shutdown);
   await win.create();

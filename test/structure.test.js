@@ -136,12 +136,13 @@ test('renderer wiring: each bridge subscription is registered once (no duplicate
   const files = sourceFiles.filter((f) => f.includes(`${path.sep}renderer${path.sep}`) && !f.includes(`${path.sep}overlay${path.sep}`));
   const text = files.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
   // onOverlayClosed: the workspace selector and the chat indicator each restore focus to their own trigger (told apart by `kind`).
-  const expected = { onHerdrState: 1, onMode: 1, onPtyData: 1, onPtyExit: 1, onFocusTerminal: 1, onChatStatus: 1, onChatHost: 1, onChatError: 1, onChatsState: 1, onChatNavState: 1, onOverlayClosed: 2 };
+  const expected = { onHerdrState: 1, onMode: 1, onPtyData: 1, onPtyExit: 1, onFocusTerminal: 1, onChatStatus: 1, onChatHost: 1, onChatError: 1, onChatsState: 1, onChatNavState: 1, onActivityState: 1, onOverlayClosed: 3 };
   for (const [name, count] of Object.entries(expected)) {
     assert.equal([...text.matchAll(new RegExp(`dock\\.${name}\\(`, 'g'))].length, count, `dock.${name}( is subscribed in ${count} place(s)`);
   }
   assert.equal([...text.matchAll(/chatsState\(\)/g)].length, 1, 'one initial chats state read (in the indicator)');
   assert.equal([...text.matchAll(/chatNavState\(\)/g)].length, 1, 'one initial navigation state read (in the strip)');
+  assert.equal([...text.matchAll(/activityState\(\)/g)].length, 1, 'one initial activity state read (in the indicator)');
   assert.equal([...text.matchAll(/herdrState\(\)/g)].length, 1, 'one initial state read (in the store)');
   assert.equal([...text.matchAll(/new ResizeObserver\(/g)].length, 2, 'terminal root and footer');
 });
@@ -224,7 +225,7 @@ test('preload only bridges named functions through contextBridge and never expos
   assert.match(overlay, /contextBridge\.exposeInMainWorld\('overlay'/);
   assert.doesNotMatch(overlay, /:\s*ipcRenderer\s*[,}]|require\('(fs|child_process|node:)/);
   const channels = [...overlay.matchAll(/ipcRenderer\.invoke\('([^']+)'|listen\('([^']+)'/g)].map((m) => m[1] || m[2]).sort();
-  assert.deepEqual(channels, [...OVERLAY_ONLY, ...CHATS_CHANNELS, 'overlay:chats-push', 'overlay:open', 'overlay:state-push'].sort());
+  assert.deepEqual(channels, [...OVERLAY_ONLY, ...CHATS_CHANNELS, ...ACTIVITY_SHARED, 'overlay:chats-push', 'overlay:activity-push', 'overlay:open', 'overlay:state-push'].sort());
 });
 
 // ---- IPC contract ------------------------------------------------------------------------------
@@ -236,12 +237,15 @@ const HANDLE_CHANNELS = [
   'overlay:choose', 'overlay:close', 'overlay:open-chats-panel', 'overlay:open-workspace-menu', 'overlay:state',
   'chats:bind', 'chats:reassign', 'chats:state', 'chats:unbind', 'chats:update',
   'chatnav:new', 'chatnav:open-unscoped', 'chatnav:select', 'chatnav:select-temporary', 'chatnav:state',
+  'activity:dismiss', 'activity:open', 'activity:state', 'overlay:open-activity-center',
   'git:show', 'git:status', 'git:zip', 'pty:start'
 ].sort();
 // Chat bindings (M01-I3A): callable from the UI window AND from the overlay panel, never from the remote page.
 const CHATS_CHANNELS = ['chats:bind', 'chats:reassign', 'chats:state', 'chats:unbind', 'chats:update'];
 // What the local UI window may invoke vs what only the menu overlay may invoke (least privilege).
-const OVERLAY_ONLY = ['overlay:choose', 'overlay:close', 'overlay:state'];
+const OVERLAY_ONLY = ['overlay:choose', 'overlay:close', 'overlay:state', 'activity:open', 'activity:dismiss'];
+// Global activity (M01-I3B-2H): the state is readable by the UI window and by the overlay; opening and dismissing only by the overlay.
+const ACTIVITY_SHARED = ['activity:state'];
 const ON_CHANNELS = ['pty:resize', 'pty:write'];
 
 function fakeIpc() {
@@ -262,7 +266,7 @@ function fakeBindings(calls) {
 function registerWithFakes(overrides = {}) {
   const { registerIpc } = require('../src/main/ipc');
   const ipc = fakeIpc();
-  const calls = { switchMode: [], footer: [], write: [], resize: [], openExternal: [], start: [], refresh: 0, select: [], syncMode: [], openMenu: [], closeMenu: 0, chats: [], notified: 0 };
+  const calls = { switchMode: [], footer: [], write: [], resize: [], openExternal: [], start: [], refresh: 0, select: [], syncMode: [], openMenu: [], closeMenu: 0, chats: [], notified: 0, activityOpen: [], dismissed: [] };
   const win = {
     isTrusted: (event) => event.trusted === true,
     isOverlay: (event) => event.overlay === true,
@@ -294,6 +298,7 @@ function registerWithFakes(overrides = {}) {
       setMode: (mode) => { calls.syncMode.push(mode); return { ok: true, mode }; }
     },
     bindings: fakeBindings(calls),
+    activityIpc: { getPayload: () => ({ global: { totals: {}, groups: [] }, notices: { items: [], more: 0 } }), directOpen: { open: async (a) => { calls.activityOpen.push(a); return { ok: true }; } }, notices: { dismiss: (id) => calls.dismissed.push(id) } },
     notifyChats: () => { calls.notified += 1; },
     settings: { herdrSession: 'contextdeck', workingDirectory: undefined },
     uiState: require('../src/main/persistence/ui-state').sanitize(undefined), persist: () => {}, userDataDir
@@ -334,7 +339,7 @@ test('IPC: preload channels all exist in main, and main only sends channels the 
   const overlayInvoked = [...overlayPreload.matchAll(/ipcRenderer\.invoke\('([^']+)'/g)].map((m) => m[1]);
   const sent = [...preload.matchAll(/ipcRenderer\.send\('([^']+)'/g)].map((m) => m[1]);
   assert.deepEqual([...new Set([...invoked, ...overlayInvoked])].sort(), HANDLE_CHANNELS, 'every handler is reachable from one of the two preloads and vice versa');
-  assert.deepEqual([...overlayInvoked].sort(), [...OVERLAY_ONLY, ...CHATS_CHANNELS].sort(), 'the overlay bridge reaches only the menu channels and the chat bindings channels');
+  assert.deepEqual([...overlayInvoked].sort(), [...OVERLAY_ONLY, ...CHATS_CHANNELS, ...ACTIVITY_SHARED].sort(), 'the overlay bridge reaches only the menu, chat bindings and activity channels');
   assert.ok(invoked.every((c) => !OVERLAY_ONLY.includes(c)), 'the UI window bridge cannot reach the overlay-only channels');
   assert.deepEqual([...sent].sort(), ON_CHANNELS);
   const listened = new Set([...preload.matchAll(/listen\('([^']+)'/g), ...overlayPreload.matchAll(/listen\('([^']+)'/g)].map((m) => m[1]));
@@ -351,7 +356,7 @@ test('IPC: an untrusted sender is refused on every channel and triggers no side 
     assert.ok(denied(result), `${channel} -> ${JSON.stringify(result)}`);
   }
   for (const fn of listeners.values()) await fn(stranger, 'text', { cols: 80, rows: 24 });
-  assert.deepEqual(calls, { switchMode: [], footer: [], write: [], resize: [], openExternal: [], start: [], refresh: 0, select: [], syncMode: [], openMenu: [], closeMenu: 0, chats: [], notified: 0 });
+  assert.deepEqual(calls, { switchMode: [], footer: [], write: [], resize: [], openExternal: [], start: [], refresh: 0, select: [], syncMode: [], openMenu: [], closeMenu: 0, chats: [], notified: 0, activityOpen: [], dismissed: [] });
 });
 
 test('IPC least privilege: the menu overlay can use only its own channels, and the UI window cannot use them', async () => {
@@ -363,9 +368,9 @@ test('IPC least privilege: the menu overlay can use only its own channels, and t
   for (const channel of handlers.keys()) {
     if (OVERLAY_ONLY.includes(channel)) {
       assert.ok(denied(await handlers.get(channel)(ui, { session: 's', workspaceId: 'w1' })), `${channel}: UI window refused`);
-    } else if (CHATS_CHANNELS.includes(channel)) {
+    } else if (CHATS_CHANNELS.includes(channel) || ACTIVITY_SHARED.includes(channel)) {
       continue;   // shared on purpose: covered by test/chat-bindings-ipc.test.js
-    } else if (channel === 'overlay:open-workspace-menu' || channel === 'overlay:open-chats-panel') {
+    } else if (channel === 'overlay:open-workspace-menu' || channel === 'overlay:open-chats-panel' || channel === 'overlay:open-activity-center') {
       assert.ok(denied(await handlers.get(channel)(overlay, anchor)), `${channel}: overlay refused`);
     } else {
       assert.ok(denied(await handlers.get(channel)(overlay, { session: 's', workspaceId: 'w1', repoRoot: 'x' })), `${channel}: overlay refused`);
@@ -591,4 +596,46 @@ test('M01-I3B-2: observers stop before views are closed; the status is never per
 
 test('M01-I3B-2: documentation exists', () => {
   assert.ok(fs.existsSync(path.join(ROOT, 'docs/validation/m01-i3b-2.md')));
+});
+
+// ---- M01-I3B-2H guard rails -------------------------------------------------------------------------------------
+
+test('M01-I3B-2H: the global activity is a projection of the existing hub: no second detector, no new view, no new write', () => {
+  const code = (...p) => read(...p).replace(/^\s*\/\/.*$/gm, '');
+  // Observers are created in exactly one place (the window's hub factory); nothing in the activity code can create one.
+  const creators = sourceFiles.filter((f) => /createStateObserver\(|startChatObservation\(/.test(code(...path.relative(ROOT, f).split(path.sep)))).map((f) => path.relative(SRC, f)).sort();
+  assert.deepEqual(creators, [path.join('main', 'chat', 'index.js'), path.join('main', 'chat', 'state-observer.js'), path.join('main', 'window.js')].sort());   // (state-observer.js defines it)
+  for (const f of ['src/main/activity/notices.js', 'src/main/activity/direct-open.js', 'src/main/ipc/activity.js', 'src/shared/activity-view.js', 'src/renderer/components/activity-indicator.js', 'src/renderer/overlay/activity-center.js']) {
+    const text = code(...f.split('/'));
+    assert.doesNotMatch(text, /createStateObserver|startChatObservation|WebContentsView|executeJavaScript|loadURL|\.reload\(|markViewed|setInteractive|\.visit\(|\.destroy\(/, f);
+    assert.doesNotMatch(text, /require\('(electron|node:fs|fs|node:child_process|child_process)'\)/, f);
+  }
+  // The only Herdr write reachable from the activity code is the explicit selection (and only in direct-open).
+  assert.equal([...code('src', 'main', 'activity', 'direct-open.js').matchAll(/selection\.select\(/g)].length, 1);
+  assert.doesNotMatch(code('src', 'main', 'ipc', 'activity.js'), /selection|focus|workspace\./);
+  // The renderer cannot name a Herdr method or a persistent write.
+  assert.doesNotMatch(code('src', 'renderer', 'overlay', 'activity-center.js') + code('src', 'renderer', 'components', 'activity-indicator.js'), /workspace\.focus|herdrSelectWorkspace|overlay\.choose|chatsBind|chatNav/);
+});
+
+test('M01-I3B-2H: attention is acknowledged only by visits; notices and the center never acknowledge it', () => {
+  const noticeAndIpc = ['src/main/activity/notices.js', 'src/main/ipc/activity.js', 'src/renderer/overlay/activity-center.js'].map((f) => read(...f.split('/')).replace(/^\s*\/\/.*$/gm, '')).join('\n');
+  assert.doesNotMatch(noticeAndIpc, /markViewed|visitVisible|\.visit\(|acknowledg/);
+  // Visits come from: the navigator's explicit actions, the window (focus / chat tab by the user / typing in a page).
+  const nav = read('src', 'main', 'chat-views', 'navigator.js').replace(/^\s*\/\/.*$/gm, '');
+  assert.equal([...nav.matchAll(/activity\?\.visit\(/g)].length, 4, 'selectBinding, newConversation, selectTemporary, openUnscoped');
+  const index = read('src', 'main', 'index.js').replace(/^\s*\/\/.*$/gm, '');
+  assert.doesNotMatch(index, /visit|markViewed/, 'the notice/pusher wiring never acknowledges attention');
+});
+
+test('M01-I3B-2H: the notice area is the existing overlay view (no new view), never focused', () => {
+  const overlay = read('src', 'main', 'overlay.js').replace(/^\s*\/\/.*$/gm, '');
+  const show = overlay.slice(overlay.indexOf('async function showNotice'), overlay.indexOf('function hideNotice'));
+  assert.doesNotMatch(show, /\.focus\(/, 'showing notices never takes the keyboard');
+  assert.match(show, /view\.setBounds\(rect\)/, 'a small rectangle, so everything outside it keeps its input');
+  assert.equal([...overlay.matchAll(/new WebContentsView\(/g)].length, 1);
+  assert.match(overlay, /if \(open \|\| noticeOpen \|\| !view\) return;/, 'the idle release policy covers the notices too');
+});
+
+test('M01-I3B-2H: documentation exists', () => {
+  assert.ok(fs.existsSync(path.join(ROOT, 'docs/validation/m01-i3b-2h.md')));
 });

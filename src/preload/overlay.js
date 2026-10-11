@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld('overlay', {
   getState: () => ipcRenderer.invoke('overlay:state'),
   choose: (args) => ipcRenderer.invoke('overlay:choose', args),
   close: () => ipcRenderer.invoke('overlay:close'),
+  activityState: () => ipcRenderer.invoke('activity:state'),
+  activityOpen: (args) => ipcRenderer.invoke('activity:open', args),
+  activityDismiss: (args) => ipcRenderer.invoke('activity:dismiss', args),
   chatsState: () => ipcRenderer.invoke('chats:state'),
   chatsBind: (args) => ipcRenderer.invoke('chats:bind', args),
   chatsUpdate: (args) => ipcRenderer.invoke('chats:update', args),
@@ -23,5 +26,6 @@ contextBridge.exposeInMainWorld('overlay', {
   chatsReassign: (args) => ipcRenderer.invoke('chats:reassign', args),
   onOpen: (cb) => listen('overlay:open', cb),
   onState: (cb) => listen('overlay:state-push', cb),
-  onChatsState: (cb) => listen('overlay:chats-push', cb)
+  onChatsState: (cb) => listen('overlay:chats-push', cb),
+  onActivityState: (cb) => listen('overlay:activity-push', cb)
 });

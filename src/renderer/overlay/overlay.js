@@ -5,6 +5,7 @@
 import { $, el, setAttr } from '../components/dom.js';
 import { menuModel } from '../../shared/workspace-view.js';
 import { createChatsPanel } from './chats-panel.js';
+import { createActivityOverlay } from './activity-center.js';
 
 const SEARCH_THRESHOLD = 7;
 const scrim = $('scrim');
@@ -19,7 +20,7 @@ let query = '';
 let activeId = null;
 let keyboard = false;
 let busy = false;
-let mode = 'workspaces';   // which panel the overlay shows: 'workspaces' (menu) | 'chats' (bindings)
+let mode = 'workspaces';   // which page the overlay shows: 'workspaces' (menu) | 'chats' (bindings) | 'activity' (center) | 'notice' (cards)
 
 const model = () => menuModel(state, query);
 const total = () => (state && state.selection ? state.selection.options.length : 0);
@@ -93,10 +94,12 @@ function focusMenu() { (search.hidden ? list : search).focus(); }
 function closeMenu() {
   scrim.hidden = true;
   chats.hide();
+  activity.hide();
   return window.overlay.close();
 }
 
 const chats = createChatsPanel({ api: window.overlay, closeOverlay: closeMenu });
+const activity = createActivityOverlay({ api: window.overlay, closeOverlay: closeMenu });
 
 async function choose(id) {
   const m = model();
@@ -123,6 +126,7 @@ function move(delta) {
 document.addEventListener('keydown', (event) => {
   if (scrim.hidden) return;
   if (mode === 'chats') { chats.handleKey(event); return; }
+  if (mode === 'activity') { activity.handleKey(event); return; }
   switch (event.key) {
     case 'Escape': event.preventDefault(); void closeMenu(); break;
     case 'Tab': event.preventDefault(); void closeMenu(); break;
@@ -139,10 +143,23 @@ scrim.addEventListener('mousedown', (event) => { if (event.target === scrim) voi
 
 window.overlay.onState((next) => { if (!scrim.hidden && mode === 'workspaces') { state = next; render(); } });
 window.overlay.onChatsState((next) => { if (mode === 'chats') chats.push(next); });
+window.overlay.onActivityState((next) => { if (mode === 'activity' || mode === 'notice') activity.push(next); });
 window.overlay.onOpen(async (opened) => {
-  if (!opened) { scrim.hidden = true; chats.hide(); return; }   // closed from the main process (resize, tab switch...)
-  mode = opened.kind === 'chats' ? 'chats' : 'workspaces';
-  panel.hidden = mode === 'chats';
+  if (!opened) { scrim.hidden = true; chats.hide(); activity.hide(); return; }   // closed from the main process (resize, tab switch...)
+  mode = opened.kind === 'chats' ? 'chats' : (opened.kind === 'activity' ? 'activity' : (opened.kind === 'notice' ? 'notice' : 'workspaces'));
+  if (mode === 'notice') {
+    // Small, non-focusing card area: nothing else is shown and no scrim captures input.
+    scrim.hidden = true; chats.hide();
+    await activity.openNotices();
+    return;
+  }
+  activity.hide();
+  panel.hidden = mode !== 'workspaces';
+  if (mode === 'activity') {
+    scrim.hidden = false; chats.hide();
+    await activity.openCenter(opened);
+    return;
+  }
   if (mode === 'chats') {
     scrim.hidden = false;
     await chats.open(opened);

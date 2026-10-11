@@ -59,6 +59,8 @@
 
 @media (max-width: 1500px) { .topbar .unlinked { max-width: 180px; overflow: hidden; text-overflow: ellipsis; } }
 @media (max-width: 1000px) {
+  .topbar .act-label { display: none; }
+  .topbar .activity-ind { min-width: 52px; padding: 0 var(--space-3); }
   .topbar { gap: var(--space-4); padding: 0 var(--space-4); }
   .topbar .brand, .topbar .ws-label { display: none; }
 }

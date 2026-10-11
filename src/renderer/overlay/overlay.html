@@ -16,6 +16,12 @@
       <ul id="menu-list" class="menu" role="listbox" tabindex="0" aria-label="Workspaces"></ul>
       <p id="menu-message" class="menu-message" role="status" hidden></p>
     </section>
+    <!-- Global activity center (modal) and, outside the scrim, the notice cards. -->
+    <section id="activity" class="menu-panel activity-panel" role="dialog" aria-modal="true" aria-labelledby="activity-title" tabindex="-1" hidden>
+      <header class="chats-head"><strong id="activity-title">Atividade dos chats</strong><span class="spacer"></span><button id="activity-close" class="btn" type="button" aria-label="Fechar">&times;</button></header>
+      <div id="activity-body" class="chats-body"></div>
+      <p id="activity-message" class="menu-message" role="status" hidden></p>
+    </section>
     <!-- Chat bindings panel: same view, second mode (opened from the top-bar indicator). -->
     <section id="chats" class="menu-panel chats-panel" role="dialog" aria-modal="true" aria-labelledby="chats-title" hidden>
       <header class="chats-head"><strong id="chats-title">Conversas vinculadas</strong><span class="spacer"></span><button id="chats-close" class="btn" type="button" aria-label="Fechar">&times;</button></header>
@@ -23,6 +29,7 @@
       <p id="chats-message" class="menu-message" role="status" hidden></p>
     </section>
   </div>
+  <div id="notices" class="notices" aria-live="polite" hidden></div>
   <script src="./overlay.bundle.js"></script>
 </body>
 </html>

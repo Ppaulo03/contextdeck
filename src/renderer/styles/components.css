@@ -133,6 +133,22 @@
 .chat-empty-title { margin: 0; font-size: var(--text-md); }
 .chat-empty-text { margin: 0; max-width: 460px; font-size: var(--text-sm); color: var(--text-muted); }
 
+/* Global activity indicator (top bar). Fixed minimum width: updates never shift the bar. */
+.activity-ind { display: inline-flex; flex: none; align-items: center; justify-content: center; min-width: 96px; height: var(--control-h-sm); padding: 0 var(--space-4); font: inherit; font-size: var(--text-xs); color: var(--text); cursor: pointer; background: transparent; border: 1px solid var(--border-strong); border-radius: var(--radius-pill); }
+.activity-ind:hover, .activity-ind[aria-expanded="true"] { background: var(--bg-hover); }
+.activity-ind.is-idle { color: var(--text-muted); border-color: var(--border); }
+.activity-ind.has-attention { border-color: var(--warning-border); }
+.activity-text { display: inline-flex; align-items: center; gap: var(--space-4); white-space: nowrap; }
+.act-part { display: inline-flex; align-items: center; gap: var(--space-2); }
+.act-ico { display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; line-height: 1; }
+.act-ico.is-spin { box-sizing: border-box; border: 2px solid var(--border-strong); border-top-color: var(--info); border-radius: 50%; animation: spin var(--duration-spin) linear infinite; }
+.act-part.is-attention .act-ico { color: var(--warning); }
+.act-part.is-draft .act-ico { color: var(--text-muted); }
+.act-part.is-responding { color: var(--info); }
+.act-ico.is-responding { box-sizing: border-box; border: 2px solid var(--border-strong); border-top-color: var(--info); border-radius: 50%; animation: spin var(--duration-spin) linear infinite; }
+.act-ico.is-attention { color: var(--warning); }
+.act-ico.is-draft { color: var(--text-muted); }
+
 /* Indicators inside a tab: fixed slot, distinct shapes, not only colors. */
 .chat-tab-status { display: inline-flex; flex: none; align-items: center; justify-content: flex-end; gap: var(--space-2); min-width: 26px; height: 12px; }
 .status-ico { display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; font-size: var(--text-2xs); line-height: 1; }

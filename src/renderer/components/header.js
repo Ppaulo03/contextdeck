@@ -1,6 +1,6 @@
-// Application header: view tabs, the controls that belong to each view, and the session label.
+// Application header: the Terminal/ChatGPT switch and the controls that belong to each view.
 // Chat controls talk to the main process through the preload bridge; terminal controls are callbacks.
-import { $, setAttr, setText } from './dom.js';
+import { $, setAttr } from './dom.js';
 
 export function initHeader({ dock, onReconnect }) {
   const app = $('app');
@@ -10,7 +10,6 @@ export function initHeader({ dock, onReconnect }) {
     if (mode !== 'terminal' && mode !== 'chat') return;
     app.dataset.mode = mode;
     for (const [name, tab] of Object.entries(tabs)) {
-      tab.classList.toggle('active', name === mode);
       setAttr(tab, 'aria-selected', name === mode);
     }
   }
@@ -24,7 +23,6 @@ export function initHeader({ dock, onReconnect }) {
 
   return {
     setMode,
-    getMode: () => app.dataset.mode,
-    setSession: (name) => setText($('session-name'), `Herdr: ${name}`)
+    getMode: () => app.dataset.mode
   };
 }

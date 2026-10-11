@@ -11,10 +11,10 @@
 <body>
   <div id="app" data-mode="terminal">
     <header class="topbar">
-      <div class="brand">ContextDeck <span class="tag">M00</span></div>
-      <div class="tabs" role="tablist" aria-label="Views">
-        <button id="tab-terminal" class="tab active" role="tab" aria-selected="true" type="button">Herdr</button>
-        <button id="tab-chat" class="tab" role="tab" aria-selected="false" type="button">ChatGPT</button>
+      <div class="brand">ContextDeck</div>
+      <div class="segmented" role="tablist" aria-label="Views">
+        <button id="tab-terminal" class="segment" role="tab" aria-selected="true" type="button">Terminal</button>
+        <button id="tab-chat" class="segment" role="tab" aria-selected="false" type="button">ChatGPT</button>
       </div>
       <div class="ws">
         <span id="ws-label" class="ws-label">Workspace</span>
@@ -35,8 +35,7 @@
           <button id="external-chat" class="btn" type="button">Abrir no navegador</button>
         </div>
       </div>
-      <div class="unlinked" title="Neste marco (M00), o ChatGPT ainda nao esta vinculado a um projeto">Chat sem projeto</div>
-      <div class="session-chip" title="Sessao isolada do Herdr"><span class="session-dot"></span><span id="session-name">Conectando...</span></div>
+      <div class="unlinked chat-only" title="Esta conversa do ChatGPT ainda nao esta vinculada a um projeto">Chat sem projeto</div>
     </header>
     <main class="content">
       <div id="terminal-root" aria-label="Terminal Herdr"></div>

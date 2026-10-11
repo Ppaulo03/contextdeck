@@ -70,21 +70,23 @@
 
 /* ---- Top bar pieces -------------------------------------------------------------------------- */
 .brand { font-size: var(--text-md); font-weight: 700; white-space: nowrap; }
-.tag { padding: var(--space-1) 5px; font-size: var(--text-2xs); color: var(--text-muted); border: 1px solid var(--border); border-radius: var(--radius-sm); vertical-align: 1px; }
-.tabs { display: flex; align-items: flex-end; align-self: stretch; gap: var(--space-3); }
-.tab {
-  height: var(--tab-h);
-  min-width: 112px;
-  padding: 7px var(--space-5);
+/* Segmented view switch: one fixed-size group, the selected segment is a quiet filled pill. */
+.segmented { display: inline-flex; flex: none; gap: var(--space-1); padding: var(--space-1); background: var(--bg-control); border: 1px solid var(--border-strong); border-radius: var(--radius-md); }
+.segment {
+  height: calc(var(--control-h-sm) - 2 * var(--space-1) - 2px);
+  min-width: 78px;
+  padding: 0 var(--space-4);
+  font-size: var(--text-sm);
   color: var(--text-muted);
   cursor: pointer;
   background: transparent;
-  border: 1px solid transparent;
-  border-bottom: 0;
-  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  transition: background var(--duration-fast), color var(--duration-fast);
 }
-.tab:hover { color: var(--text); background: var(--bg-hover); }
-.tab.active { color: var(--text-on-accent); background: var(--accent-bg); border-color: var(--accent-border); box-shadow: inset 0 2px var(--accent); }
+.segment:hover { color: var(--text); background: var(--bg-hover); }
+.segment[aria-selected="true"] { color: var(--text-on-accent); background: var(--accent-bg); }
+.segment:focus-visible { outline-offset: -2px; }
 .ws { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
 .ws-label { color: var(--text-muted); font-size: var(--text-xs); }
 .toggle {
@@ -101,8 +103,6 @@
 .toggle:disabled { opacity: var(--opacity-disabled); cursor: default; }
 .view-actions { display: flex; }
 .unlinked { margin-left: auto; padding: var(--space-2) 7px; font-size: var(--text-2xs); color: var(--warning-soft); white-space: nowrap; border: 1px solid var(--warning-border); border-radius: var(--radius-sm); }
-.session-chip { display: flex; align-items: center; gap: var(--space-3); max-width: 240px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-muted); font-size: var(--text-xs); }
-.session-dot { width: 6px; height: 6px; background: var(--success); border-radius: 50%; }
 
 /* ---- Footer: Git bar and feedback ------------------------------------------------------------- */
 .git-repo { max-width: 260px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--text-sm); font-weight: 600; }

@@ -29,8 +29,6 @@ dock.onChatHost((hostname) => { if (header.getMode() === 'chat') feedback.notice
 dock.onChatError((message) => feedback.error(`ChatGPT: ${message}`));
 
 async function init() {
-  const info = await dock.info();
-  if (info) header.setSession(info.sessionName);
   await terminal.start();
 }
 

@@ -4,6 +4,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const fs = require('node:fs');
 const { createDocument, load } = require('./helpers/fake-dom');
 
 const SRC = path.join(__dirname, '..', 'src', 'renderer');
@@ -285,7 +286,7 @@ test('feedback: one status line with an error level; unchanged text is not rewri
 });
 
 test('header: mode switches tabs and mode-dependent controls; every control calls the bridge exactly once', async () => {
-  const document = createDocument(['app', 'tab-terminal', 'tab-chat', 'reconnect-terminal', 'chat-home', 'reload-chat', 'external-chat', 'session-name']);
+  const document = createDocument(['app', 'tab-terminal', 'tab-chat', 'reconnect-terminal', 'chat-home', 'reload-chat', 'external-chat']);
   const { initHeader } = load(path.join(SRC, 'components', 'header.js'), { document });
   const calls = [];
   const dock = { switchTo: async (m) => calls.push(['switch', m]), chatHome: async () => calls.push(['home']), reloadChat: async () => calls.push(['reload']), openExternalChat: async () => calls.push(['external']) };
@@ -295,10 +296,21 @@ test('header: mode switches tabs and mode-dependent controls; every control call
   assert.equal(header.getMode(), 'chat');
   assert.equal(document.getElementById('tab-chat').getAttribute('aria-selected'), 'true');
   assert.equal(document.getElementById('tab-terminal').getAttribute('aria-selected'), 'false');
-  assert.ok(document.getElementById('tab-chat').classList.contains('active'));
   header.setMode('bogus'); assert.equal(header.getMode(), 'chat');
   for (const id of ['tab-terminal', 'tab-chat', 'reconnect-terminal', 'chat-home', 'reload-chat', 'external-chat']) await document.getElementById(id).fire('click');
   assert.deepEqual(calls, [['switch', 'terminal'], ['switch', 'chat'], ['home'], ['reload'], ['external']]);
   assert.equal(reconnects, 1);
-  header.setSession('contextdeck'); assert.equal(document.getElementById('session-name').textContent, 'Herdr: contextdeck');
+});
+
+test('header markup: plain brand, Terminal/ChatGPT segmented switch, no session chip, unlinked hint only in chat', () => {
+  const html = fs.readFileSync(path.join(SRC, 'index.html'), 'utf8');
+  const bar = html.slice(html.indexOf('<header class="topbar">'), html.indexOf('</header>'));
+  assert.match(bar, /<div class="brand">ContextDeck<\/div>/);
+  assert.doesNotMatch(bar, /M00|session-chip|session-name|Herdr: /);
+  assert.match(bar, /id="tab-terminal" class="segment"[^>]*>Terminal</);
+  assert.match(bar, /id="tab-chat" class="segment"[^>]*>ChatGPT</);
+  assert.match(bar, /class="unlinked chat-only"/);
+  const order = ['brand', 'segmented', 'class="ws"', 'id="ws-mode"', 'view-actions', 'unlinked'].map((k) => bar.indexOf(k));
+  assert.deepEqual(order, [...order].sort((a, b) => a - b), 'header hierarchy order');
+  assert.ok(order.every((i) => i >= 0));
 });

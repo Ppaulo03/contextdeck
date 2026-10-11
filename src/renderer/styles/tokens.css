@@ -63,7 +63,6 @@
   --control-h: 30px;
   --control-h-sm: 26px;
   --topbar-h: 52px;
-  --tab-h: 41px;
 
   /* Layers (renderer DOM only; native views are ordered by the main process) */
   --z-panel: 5;

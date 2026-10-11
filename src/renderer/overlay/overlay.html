@@ -22,6 +22,13 @@
       <div id="activity-body" class="chats-body"></div>
       <p id="activity-message" class="menu-message" role="status" hidden></p>
     </section>
+    <!-- Conflict modal (M01-I3B-3): not dismissible; main closes it when the conflict is resolved. -->
+    <section id="conflict" class="menu-panel conflict-panel" role="alertdialog" aria-modal="true" aria-labelledby="conflict-title" aria-describedby="conflict-text" tabindex="-1" hidden>
+      <header class="chats-head"><strong id="conflict-title">Conversa de outro workspace</strong></header>
+      <p id="conflict-text" class="conflict-text"></p>
+      <div id="conflict-actions" class="conflict-actions"></div>
+      <p id="conflict-message" class="menu-message" role="status" hidden></p>
+    </section>
     <!-- Chat bindings panel: same view, second mode (opened from the top-bar indicator). -->
     <section id="chats" class="menu-panel chats-panel" role="dialog" aria-modal="true" aria-labelledby="chats-title" hidden>
       <header class="chats-head"><strong id="chats-title">Conversas vinculadas</strong><span class="spacer"></span><button id="chats-close" class="btn" type="button" aria-label="Fechar">&times;</button></header>

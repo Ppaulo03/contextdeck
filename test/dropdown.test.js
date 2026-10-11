@@ -148,7 +148,7 @@ test('an empty list does not open; text is rendered as text', async () => {
 // ---- the panels: closing buttons ------------------------------------------------------------------------------------------
 
 function mountPanels() {
-  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message', 'chats-close', 'activity', 'activity-body', 'activity-message', 'activity-close', 'notices']);
+  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message', 'chats-close', 'activity', 'activity-body', 'activity-message', 'activity-close', 'conflict', 'conflict-text', 'conflict-actions', 'conflict-message', 'notices']);
   for (const id of ['scrim', 'chats', 'chats-message', 'activity', 'activity-message', 'notices']) document.getElementById(id).hidden = true;
   let openCb;
   const calls = { close: 0 };
@@ -158,7 +158,7 @@ function mountPanels() {
     innerWidth: 1200,
     overlay: {
       getState: async () => ({}), choose: async () => ({ ok: true }), close: async () => { calls.close += 1; },
-      onOpen: (cb) => { openCb = cb; return () => {}; }, onState: () => () => {}, onChatsState: () => () => {}, onActivityState: () => () => {},
+      onConflict: () => () => {}, onOpen: (cb) => { openCb = cb; return () => {}; }, onState: () => () => {}, onChatsState: () => () => {}, onActivityState: () => () => {},
       chatsState: async () => chatState, chatsBind: async () => ({ ok: false }), chatsUpdate: async () => ({ ok: false }), chatsUnbind: async () => ({ ok: false }), chatsReassign: async () => ({ ok: false }),
       activityState: async () => g, activityOpen: async () => ({ ok: false }), activityDismiss: async () => ({ ok: true })
     }

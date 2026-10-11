@@ -225,7 +225,7 @@ test('preload only bridges named functions through contextBridge and never expos
   assert.match(overlay, /contextBridge\.exposeInMainWorld\('overlay'/);
   assert.doesNotMatch(overlay, /:\s*ipcRenderer\s*[,}]|require\('(fs|child_process|node:)/);
   const channels = [...overlay.matchAll(/ipcRenderer\.invoke\('([^']+)'|listen\('([^']+)'/g)].map((m) => m[1] || m[2]).sort();
-  assert.deepEqual(channels, [...OVERLAY_ONLY, ...CHATS_CHANNELS, ...ACTIVITY_SHARED, 'overlay:chats-push', 'overlay:activity-push', 'overlay:open', 'overlay:state-push'].sort());
+  assert.deepEqual(channels, [...OVERLAY_ONLY, ...CHATS_CHANNELS, ...ACTIVITY_SHARED, 'overlay:chats-push', 'overlay:activity-push', 'overlay:conflict-push', 'overlay:open', 'overlay:state-push'].sort());
 });
 
 // ---- IPC contract ------------------------------------------------------------------------------
@@ -237,13 +237,13 @@ const HANDLE_CHANNELS = [
   'overlay:choose', 'overlay:close', 'overlay:open-chats-panel', 'overlay:open-workspace-menu', 'overlay:state',
   'chats:bind', 'chats:reassign', 'chats:state', 'chats:unbind', 'chats:update', 'projects:link', 'projects:unlink',
   'chatnav:new', 'chatnav:open-unscoped', 'chatnav:select', 'chatnav:select-temporary', 'chatnav:state',
-  'activity:dismiss', 'activity:open', 'activity:state', 'overlay:open-activity-center', 'activity:open-unbound', 'chatnav:resolve',
+  'activity:dismiss', 'activity:open', 'activity:state', 'overlay:open-activity-center', 'activity:open-unbound', 'chatnav:resolve', 'conflict:resolve',
   'git:show', 'git:status', 'git:zip', 'pty:start'
 ].sort();
 // Chat bindings (M01-I3A): callable from the UI window AND from the overlay panel, never from the remote page.
 const CHATS_CHANNELS = ['chats:bind', 'chats:reassign', 'chats:state', 'chats:unbind', 'chats:update', 'projects:link', 'projects:unlink'];
 // What the local UI window may invoke vs what only the menu overlay may invoke (least privilege).
-const OVERLAY_ONLY = ['overlay:choose', 'overlay:close', 'overlay:state', 'activity:open', 'activity:dismiss', 'activity:open-unbound'];
+const OVERLAY_ONLY = ['overlay:choose', 'overlay:close', 'overlay:state', 'activity:open', 'activity:dismiss', 'activity:open-unbound', 'conflict:resolve'];
 // Global activity (M01-I3B-2H): the state is readable by the UI window and by the overlay; opening and dismissing only by the overlay.
 const ACTIVITY_SHARED = ['activity:state'];
 const ON_CHANNELS = ['pty:resize', 'pty:write'];
@@ -566,7 +566,7 @@ test('M01-I3B-1: the navigation channels are UI-window-only and never reach the 
   const overlayPreload = read('src', 'preload', 'overlay.js');
   assert.doesNotMatch(overlayPreload, /chatnav/);
   const ipc = read('src', 'main', 'ipc', 'index.js');
-  assert.match(ipc, /registerChatNavIpc\(\{ ipcMain, trusted, win, newConversation, resolve: resolveChat \}\)/, 'trusted = the UI window only (not the overlay)');
+  assert.match(ipc, /registerChatNavIpc\(\{ ipcMain, trusted, trustedOverlay: \(event\) => win\.isOverlay\(event\), win, newConversation, resolve: resolveChat \}\)/, 'trusted = the UI window only (not the overlay)');
   assert.doesNotMatch(read('src', 'main', 'chat-view.js'), /ipcMain|ipcRenderer|preload\s*:/);
 });
 

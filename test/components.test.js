@@ -140,7 +140,7 @@ test('dispose removes the store subscription and the overlay listener (no duplic
 // ---- menu overlay ------------------------------------------------------------------------------------------
 
 function mountOverlay(initial = state(), { innerWidth = 1000 } = {}) {
-  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message', 'chats-close', 'activity', 'activity-body', 'activity-message', 'activity-close', 'notices']);
+  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message', 'chats-close', 'activity', 'activity-body', 'activity-message', 'activity-close', 'conflict', 'conflict-text', 'conflict-actions', 'conflict-message', 'notices']);
   document.getElementById('scrim').hidden = true;
   document.getElementById('chats').hidden = true;
   document.getElementById('chats-message').hidden = true;
@@ -155,7 +155,7 @@ function mountOverlay(initial = state(), { innerWidth = 1000 } = {}) {
       getState: async () => initial,
       choose: async (a) => { calls.choose.push(a); return typeof chooseResult === 'function' ? chooseResult() : chooseResult; },
       close: async () => { calls.close += 1; },
-      onOpen: (cb) => { openCb = cb; return () => {}; },
+      onConflict: () => () => {}, onOpen: (cb) => { openCb = cb; return () => {}; },
       onState: (cb) => { stateCb = cb; return () => {}; },
       onChatsState: () => () => {},
       activityState: async () => null, activityOpen: async () => ({ ok: false }), activityDismiss: async () => ({ ok: true }), onActivityState: () => () => {},

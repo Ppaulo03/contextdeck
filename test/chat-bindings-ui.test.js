@@ -87,7 +87,7 @@ test('the view-model mirrors the service rule for confirmation', () => {
 // ---- the panel (overlay) --------------------------------------------------------------------------------------------
 
 function mountPanel(initial = chatsState(), { results = {} } = {}) {
-  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message', 'chats-close', 'activity', 'activity-body', 'activity-message', 'activity-close', 'notices']);
+  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message', 'chats-close', 'activity', 'activity-body', 'activity-message', 'activity-close', 'conflict', 'conflict-text', 'conflict-actions', 'conflict-message', 'notices']);
   document.getElementById('scrim').hidden = true;
   document.getElementById('chats').hidden = true;
   document.getElementById('chats-message').hidden = true;
@@ -102,7 +102,7 @@ function mountPanel(initial = chatsState(), { results = {} } = {}) {
     innerWidth: 1200,
     overlay: {
       getState: async () => ({}), choose: async () => ({ ok: true }), close: async () => { calls.close += 1; },
-      onOpen: (cb) => { openCb = cb; return () => {}; }, onState: () => () => {}, onChatsState: (cb) => { pushCb = cb; return () => {}; },
+      onConflict: () => () => {}, onOpen: (cb) => { openCb = cb; return () => {}; }, onState: () => () => {}, onChatsState: (cb) => { pushCb = cb; return () => {}; },
       activityState: async () => null, activityOpen: async () => ({ ok: false }), activityDismiss: async () => ({ ok: true }), onActivityState: () => () => {},
       chatsState: async () => current,
       chatsBind: async (a) => { calls.bind.push(a); return reply('bind', a); },

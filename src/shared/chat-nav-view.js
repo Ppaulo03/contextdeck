@@ -106,4 +106,4 @@ function barModel(state, armedBindingId = null, armedTransfer = false) {
   };
 }
 
-module.exports = { barModel, statusItems, STATUS, STATUS_NOTE, RELATION_NOTE, EMPTY };
+module.exports = { bannerOf, barModel, statusItems, STATUS, STATUS_NOTE, RELATION_NOTE, EMPTY };

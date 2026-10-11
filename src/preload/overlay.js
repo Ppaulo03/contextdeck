@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('overlay', {
   activityState: () => ipcRenderer.invoke('activity:state'),
   activityOpen: (args) => ipcRenderer.invoke('activity:open', args),
   activityDismiss: (args) => ipcRenderer.invoke('activity:dismiss', args),
+  conflictResolve: (args) => ipcRenderer.invoke('conflict:resolve', args),
   activityOpenUnbound: (args) => ipcRenderer.invoke('activity:open-unbound', args),
   chatsState: () => ipcRenderer.invoke('chats:state'),
   chatsBind: (args) => ipcRenderer.invoke('chats:bind', args),
@@ -30,5 +31,6 @@ contextBridge.exposeInMainWorld('overlay', {
   onOpen: (cb) => listen('overlay:open', cb),
   onState: (cb) => listen('overlay:state-push', cb),
   onChatsState: (cb) => listen('overlay:chats-push', cb),
+  onConflict: (cb) => listen('overlay:conflict-push', cb),
   onActivityState: (cb) => listen('overlay:activity-push', cb)
 });

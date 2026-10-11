@@ -15,7 +15,7 @@ const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArr
 
 // `newConversation` (optional) replaces the navigator call of chatnav:new: main uses it to start the conversation in the
 // workspace's Project. Its only input is still the workspace key.
-function registerChatNavIpc({ ipcMain, trusted, win, newConversation = null, resolve = null }) {
+function registerChatNavIpc({ ipcMain, trusted, trustedOverlay = () => false, win, newConversation = null, resolve = null }) {
   const nav = () => win.getNavigator();
   const guarded = (fn) => (event, args) => {
     if (!trusted(event)) return denied;
@@ -49,6 +49,14 @@ function registerChatNavIpc({ ipcMain, trusted, win, newConversation = null, res
     if (typeof args.viewId !== 'string' || !VIEW_RE.test(args.viewId) || !['retry', 'go', 'transfer', 'back'].includes(args.action)) return invalid();
     return resolve({ viewId: args.viewId, action: args.action });
   }));
+
+  // The conflict modal (overlay page) takes the same three decisions. Only the overlay may call this one.
+  ipcMain.handle('conflict:resolve', (event, args) => {
+    if (!trustedOverlay(event)) return denied;
+    if (!resolve) return { ok: false, error: { code: 'not_ready', message: 'O ChatGPT ainda nao esta pronto.' } };
+    if (!isPlainObject(args) || typeof args.viewId !== 'string' || !VIEW_RE.test(args.viewId) || !['go', 'transfer', 'back'].includes(args.action)) return invalid();
+    return resolve({ viewId: args.viewId, action: args.action });
+  });
 
   ipcMain.handle('chatnav:open-unscoped', (event) => {
     if (!trusted(event)) return denied;

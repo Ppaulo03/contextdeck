@@ -238,10 +238,13 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     if (!v || v.page === 'destroyed' || v.identity.state !== 'durable') return fail('view_not_found', 'Conversa nao encontrada.');
     const b = mine(bindings.all()).find((x) => x.conversationKey === v.identity.key);
     if (!b) return fail('not_bound', 'Esta conversa nao tem vinculo.');
+    const from = v.scope;
+    // Back to the page that was active in this workspace before the conflicting one (the most recently shown other page).
+    const previous = manager.list().filter((x) => x.scope === from && x.id !== v.id && x.lastShownAt > 0).sort((p, q) => q.lastShownAt - p.lastShownAt)[0];
     manager.setScope(v.id, wsKeyOf(b));
     manager.setExpected(v.id, v.identity.key);
     contextual.delete(v.id);
-    choice.delete(v.scope);
+    if (previous) choice.set(from, previous.id); else choice.delete(from);
     reconcile();
     return { ok: true, viewId: v.id };
   }

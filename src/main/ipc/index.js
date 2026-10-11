@@ -24,7 +24,7 @@ function registerIpc({ electron, win, herdr, observer, selection, activity, acti
   // Chat bindings are managed from the UI window and from the overlay panel; never from the remote page.
   registerChatsIpc({ ipcMain, trusted: (event) => win.isTrusted(event) || win.isOverlay(event), win, bindings, notify: notifyChats, projects, onUnbind });
   // Conversation navigation: UI window only.
-  registerChatNavIpc({ ipcMain, trusted, win, newConversation, resolve: resolveChat });
+  registerChatNavIpc({ ipcMain, trusted, trustedOverlay: (event) => win.isOverlay(event), win, newConversation, resolve: resolveChat });
   // Global activity: state for the UI window and the overlay; "open" and "dismiss" only from the overlay's activity center / notices.
   registerActivityIpc({ ipcMain, trustedUi: trusted, trustedOverlay: (event) => win.isOverlay(event), ...activityIpc });
   registerGitIpc({ ipcMain, clipboard, dialog, trusted, win, settings, uiState, persist, userDataDir });

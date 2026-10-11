@@ -6,6 +6,7 @@ import { $, el, setAttr } from '../components/dom.js';
 import { menuModel } from '../../shared/workspace-view.js';
 import { createChatsPanel } from './chats-panel.js';
 import { createActivityOverlay } from './activity-center.js';
+import { createConflictModal } from './conflict-modal.js';
 
 const SEARCH_THRESHOLD = 7;
 const scrim = $('scrim');
@@ -20,7 +21,7 @@ let query = '';
 let activeId = null;
 let keyboard = false;
 let busy = false;
-let mode = 'workspaces';   // which page the overlay shows: 'workspaces' (menu) | 'chats' (bindings) | 'activity' (center) | 'notice' (cards)
+let mode = 'workspaces';   // which page the overlay shows: 'workspaces' (menu) | 'chats' (bindings) | 'activity' (center) | 'notice' (cards) | 'conflict' (modal)
 
 const model = () => menuModel(state, query);
 const total = () => (state && state.selection ? state.selection.options.length : 0);
@@ -92,6 +93,7 @@ function focusMenu() { (search.hidden ? list : search).focus(); }
 
 // Hides the page immediately (so a stale menu can never flash on the next opening) and asks main to remove the view.
 function closeMenu() {
+  if (mode === 'conflict') return Promise.resolve(false);      // the conflict modal is closed by main when the conflict is resolved
   scrim.hidden = true;
   chats.hide();
   activity.hide();
@@ -100,6 +102,7 @@ function closeMenu() {
 
 const chats = createChatsPanel({ api: window.overlay, closeOverlay: closeMenu });
 const activity = createActivityOverlay({ api: window.overlay, closeOverlay: closeMenu });
+const conflict = createConflictModal({ api: window.overlay });
 
 async function choose(id) {
   const m = model();
@@ -127,6 +130,7 @@ document.addEventListener('keydown', (event) => {
   if (scrim.hidden) return;
   if (mode === 'chats') { chats.handleKey(event); return; }
   if (mode === 'activity') { activity.handleKey(event); return; }
+  if (mode === 'conflict') { conflict.handleKey(event); return; }
   switch (event.key) {
     case 'Escape': event.preventDefault(); void closeMenu(); break;
     case 'Tab': event.preventDefault(); void closeMenu(); break;
@@ -139,13 +143,22 @@ document.addEventListener('keydown', (event) => {
   }
 });
 search.addEventListener('input', () => { query = search.value; activeId = null; render(); });
-scrim.addEventListener('mousedown', (event) => { if (event.target === scrim) void closeMenu(); });
+scrim.addEventListener('mousedown', (event) => { if (event.target === scrim) void closeMenu(); });   // a no-op for the conflict modal
 
 window.overlay.onState((next) => { if (!scrim.hidden && mode === 'workspaces') { state = next; render(); } });
 window.overlay.onChatsState((next) => { if (mode === 'chats') chats.push(next); });
+window.overlay.onConflict((next) => { if (mode === 'conflict') conflict.push(next); });
 window.overlay.onActivityState((next) => { if (mode === 'activity' || mode === 'notice') activity.push(next); });
 window.overlay.onOpen(async (opened) => {
-  if (!opened) { scrim.hidden = true; chats.hide(); activity.hide(); return; }   // closed from the main process (resize, tab switch...)
+  if (!opened) { scrim.hidden = true; chats.hide(); activity.hide(); conflict.hide(); return; }   // closed from the main process (resize, tab switch...)
+  if (opened.kind === 'conflict') {
+    mode = 'conflict';
+    panel.hidden = true; chats.hide(); activity.hide();
+    scrim.hidden = false;
+    conflict.open(opened);
+    return;
+  }
+  conflict.hide();
   mode = opened.kind === 'chats' ? 'chats' : (opened.kind === 'activity' ? 'activity' : (opened.kind === 'notice' ? 'notice' : 'workspaces'));
   if (mode === 'notice') {
     // Small, non-focusing card area: nothing else is shown and no scrim captures input.

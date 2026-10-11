@@ -219,14 +219,14 @@ test('markup and styles: the indicator is a button in the top bar for BOTH tabs,
   const layout = fs.readFileSync(path.join(SRC, 'styles', 'layout.css'), 'utf8');
   assert.match(layout, /max-width: 1000px\)[^}]*\.topbar \.act-label \{ display: none; \}[\s\S]*\.topbar \.activity-ind \{ min-width: 52px;/, 'higher specificity than the base rule, which is bundled after layout.css');
   const overlayHtml = fs.readFileSync(path.join(SRC, 'overlay', 'overlay.html'), 'utf8');
-  for (const id of ['activity', 'activity-title', 'activity-body', 'activity-message', 'activity-close', 'notices']) assert.match(overlayHtml, new RegExp(`id="${id}"`));
+  for (const id of ['activity', 'activity-title', 'activity-body', 'activity-message', 'activity-close', 'conflict', 'conflict-text', 'conflict-actions', 'conflict-message', 'notices']) assert.match(overlayHtml, new RegExp(`id="${id}"`));
   assert.match(overlayHtml, /id="notices" class="notices" aria-live="polite"/);
 });
 
 // ---- the overlay: activity center and notices -------------------------------------------------------------------------------------
 
 function mountOverlay(initial = payload()) {
-  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message', 'chats-close', 'activity', 'activity-body', 'activity-message', 'activity-close', 'notices']);
+  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message', 'chats-close', 'activity', 'activity-body', 'activity-message', 'activity-close', 'conflict', 'conflict-text', 'conflict-actions', 'conflict-message', 'notices']);
   for (const id of ['scrim', 'chats', 'chats-message', 'activity', 'activity-message', 'notices']) document.getElementById(id).hidden = true;
   let current = initial; let openCb; let pushCb;
   const calls = { open: [], dismiss: [], close: 0 };
@@ -235,7 +235,7 @@ function mountOverlay(initial = payload()) {
     innerWidth: 1200,
     overlay: {
       getState: async () => ({}), choose: async () => ({ ok: true }), close: async () => { calls.close += 1; },
-      onOpen: (cb) => { openCb = cb; return () => {}; }, onState: () => () => {}, onChatsState: () => () => {}, onActivityState: (cb) => { pushCb = cb; return () => {}; },
+      onConflict: () => () => {}, onOpen: (cb) => { openCb = cb; return () => {}; }, onState: () => () => {}, onChatsState: () => () => {}, onActivityState: (cb) => { pushCb = cb; return () => {}; },
       chatsState: async () => null, chatsBind: async () => ({ ok: false }), chatsUpdate: async () => ({ ok: false }), chatsUnbind: async () => ({ ok: false }), chatsReassign: async () => ({ ok: false }),
       activityState: async () => current,
       activityOpen: async (a) => { calls.open.push(a); if (gate) await gate; return typeof openResult === 'function' ? openResult(a) : openResult; },

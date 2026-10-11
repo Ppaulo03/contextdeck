@@ -12,6 +12,7 @@ const { startChatObservation } = require('./chat');
 const { createOverlay } = require('./overlay');
 const { createShortcutHandler } = require('./shortcuts');
 const { appWebPreferences } = require('./web-preferences');
+const { bannerOf } = require('../shared/chat-nav-view');
 
 const { TOPBAR_HEIGHT, CHATBAR_HEIGHT } = require('./window-metrics');   // CHATBAR: conversation strip, chat tab only
 const DEFAULT_FOOTER_HEIGHT = 76; // The renderer reports the real value (it wraps on narrow windows).
@@ -34,6 +35,9 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
   let lastChatBounds = null;
   let activeMode = 'terminal';
   let footerHeight = DEFAULT_FOOTER_HEIGHT;
+  let conflictOpen = false;     // the conflict modal must be on screen (see syncConflict)
+  let lastNavState = null;
+  let lastConflictText = '';
 
   const alive = () => mainWindow && !mainWindow.isDestroyed();
 
@@ -108,6 +112,31 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     void overlay.showNotice(rect);
   }
 
+  // The conflict modal (M01-I3B-3) is STATE-driven, not a menu: while the page on screen shows a conversation that belongs to
+  // another workspace the modal is open, nothing else can be done (the overlay covers the window, the tab shortcut is ignored)
+  // and anything that closes the overlay (resize, minimize, a menu) is undone here. It closes only when the conflict is gone.
+  function syncConflict() {
+    if (!overlay || !alive()) return;
+    const state = lastNavState;
+    const conflict = state && state.conflict && activeMode === 'chat' ? bannerOf(state, false) : null;
+    if (conflict && conflict.kind === 'conflict') {
+      const text = JSON.stringify(conflict);
+      if (conflictOpen && overlay.isOpen() && overlay.kind() === 'conflict') {
+        if (text !== lastConflictText) { lastConflictText = text; overlay.send('overlay:conflict-push', { banner: conflict }); }
+        return;
+      }
+      conflictOpen = true;
+      lastConflictText = text;
+      void overlay.show({ banner: conflict }, 'conflict');
+      return;
+    }
+    if (conflictOpen) {
+      conflictOpen = false;
+      lastConflictText = '';
+      if (overlay.isOpen() && overlay.kind() === 'conflict') overlay.hide();
+    }
+  }
+
   function focusChat() {
     const chat = attachedChat();
     if (chat) chat.focus();
@@ -145,7 +174,9 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
   }
 
   async function create() {
-    const handleShortcuts = createShortcutHandler(() => switchMode(activeMode === 'terminal' ? 'chat' : 'terminal'));
+    const toggleShortcut = createShortcutHandler(() => switchMode(activeMode === 'terminal' ? 'chat' : 'terminal'));
+    // While the conflict modal is open the tab shortcut is swallowed: there is nothing to do but decide.
+    const handleShortcuts = (event, input) => { if (conflictOpen) { if (input && input.control && (input.key || '').toLowerCase() === 'tab') event.preventDefault(); return; } toggleShortcut(event, input); };
     mainWindow = new BrowserWindow({
       width: uiState.bounds?.width ?? 1240,
       height: uiState.bounds?.height ?? 820,
@@ -164,7 +195,7 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
       preloadPath: overlayPreloadPath,
       html: overlayHtml,
       onBeforeInput: handleShortcuts,
-      onHidden: (kind) => { send('overlay:closed', kind); syncNotices(); }
+      onHidden: (kind) => { send('overlay:closed', kind); syncNotices(); if (conflictOpen && kind === 'conflict') { conflictOpen = false; lastConflictText = ''; setImmediate(syncConflict); } }
     });
     // A menu is modal and anchored to the current layout: any geometry change closes it.
     const relayout = () => { overlay.hide(); resizeChat(); syncNotices(); };
@@ -176,6 +207,7 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     for (const name of ['blur', 'minimize', 'restore', 'show', 'hide']) mainWindow.on(name, updatePresence);
     mainWindow.on('focus', () => {
       updatePresence();
+      if (conflictOpen) { syncConflict(); return; }
       navigator?.visitVisible();      // coming back to the window with a conversation on screen is a visit
       if (overlay.isOpen()) return;
       if (activeMode === 'chat') focusChat();
@@ -228,7 +260,7 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
         setLast: (key, bindingId) => { uiState.chat.last[key] = bindingId; persist(); }
       }
     });
-    navigator.onChange(() => onNavChange?.());
+    navigator.onChange((state) => { lastNavState = state; onNavChange?.(); syncConflict(); });
     // The application's own initial page (what M00 always had), loaded as before and kept unscoped until the user
     // hands it to a workspace ("new conversation"). Nothing else is loaded until it is asked for.
     initialViewId = manager.create({ url: CHAT_HOME, scope: null, pristine: true });

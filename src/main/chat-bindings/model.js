@@ -20,7 +20,7 @@ const { WORKSPACE_ID_RE } = require('../herdr/api-client');
 
 const SCHEMA_VERSION = 1;
 const ROLES = Object.freeze(['general', 'architecture', 'review', 'planning']);
-const ORIGINS = Object.freeze(['current-page', 'url']);
+const ORIGINS = Object.freeze(['current-page', 'url', 'project-new']);   // project-new: a conversation started in the workspace's Project
 const LIMITS = Object.freeze({ label: 80, bindings: 300, perWorkspace: 40, quarantine: 50, rawQuarantine: 2000, directory: 1000 });
 
 const SESSION_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
@@ -51,6 +51,26 @@ function normalizeRole(value) {
   if (value === undefined || value === null) return { ok: true, role: 'general' };
   if (typeof value !== 'string' || !ROLES.includes(value)) return err('invalid_role', 'Categoria invalida.');
   return { ok: true, role: value };
+}
+
+const dirKey = (d) => (typeof d === 'string' ? d.replace(/[\\/]+$/, '').toLowerCase() : '');
+
+// How a recorded workspace compares with what Herdr says now (shared by chat bindings and project bindings):
+//   linked      the workspace exists and matches what we recorded (label or directory; a rename keeps the directory)
+//   suspect     the id exists but BOTH label and directory differ: probably a recreated session reusing the id
+//   orphan      this session, connected, and the workspace is gone
+//   unverified  Herdr is not connected, so nothing can be said
+//   other-session  belongs to another Herdr session than the configured one: preserved, not judged
+function workspaceStatus({ identity, session, connected, workspace, recorded }) {
+  if (identity.session !== session) return 'other-session';
+  if (!connected) return 'unverified';
+  if (!workspace) return 'orphan';
+  if (recorded && recorded.seenAt > 0 && (recorded.label || recorded.directory)) {
+    const sameLabel = workspace.label === recorded.label;
+    const sameDir = Boolean(recorded.directory) && dirKey(workspace.directory) === dirKey(recorded.directory);
+    if (!sameLabel && !sameDir) return 'suspect';
+  }
+  return 'linked';
 }
 
 const finiteTime = (v) => Number.isFinite(v) && v >= 0 && v < 8.64e15;
@@ -159,5 +179,5 @@ function migrate(doc, { migrations = MIGRATIONS, current = SCHEMA_VERSION } = {}
 module.exports = {
   SCHEMA_VERSION, ROLES, ORIGINS, LIMITS, SESSION_RE, MIGRATIONS, err,
   validWorkspaceIdentity, contextKey, sameWorkspace, normalizeLabel, normalizeRole,
-  emptyData, validateBinding, sanitizeData, migrate, quarantineEntry
+  emptyData, workspaceStatus, validateBinding, sanitizeData, migrate, quarantineEntry
 };

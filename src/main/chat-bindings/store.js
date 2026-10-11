@@ -2,7 +2,7 @@
 
 const nodeFs = require('node:fs');
 const path = require('node:path');
-const { emptyData, sanitizeData, migrate } = require('./model');
+const chatModel = require('./model');
 
 // File persistence of the chat bindings (own file `chat-bindings.json`, see docs/decisions/0002-chat-bindings.md).
 //
@@ -22,7 +22,9 @@ const { emptyData, sanitizeData, migrate } = require('./model');
 
 const WRITABLE = new Set(['missing', 'ok', 'recovered']);
 
-function createBindingsStore({ file, fs = nodeFs, now = () => Date.now() }) {
+// `model` ({ emptyData, sanitizeData, migrate }) lets the project bindings reuse these file policies with their own schema.
+function createBindingsStore({ file, fs = nodeFs, now = () => Date.now(), model = chatModel }) {
+  const { emptyData, sanitizeData, migrate } = model;
   let status = 'missing';
   let notice = null;
   let data = emptyData();

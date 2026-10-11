@@ -81,7 +81,7 @@ function panelModel(state, targetId) {
     status: b.status,
     statusText: STATUS_TEXT[b.status] || '',
     url: b.url,
-    origin: b.origin === 'current-page' ? 'vinculada pela página atual' : 'vinculada por URL',
+    origin: b.origin === 'current-page' ? 'vinculada pela página atual' : (b.origin === 'project-new' ? 'iniciada no Project do workspace' : 'vinculada por URL'),
     here: state.current && state.current.conversationKey === b.conversationKey
   });
   const orphans = state.bindings.filter((b) => b.status === 'orphan').map((b) => ({ ...row(b), workspace: workspaceName(state, b) }));

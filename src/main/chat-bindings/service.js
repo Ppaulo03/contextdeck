@@ -2,7 +2,7 @@
 
 const crypto = require('node:crypto');
 const { parseChatUrl } = require('../chat/conversation-identity');
-const { LIMITS, err, validWorkspaceIdentity, contextKey, sameWorkspace, normalizeLabel, normalizeRole } = require('./model');
+const { LIMITS, ORIGINS, err, validWorkspaceIdentity, contextKey, sameWorkspace, normalizeLabel, normalizeRole, workspaceStatus } = require('./model');
 
 // Domain operations of the chat bindings (M01-I3A). Plain Node, deterministic, testable without Electron.
 //
@@ -22,7 +22,6 @@ const { LIMITS, err, validWorkspaceIdentity, contextKey, sameWorkspace, normaliz
 
 const idOf = () => `b_${crypto.randomBytes(8).toString('hex')}`;
 const slug = (reason) => reason.replace(/-/g, '_');
-const dirKey = (d) => (typeof d === 'string' ? d.replace(/[\\/]+$/, '').toLowerCase() : '');
 
 function createChatBindings({ store, session, observer, selection, now = () => Date.now(), newId = idOf }) {
   const clone = (data) => JSON.parse(JSON.stringify(data));
@@ -42,17 +41,7 @@ function createChatBindings({ store, session, observer, selection, now = () => D
   // other-session  belongs to another Herdr session than the configured one: preserved, not judged
   function statusOf(binding, snapshot, data) {
     const identity = binding.workspaceIdentity;
-    if (identity.session !== session) return 'other-session';
-    if (!snapshot.connected) return 'unverified';
-    const workspace = snapshot.byId.get(identity.workspaceId);
-    if (!workspace) return 'orphan';
-    const recorded = data.contexts[contextKey(identity)];
-    if (recorded && recorded.seenAt > 0 && (recorded.label || recorded.directory)) {
-      const sameLabel = workspace.label === recorded.label;
-      const sameDir = Boolean(recorded.directory) && dirKey(workspace.directory) === dirKey(recorded.directory);
-      if (!sameLabel && !sameDir) return 'suspect';
-    }
-    return 'linked';
+    return workspaceStatus({ identity, session, connected: snapshot.connected, workspace: snapshot.byId.get(identity.workspaceId), recorded: data.contexts[contextKey(identity)] });
   }
 
   function viewOf(binding, snapshot, data) {
@@ -156,7 +145,7 @@ function createChatBindings({ store, session, observer, selection, now = () => D
       url: identity.url,
       label: l.label,
       ...(r ? { role: r.role } : {}),
-      origin: origin === 'current-page' ? 'current-page' : 'url',
+      origin: ORIGINS.includes(origin) ? origin : 'url',
       workspaceIdentity: { session: target.session, workspaceId: target.workspaceId },
       createdAt: created,
       updatedAt: created
@@ -274,7 +263,10 @@ function createChatBindings({ store, session, observer, selection, now = () => D
     };
   }
 
-  return { bind, update, unbind, reassign, list, all, listOrphans, lookup, describeCurrent, getState };
+  // For modules that write their own records about a workspace (project bindings): the same destination rules, and the
+  // same judgement of a recorded workspace, without a second implementation.
+  const judge = (identity, recorded) => { const s = live(); return workspaceStatus({ identity, session, connected: s.connected, workspace: s.byId.get(identity.workspaceId), recorded }); };
+  return { bind, update, unbind, reassign, list, all, listOrphans, lookup, describeCurrent, getState, verifyTarget: checkTarget, judge };
 }
 
 module.exports = { createChatBindings };

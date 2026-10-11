@@ -15,6 +15,7 @@ ContextDeck is an Electron app (main process in CommonJS, local UI bundled with 
 | Content | Source | Privileges |
 |---|---|---|
 | Local UI | `dist/renderer` (built from `src/renderer`) via `file://`, strict CSP | `contextIsolation`, sandbox, no Node; talks to main only through the `window.dock` bridge (`src/preload`). |
+| Menu overlay | `dist/renderer/overlay.html`, local, transparent view above the ChatGPT view only while a menu is open | Same isolation as the UI window; its own preload exposes only `state`, `choose`, `close` and two push listeners. |
 | ChatGPT page + auth popups | `https://chatgpt.com` (HTTPS only) | `contextIsolation`, sandbox, no Node, **no preload**, persistent partition. Cannot reach any IPC channel. Only `clipboard-write` is granted to `chatgpt.com`; every other permission is denied. |
 | Herdr TUI | Bytes from a PTY, rendered by xterm.js | Text only; input is forwarded as bytes to the PTY. |
 
@@ -38,13 +39,16 @@ src/main/
   ipc/                index.js + dock.js, terminal.js, clipboard.js, git.js, herdr.js (channel registration by domain).
   persistence/        settings.js (config), ui-state.js (preferences), identity.js (persistent identifiers).
   platform/           executable.js (PATH/PATHEXT lookup), file-clipboard.js (CF_HDROP via PowerShell STA).
-src/preload/index.js  contextBridge API (`window.dock`).
-src/renderer/         index.html, terminal.js (xterm + tabs), git-panel.js (footer pickers), styles.css.
-scripts/build.js      esbuild bundle + copy to dist/renderer.
+src/preload/index.js  contextBridge API of the UI window (`window.dock`); overlay.js: the smaller bridge of the menu overlay.
+src/renderer/         index.html, app.js (entry), components/ (header, terminal-view, workspace-selector, git-panel,
+                      herdr-panel, herdr-store, feedback, dom), overlay/ (menu page), styles/ (tokens, base, layout,
+                      components). See design-system.md.
+src/shared/           Pure view-models used by the UI and the overlay (workspace-view.js).
+scripts/build.js      esbuild: app.bundle, overlay.bundle and styles.css -> dist/renderer.
 test/                 node:test suites (no real repositories; temp repos only).
 ```
 
-Only `index.js`, `window.js`, `chat-view.js` and the preload `require('electron')`; everything else is plain Node and unit-tested. Registration functions receive `electron` pieces by injection so IPC can be tested without launching the app.
+Only `index.js`, `window.js`, `chat-view.js`, `overlay.js` and the two preloads `require('electron')`; everything else is plain Node and unit-tested. Registration functions receive `electron` pieces by injection so IPC can be tested without launching the app.
 
 ## IPC contract (renderer ⇄ main)
 
@@ -61,6 +65,8 @@ Every handler first checks `event.sender` is the local UI window; strangers get 
 | `git:diff`, `git:show`, `git:zip`, `git:delete-zip` | invoke | The four actions. `delete-zip` takes **no path**. |
 | `herdr:state`, `herdr:refresh` | invoke | Observer + selection state for the selector and diagnostics panel; refresh re-reads. Read-only. |
 | `herdr:select-workspace`, `herdr:set-sync-mode` | invoke | The user's explicit workspace choice (`workspace.focus`, validated again in main) and the Auto/Manual preference. No other Herdr write exists. |
+| `overlay:open-workspace-menu` | invoke (UI window only) | Asks main to show the workspace menu overlay; the anchor rectangle is validated (four finite numbers within bounds). |
+| `overlay:state`, `overlay:choose`, `overlay:close` | invoke (**overlay only**) | The menu reads state, chooses a workspace (same validated selection path) and closes. Each handler refuses the other sender. |
 | main → renderer | events | `dock:mode`, `dock:focus-terminal`, `pty:data`, `pty:exit`, `chat:status`, `chat:host`, `chat:error`, `herdr:state` (throttled push). |
 
 `test/structure.test.js` pins this list: the registered channels, the preload's channels and main's emitted events must match exactly.
@@ -131,4 +137,4 @@ Renaming any of them would log the user out, drop preferences or orphan ZIPs. A 
 
 ## Build and configuration
 
-`npm run build` bundles `src/renderer/terminal.js` (xterm.js + CSS) with esbuild and copies `index.html`/`styles.css` to `dist/renderer` (git-ignored). `npm start` builds then launches `electron .` (`main` = `src/main/index.js`). `config.json` (local, git-ignored) overrides the versioned `config.example.json`; with neither valid, startup fails with a clear error.
+`npm run build` bundles `src/renderer/app.js` (xterm.js + components) and the overlay page with esbuild, inlines the style files into `styles.css` and copies the HTML pages into `dist/renderer` (git-ignored). `npm start` builds then launches `electron .` (`main` = `src/main/index.js`). `config.json` (local, git-ignored) overrides the versioned `config.example.json`; with neither valid, startup fails with a clear error.

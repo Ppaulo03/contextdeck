@@ -24,6 +24,7 @@ Starts with M01-I1. Out of scope: automatic prompt transfer, reading conversatio
 
 - **M01-I1 — implemented, awaiting homologation.** Read-only discovery of the workspaces of the configured Herdr session, change tracking, recovery, and a diagnostic panel ([validation/m01-i1.md](validation/m01-i1.md)). Finding: Herdr's API has **no per-client focus**, so the workspace visible in ContextDeck's own client cannot be identified (reported as `ambiguous`; `known` only with a single workspace). Nothing is associated with ChatGPT yet.
 - **M01-I2 — implemented, awaiting homologation.** Top-bar workspace selector with optimistic bidirectional focus sync: picking a workspace sends `workspace.focus` (the only write); TUI focus changes update the selector in Auto mode (Manual ignores them); startup/recovery never send a command. Assumes ContextDeck is normally Herdr's only client; the multi-client limitation stays explicit ([validation/m01-i2.md](validation/m01-i2.md)). Still no conversation association and no Git behaviour tied to the workspace.
+- **M01-I2.5 — implemented, awaiting homologation.** UX, component architecture and performance hardening: design tokens, renderer components, a workspace menu overlay that works over the ChatGPT view, measured fixes and the M01-I3 view-strategy study ([validation/m01-i2-5.md](validation/m01-i2-5.md)). No features.
 - **M01-I3 — not started.** Conversation association per workspace; needs approval before work starts.
 
 ## M02 — Not defined yet

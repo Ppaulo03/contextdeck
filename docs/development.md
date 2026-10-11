@@ -32,6 +32,14 @@ npm start             # = npm run build && electron .
 - `test/structure.test.js` guards the layout: entrypoints, syntax of every source file, build output, resource paths, preload isolation, the IPC channel contract, persistent identifiers and `ui-state.json` compatibility with M00. Update it deliberately when you change those contracts.
 - Modules that need Electron are limited to `index.js`, `window.js`, `chat-view.js` and the preload (enforced by a test); keep logic in plain-Node modules so it stays testable.
 
+### Testing renderer components
+
+`test/helpers/fake-dom.js` bundles a real renderer module with esbuild (so imports resolve as in the build) and runs
+it against a minimal fake DOM; `test/components.test.js` uses it for the selector trigger, the menu overlay, the
+store, the header and the feedback line. `src/shared/*` view-models are plain CommonJS and tested directly. The fake DOM
+models only what the components use; it is not a browser, so layout, focus rings and the native overlay view still need a
+real run (see below). When a behaviour matters, mutate the code once and confirm a test fails.
+
 ### What automated tests cannot prove
 
 Real keyboard auto-repeat, the Explorer paste of the ZIP file, ChatGPT login and ChatGPT accepting a pasted ZIP need a person at the keyboard. Say so explicitly in reports; never mark them as passed from synthetic events.

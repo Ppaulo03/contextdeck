@@ -83,4 +83,4 @@ function identifyActiveWorkspace(model) {
   return { status: 'ambiguous', workspaceId: null, candidateId: candidate, evidence: candidate ? 'session_focus_last_writer' : 'none', reason: 'api_has_no_per_client_focus' };
 }
 
-module.exports = { normalizeSnapshot, readWorkspaces, identifyActiveWorkspace, TESTED_PROTOCOL };
+module.exports = { normalizeSnapshot, readWorkspaces, identifyActiveWorkspace };

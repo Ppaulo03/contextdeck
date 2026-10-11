@@ -79,4 +79,4 @@ function createChatView({ send, onBeforeInput }) {
   };
 }
 
-module.exports = { createChatView, AUTH_POPUP_HOSTS, isHttps };
+module.exports = { createChatView };

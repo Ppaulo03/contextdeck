@@ -39,4 +39,4 @@ function deleteManagedZip(artifactsDir, filePath) {
   return { ok: true };
 }
 
-module.exports = { newZipName, isManagedZip, deleteManagedZip, MANAGED_RE };
+module.exports = { newZipName, deleteManagedZip };

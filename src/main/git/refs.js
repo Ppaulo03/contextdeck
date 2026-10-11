@@ -137,6 +137,6 @@ async function resolveSelection(root, refs, prefs) {
   return out;
 }
 
-module.exports = { discoverRefs, findOption, pickDefaultBase, describeSelection, resolveSelection, COMMIT_COUNT, BASE_CANDIDATES };
+module.exports = { discoverRefs, describeSelection, resolveSelection };
 
 

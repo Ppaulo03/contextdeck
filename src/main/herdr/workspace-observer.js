@@ -243,4 +243,4 @@ function createWorkspaceObserver({
   };
 }
 
-module.exports = { createWorkspaceObserver, DEFAULTS };
+module.exports = { createWorkspaceObserver };

@@ -125,4 +125,4 @@ async function gitArchive(root, sha, outFile) {
   return { ok: true };
 }
 
-module.exports = { isSafeRef, gitEnv, runGit, resolveRepoRoot, resolveCommit, describeCommit, gitText, gitArchive, MAX_OUTPUT_BYTES };
+module.exports = { isSafeRef, runGit, resolveRepoRoot, resolveCommit, describeCommit, gitText, gitArchive };

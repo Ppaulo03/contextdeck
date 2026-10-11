@@ -20,7 +20,7 @@ const { WORKSPACE_ID_RE } = require('../herdr/api-client');
 
 const SCHEMA_VERSION = 1;
 const ROLES = Object.freeze(['general', 'architecture', 'review', 'planning']);
-const ORIGINS = Object.freeze(['current-page', 'url', 'project-new']);   // project-new: a conversation started in the workspace's Project
+const ORIGINS = Object.freeze(['current-page', 'url', 'project-new', 'context']);   // context: adopted from the workspace the page was opened in   // project-new: a conversation started in the workspace's Project
 const LIMITS = Object.freeze({ label: 80, bindings: 300, perWorkspace: 40, quarantine: 50, rawQuarantine: 2000, directory: 1000 });
 
 const SESSION_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;

@@ -155,6 +155,43 @@ function createChatBindings({ store, session, observer, selection, now = () => D
     return { ok: true, binding: viewOf(binding, checked.snapshot, store.get()) };
   }
 
+  // Workspace-first association (M01-I3B-3): a page the user opened IN a workspace's context is attached to that workspace.
+  // This is NOT reachable from the renderer or the IPC layer: the caller is the main-side context-adoption service, which
+  // holds the provenance (the workspace captured when the user acted). Because the context was captured earlier, it does not
+  // depend on what is selected now; it still needs a live, verified destination: Herdr connected, same session, the
+  // workspace exists and is not suspect (a recreated workspace is not made trustworthy by writing into it). It never moves an
+  // existing binding: a conversation bound elsewhere is a `conflict`, resolved only by the explicit `reassign`.
+  function adopt({ target, url } = {}) {
+    const identity = parseChatUrl(url);
+    if (!identity.ok) return err(slug(identity.reason), identity.message);
+    if (!validWorkspaceIdentity(target)) return err('invalid_target', 'Destino invalido.');
+    if (target.session !== session) return err('session_mismatch', 'O destino pertence a outra sessao do Herdr.');
+    const snapshot = live();
+    if (!snapshot.connected) return err('workspace_unavailable', 'Sem conexao com o Herdr: nao e possivel verificar o workspace de destino.');
+    const workspace = snapshot.byId.get(target.workspaceId);
+    if (!workspace) return err('workspace_not_found', 'Esse workspace nao existe mais na sessao.');
+    const data = store.get();
+    const existing = data.bindings.find((b) => b.conversationKey === identity.conversationKey);
+    if (existing) {
+      const view = viewOf(existing, snapshot, data);
+      return sameWorkspace(existing.workspaceIdentity, target)
+        ? { ok: true, already: true, binding: view }
+        : err('conflict', 'Esta conversa ja esta vinculada a outro workspace.', { binding: view });
+    }
+    if (data.bindings.some((b) => sameWorkspace(b.workspaceIdentity, target) && statusOf(b, snapshot, data) === 'suspect')) {
+      return err('workspace_suspect', 'A identidade deste workspace nao foi verificada (parece ter sido recriado). Reassocie uma das conversas dele para reconfirma-lo.');
+    }
+    if (data.bindings.length >= LIMITS.bindings) return err('limit_reached', `Limite de ${LIMITS.bindings} vinculos atingido.`);
+    if (data.bindings.filter((b) => sameWorkspace(b.workspaceIdentity, target)).length >= LIMITS.perWorkspace) return err('limit_reached', `Limite de ${LIMITS.perWorkspace} conversas por workspace atingido.`);
+    const created = now();
+    let bindingId = newId();
+    while (data.bindings.some((b) => b.bindingId === bindingId)) bindingId = newId();
+    const binding = { bindingId, conversationKey: identity.conversationKey, url: identity.url, label: '', origin: 'context', workspaceIdentity: { session: target.session, workspaceId: target.workspaceId }, createdAt: created, updatedAt: created };
+    const done = commit((draft) => { draft.bindings.push(binding); recordContext(draft, target, workspace); });
+    if (!done.ok) return done;
+    return { ok: true, binding: viewOf(binding, snapshot, store.get()) };
+  }
+
   function update({ bindingId, label } = {}) {
     if (label === undefined) return err('invalid_request', 'Nada para alterar.');
     const l = normalizeLabel(label); if (!l.ok) return l;
@@ -266,7 +303,7 @@ function createChatBindings({ store, session, observer, selection, now = () => D
   // For modules that write their own records about a workspace (project bindings): the same destination rules, and the
   // same judgement of a recorded workspace, without a second implementation.
   const judge = (identity, recorded) => { const s = live(); return workspaceStatus({ identity, session, connected: s.connected, workspace: s.byId.get(identity.workspaceId), recorded }); };
-  return { bind, update, unbind, reassign, list, all, listOrphans, lookup, describeCurrent, getState, verifyTarget: checkTarget, judge };
+  return { bind, adopt, update, unbind, reassign, list, all, listOrphans, lookup, describeCurrent, getState, verifyTarget: checkTarget, judge };
 }
 
 module.exports = { createChatBindings };

@@ -102,7 +102,10 @@
 .toggle[aria-pressed="true"] { color: var(--success); border-color: var(--success-border); }
 .toggle:disabled { opacity: var(--opacity-disabled); cursor: default; }
 .view-actions { display: flex; }
-.unlinked { margin-left: auto; padding: var(--space-2) 7px; font-size: var(--text-2xs); color: var(--warning-soft); white-space: nowrap; border: 1px solid var(--warning-border); border-radius: var(--radius-sm); }
+.unlinked { margin-left: auto; padding: var(--space-2) 7px; font: inherit; font-size: var(--text-2xs); color: var(--warning-soft); white-space: nowrap; background: transparent; cursor: pointer; border: 1px solid var(--warning-border); border-radius: var(--radius-sm); }
+.unlinked:hover, .unlinked[aria-expanded="true"] { background: var(--bg-hover); }
+.unlinked.is-success { color: var(--success); border-color: var(--success-border); }
+.unlinked.is-neutral { color: var(--text-muted); border-color: var(--border-strong); }
 
 /* ---- Footer: Git bar and feedback ------------------------------------------------------------- */
 .git-repo { max-width: 260px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--text-sm); font-weight: 600; }

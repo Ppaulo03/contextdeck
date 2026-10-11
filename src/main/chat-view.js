@@ -18,7 +18,7 @@ function isHttps(url) {
 
 // The ChatGPT page: a sandboxed WebContentsView with its own persistent partition, no preload and
 // no Node. It never talks to the local UI; main only reflects its load status through `send`.
-function createChatView({ send, onBeforeInput }) {
+function createChatView({ send, onBeforeInput, onNavigated }) {
   const chatSession = session.fromPartition(CHAT_PARTITION);
   chatSession.setPermissionRequestHandler((_webContents, permission, callback, details) => {
     let allowed = false;
@@ -43,7 +43,10 @@ function createChatView({ send, onBeforeInput }) {
   });
   contents.on('did-navigate', (_event, url) => {
     try { send('chat:host', new URL(url).hostname); } catch { /* Ignore. */ }
+    onNavigated?.();
   });
+  // SPA navigation (another conversation, same document): the address changes without a page load.
+  contents.on('did-navigate-in-page', () => onNavigated?.());
   contents.on('will-navigate', (event, url) => {
     if (!isHttps(url)) event.preventDefault();
   });
@@ -74,6 +77,8 @@ function createChatView({ send, onBeforeInput }) {
     contents,
     goHome: () => { void loadHome(); },
     reload: () => contents.reload(),
+    // Address of the page now loaded, read by main (never reported by the remote page).
+    getUrl: () => (contents.isDestroyed() ? '' : contents.getURL()),
     focus: () => contents.focus(),
     destroy: () => { if (!contents.isDestroyed()) contents.close(); }
   };

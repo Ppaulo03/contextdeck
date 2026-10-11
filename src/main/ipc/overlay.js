@@ -2,7 +2,7 @@
 
 const { herdrState } = require('./herdr');
 
-// Channels of the workspace menu overlay. Least privilege: the UI window may only ask for the menu to
+// Channels of the overlay (workspace menu and chat bindings panel). Least privilege: the UI window may only ask for the menu to
 // open (with the trigger's rectangle); the overlay page may only read the state, choose a workspace
 // (through the same validated selection controller as everything else) and close itself.
 const denied = { ok: false, error: { code: 'untrusted', message: 'Untrusted IPC caller' } };
@@ -26,6 +26,13 @@ function registerOverlayIpc({ ipcMain, trustedUi, trustedOverlay, win, observer,
     const rect = sanitizeAnchor(anchor);
     if (!rect) return { ok: false, error: { code: 'invalid_anchor', message: 'Posicao do menu invalida.' } };
     return { ok: await win.openMenu(rect) };
+  });
+  // The chat bindings panel lives in the same overlay view (a second page mode); same anchor rules.
+  ipcMain.handle('overlay:open-chats-panel', async (event, anchor) => {
+    if (!trustedUi(event)) return denied;
+    const rect = sanitizeAnchor(anchor);
+    if (!rect) return { ok: false, error: { code: 'invalid_anchor', message: 'Posicao do painel invalida.' } };
+    return { ok: await win.openMenu(rect, 'chats') };
   });
   ipcMain.handle('overlay:state', (event) => (trustedOverlay(event) ? herdrState(observer, selection) : null));
   ipcMain.handle('overlay:choose', (event, args) => {

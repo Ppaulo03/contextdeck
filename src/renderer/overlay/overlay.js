@@ -4,6 +4,7 @@
 // workspace goes through the same validated channel as every other selection.
 import { $, el, setAttr } from '../components/dom.js';
 import { menuModel } from '../../shared/workspace-view.js';
+import { createChatsPanel } from './chats-panel.js';
 
 const SEARCH_THRESHOLD = 7;
 const scrim = $('scrim');
@@ -18,6 +19,7 @@ let query = '';
 let activeId = null;
 let keyboard = false;
 let busy = false;
+let mode = 'workspaces';   // which panel the overlay shows: 'workspaces' (menu) | 'chats' (bindings)
 
 const model = () => menuModel(state, query);
 const total = () => (state && state.selection ? state.selection.options.length : 0);
@@ -84,8 +86,11 @@ function focusMenu() { (search.hidden ? list : search).focus(); }
 // Hides the page immediately (so a stale menu can never flash on the next opening) and asks main to remove the view.
 function closeMenu() {
   scrim.hidden = true;
+  chats.hide();
   return window.overlay.close();
 }
+
+const chats = createChatsPanel({ api: window.overlay, closeOverlay: closeMenu });
 
 async function choose(id) {
   const m = model();
@@ -111,6 +116,7 @@ function move(delta) {
 
 document.addEventListener('keydown', (event) => {
   if (scrim.hidden) return;
+  if (mode === 'chats') { chats.handleKey(event); return; }
   switch (event.key) {
     case 'Escape': event.preventDefault(); void closeMenu(); break;
     case 'Tab': event.preventDefault(); void closeMenu(); break;
@@ -125,9 +131,18 @@ document.addEventListener('keydown', (event) => {
 search.addEventListener('input', () => { query = search.value; activeId = null; render(); });
 scrim.addEventListener('mousedown', (event) => { if (event.target === scrim) void closeMenu(); });
 
-window.overlay.onState((next) => { if (!scrim.hidden) { state = next; render(); } });
+window.overlay.onState((next) => { if (!scrim.hidden && mode === 'workspaces') { state = next; render(); } });
+window.overlay.onChatsState((next) => { if (mode === 'chats') chats.push(next); });
 window.overlay.onOpen(async (opened) => {
-  if (!opened) { scrim.hidden = true; return; }   // closed from the main process (resize, tab switch...)
+  if (!opened) { scrim.hidden = true; chats.hide(); return; }   // closed from the main process (resize, tab switch...)
+  mode = opened.kind === 'chats' ? 'chats' : 'workspaces';
+  panel.hidden = mode === 'chats';
+  if (mode === 'chats') {
+    scrim.hidden = false;
+    await chats.open(opened);
+    return;
+  }
+  chats.hide();
   anchor = opened;
   query = '';
   search.value = '';

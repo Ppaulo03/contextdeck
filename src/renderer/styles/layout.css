@@ -36,7 +36,7 @@
 #app[data-mode="terminal"] .chat-only { display: none; }
 #app[data-mode="chat"] .terminal-only { display: none; }
 
-@media (max-width: 1500px) { .topbar .unlinked { display: none; } }
+@media (max-width: 1500px) { .topbar .unlinked { max-width: 180px; overflow: hidden; text-overflow: ellipsis; } }
 @media (max-width: 1000px) {
   .topbar { gap: var(--space-4); padding: 0 var(--space-4); }
   .topbar .brand, .topbar .ws-label { display: none; }

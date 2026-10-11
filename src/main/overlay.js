@@ -20,6 +20,7 @@ function createOverlay({ getWindow, preloadPath, html, onBeforeInput, onHidden }
   let view;
   let ready;
   let open = false;
+  let openKind = 'workspaces';
   let idleTimer;
 
   const liveWindow = () => { const w = getWindow(); return w && !w.isDestroyed() ? w : null; };
@@ -44,7 +45,7 @@ function createOverlay({ getWindow, preloadPath, html, onBeforeInput, onHidden }
     view.setBounds({ x: 0, y: 0, width, height });
   }
 
-  async function show(anchor) {
+  async function show(anchor, kind = 'workspaces') {
     const win = liveWindow();
     if (!win) return false;
     clearTimeout(idleTimer);
@@ -53,8 +54,9 @@ function createOverlay({ getWindow, preloadPath, html, onBeforeInput, onHidden }
     fit();
     win.contentView.addChildView(view);   // re-adding an existing child moves it to the top
     open = true;
+    openKind = kind;
     view.webContents.focus();
-    view.webContents.send('overlay:open', anchor);
+    view.webContents.send('overlay:open', { ...anchor, kind });   // kind: 'workspaces' (menu) | 'chats' (bindings panel)
     return true;
   }
 
@@ -68,7 +70,7 @@ function createOverlay({ getWindow, preloadPath, html, onBeforeInput, onHidden }
       try { win.contentView.removeChildView(view); } catch { /* Already detached. */ }
       win.webContents.focus();
     }
-    onHidden?.();
+    onHidden?.(openKind);
     clearTimeout(idleTimer);
     idleTimer = setTimeout(release, IDLE_RELEASE_MS);
     idleTimer.unref?.();

@@ -5,7 +5,10 @@ const path = require('node:path');
 const electron = require('electron');
 const { loadSettings } = require('./persistence/settings');
 const { loadUiState, saveUiState } = require('./persistence/ui-state');
-const { USER_DATA_DIRNAME, UI_STATE_FILE } = require('./persistence/identity');
+const { USER_DATA_DIRNAME, UI_STATE_FILE, CHAT_BINDINGS_FILE } = require('./persistence/identity');
+const { createBindingsStore } = require('./chat-bindings/store');
+const { createChatBindings } = require('./chat-bindings/service');
+const { startChatsPusher } = require('./ipc/chats');
 const { createHerdrClient } = require('./herdr/client');
 const { createWindowController } = require('./window');
 const { registerIpc } = require('./ipc');
@@ -48,7 +51,21 @@ async function bootstrap() {
     observer,
     preferences: { get: () => uiState.herdr, set: (patch) => { Object.assign(uiState.herdr, patch); persist(); } }
   });
-  const shutdown = () => { herdr.stop(); stopPusher(); selection.stop(); observer.stop(); };
+  // Conversation <-> workspace bindings (M01-I3A): their own file, validated on load, written atomically.
+  const bindings = createChatBindings({
+    store: createBindingsStore({ file: path.join(userDataDir, CHAT_BINDINGS_FILE) }),
+    session: settings.herdrSession,
+    observer,
+    selection
+  });
+  const chatsPusher = startChatsPusher({
+    bindings,
+    observer,
+    selection,
+    getUrl: () => win.getChatUrl(),
+    send: (channel, data) => { win.send(channel, data); win.sendToOverlay('overlay:chats-push', data); }
+  });
+  const shutdown = () => { herdr.stop(); stopPusher(); chatsPusher.stop(); selection.stop(); observer.stop(); };
   win = createWindowController({
     uiState,
     uiStateFile,
@@ -56,10 +73,11 @@ async function bootstrap() {
     overlayPreloadPath: OVERLAY_PRELOAD,
     rendererHtml: RENDERER_HTML,
     overlayHtml: OVERLAY_HTML,
-    onClosed: shutdown
+    onClosed: shutdown,
+    onChatNavigated: () => chatsPusher.notify()
   });
 
-  registerIpc({ electron, win, herdr, observer, selection, settings, uiState, persist, userDataDir });
+  registerIpc({ electron, win, herdr, observer, selection, bindings, notifyChats: chatsPusher.notify, settings, uiState, persist, userDataDir });
   app.on('second-instance', () => win.focus());
   app.on('before-quit', shutdown);
   await win.create();

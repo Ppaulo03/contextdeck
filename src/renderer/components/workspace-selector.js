@@ -53,7 +53,8 @@ export function initWorkspaceSelector({ dock, store, feedback }) {
   });
 
   // The menu closes by itself on Esc, click outside, resize or tab switch: put focus back on the trigger.
-  const offClosed = dock.onOverlayClosed(() => { setAttr(trigger, 'aria-expanded', false); trigger.focus(); });
+  // (`kind` tells which overlay mode closed; the chat bindings panel has its own trigger.)
+  const offClosed = dock.onOverlayClosed((kind) => { if (kind === 'chats') return; setAttr(trigger, 'aria-expanded', false); trigger.focus(); });
   const offStore = store.subscribe(render);
   render(store.get());
 

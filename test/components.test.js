@@ -140,8 +140,10 @@ test('dispose removes the store subscription and the overlay listener (no duplic
 // ---- menu overlay ------------------------------------------------------------------------------------------
 
 function mountOverlay(initial = state(), { innerWidth = 1000 } = {}) {
-  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message']);
+  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message']);
   document.getElementById('scrim').hidden = true;
+  document.getElementById('chats').hidden = true;
+  document.getElementById('chats-message').hidden = true;
   const calls = { choose: [], close: 0 };
   let openCb; let stateCb; let chooseResult = { ok: true };
   const window = {
@@ -151,7 +153,9 @@ function mountOverlay(initial = state(), { innerWidth = 1000 } = {}) {
       choose: async (a) => { calls.choose.push(a); return typeof chooseResult === 'function' ? chooseResult() : chooseResult; },
       close: async () => { calls.close += 1; },
       onOpen: (cb) => { openCb = cb; return () => {}; },
-      onState: (cb) => { stateCb = cb; return () => {}; }
+      onState: (cb) => { stateCb = cb; return () => {}; },
+      onChatsState: () => () => {},
+      chatsState: async () => null, chatsBind: async () => ({ ok: false }), chatsUpdate: async () => ({ ok: false }), chatsUnbind: async () => ({ ok: false }), chatsReassign: async () => ({ ok: false })
     }
   };
   load(path.join(SRC, 'overlay', 'overlay.js'), { document, window });
@@ -309,7 +313,7 @@ test('header markup: plain brand, Terminal/ChatGPT segmented switch, no session 
   assert.doesNotMatch(bar, /M00|session-chip|session-name|Herdr: /);
   assert.match(bar, /id="tab-terminal" class="segment"[^>]*>Terminal</);
   assert.match(bar, /id="tab-chat" class="segment"[^>]*>ChatGPT</);
-  assert.match(bar, /class="unlinked chat-only"/);
+  assert.match(bar, /<button id="chat-link" class="unlinked chat-link chat-only"/);
   const order = ['brand', 'segmented', 'class="ws"', 'id="ws-mode"', 'view-actions', 'unlinked'].map((k) => bar.indexOf(k));
   assert.deepEqual(order, [...order].sort((a, b) => a - b), 'header hierarchy order');
   assert.ok(order.every((i) => i >= 0));

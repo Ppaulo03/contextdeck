@@ -135,9 +135,12 @@ test('styles are token-driven: raw colors, layers and font stacks exist only in 
 test('renderer wiring: each bridge subscription is registered once (no duplicated listeners)', () => {
   const files = sourceFiles.filter((f) => f.includes(`${path.sep}renderer${path.sep}`) && !f.includes(`${path.sep}overlay${path.sep}`));
   const text = files.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
-  for (const name of ['onHerdrState', 'onMode', 'onPtyData', 'onPtyExit', 'onFocusTerminal', 'onChatStatus', 'onChatHost', 'onChatError', 'onOverlayClosed']) {
-    assert.equal([...text.matchAll(new RegExp(`dock\\.${name}\\(`, 'g'))].length, 1, `dock.${name}( is subscribed in exactly one place`);
+  // onOverlayClosed: the workspace selector and the chat indicator each restore focus to their own trigger (told apart by `kind`).
+  const expected = { onHerdrState: 1, onMode: 1, onPtyData: 1, onPtyExit: 1, onFocusTerminal: 1, onChatStatus: 1, onChatHost: 1, onChatError: 1, onChatsState: 1, onOverlayClosed: 2 };
+  for (const [name, count] of Object.entries(expected)) {
+    assert.equal([...text.matchAll(new RegExp(`dock\\.${name}\\(`, 'g'))].length, count, `dock.${name}( is subscribed in ${count} place(s)`);
   }
+  assert.equal([...text.matchAll(/chatsState\(\)/g)].length, 1, 'one initial chats state read (in the indicator)');
   assert.equal([...text.matchAll(/herdrState\(\)/g)].length, 1, 'one initial state read (in the store)');
   assert.equal([...text.matchAll(/new ResizeObserver\(/g)].length, 2, 'terminal root and footer');
 });
@@ -220,7 +223,7 @@ test('preload only bridges named functions through contextBridge and never expos
   assert.match(overlay, /contextBridge\.exposeInMainWorld\('overlay'/);
   assert.doesNotMatch(overlay, /:\s*ipcRenderer\s*[,}]|require\('(fs|child_process|node:)/);
   const channels = [...overlay.matchAll(/ipcRenderer\.invoke\('([^']+)'|listen\('([^']+)'/g)].map((m) => m[1] || m[2]).sort();
-  assert.deepEqual(channels, ['overlay:choose', 'overlay:close', 'overlay:open', 'overlay:state', 'overlay:state-push']);
+  assert.deepEqual(channels, [...OVERLAY_ONLY, ...CHATS_CHANNELS, 'overlay:chats-push', 'overlay:open', 'overlay:state-push'].sort());
 });
 
 // ---- IPC contract ------------------------------------------------------------------------------
@@ -229,9 +232,12 @@ const HANDLE_CHANNELS = [
   'clipboard:read', 'clipboard:write', 'dock:chat-home', 'dock:external-chat', 'dock:info', 'dock:layout',
   'dock:reload-chat', 'dock:switch', 'git:delete-zip', 'git:diff', 'git:pick-repo', 'git:refs', 'git:set-refs',
   'herdr:refresh', 'herdr:select-workspace', 'herdr:set-sync-mode', 'herdr:state',
-  'overlay:choose', 'overlay:close', 'overlay:open-workspace-menu', 'overlay:state',
+  'overlay:choose', 'overlay:close', 'overlay:open-chats-panel', 'overlay:open-workspace-menu', 'overlay:state',
+  'chats:bind', 'chats:reassign', 'chats:state', 'chats:unbind', 'chats:update',
   'git:show', 'git:status', 'git:zip', 'pty:start'
 ].sort();
+// Chat bindings (M01-I3A): callable from the UI window AND from the overlay panel, never from the remote page.
+const CHATS_CHANNELS = ['chats:bind', 'chats:reassign', 'chats:state', 'chats:unbind', 'chats:update'];
 // What the local UI window may invoke vs what only the menu overlay may invoke (least privilege).
 const OVERLAY_ONLY = ['overlay:choose', 'overlay:close', 'overlay:state'];
 const ON_CHANNELS = ['pty:resize', 'pty:write'];
@@ -246,14 +252,20 @@ function fakeIpc() {
   };
 }
 
+function fakeBindings(calls) {
+  const record = (name) => (args) => { calls.chats.push([name, args]); return { ok: true }; };
+  return { getState: (args) => { calls.chats.push(['state', args]); return { fake: true }; }, bind: record('bind'), update: record('update'), unbind: record('unbind'), reassign: record('reassign') };
+}
+
 function registerWithFakes(overrides = {}) {
   const { registerIpc } = require('../src/main/ipc');
   const ipc = fakeIpc();
-  const calls = { switchMode: [], footer: [], write: [], resize: [], openExternal: [], start: [], refresh: 0, select: [], syncMode: [], openMenu: [], closeMenu: 0 };
+  const calls = { switchMode: [], footer: [], write: [], resize: [], openExternal: [], start: [], refresh: 0, select: [], syncMode: [], openMenu: [], closeMenu: 0, chats: [], notified: 0 };
   const win = {
     isTrusted: (event) => event.trusted === true,
     isOverlay: (event) => event.overlay === true,
-    openMenu: async (anchor) => { calls.openMenu.push(anchor); return true; },
+    openMenu: async (anchor, kind) => { calls.openMenu.push(kind ? [anchor, kind] : anchor); return true; },
+    getChatUrl: () => 'https://chatgpt.com/c/11111111-2222-3333-4444-555555555555',
     closeMenu: () => { calls.closeMenu += 1; return true; },
     switchMode: (m) => calls.switchMode.push(m),
     setFooterHeight: (h) => calls.footer.push(h),
@@ -279,6 +291,8 @@ function registerWithFakes(overrides = {}) {
       select: async (session, workspaceId) => { calls.select.push([session, workspaceId]); return { ok: true }; },
       setMode: (mode) => { calls.syncMode.push(mode); return { ok: true, mode }; }
     },
+    bindings: fakeBindings(calls),
+    notifyChats: () => { calls.notified += 1; },
     settings: { herdrSession: 'contextdeck', workingDirectory: undefined },
     uiState: require('../src/main/persistence/ui-state').sanitize(undefined), persist: () => {}, userDataDir
   });
@@ -317,8 +331,8 @@ test('IPC: preload channels all exist in main, and main only sends channels the 
   const invoked = [...preload.matchAll(/ipcRenderer\.invoke\('([^']+)'/g)].map((m) => m[1]);
   const overlayInvoked = [...overlayPreload.matchAll(/ipcRenderer\.invoke\('([^']+)'/g)].map((m) => m[1]);
   const sent = [...preload.matchAll(/ipcRenderer\.send\('([^']+)'/g)].map((m) => m[1]);
-  assert.deepEqual([...invoked, ...overlayInvoked].sort(), HANDLE_CHANNELS, 'every handler is reachable from one of the two preloads and vice versa');
-  assert.deepEqual([...overlayInvoked].sort(), OVERLAY_ONLY, 'the overlay bridge reaches only the menu channels');
+  assert.deepEqual([...new Set([...invoked, ...overlayInvoked])].sort(), HANDLE_CHANNELS, 'every handler is reachable from one of the two preloads and vice versa');
+  assert.deepEqual([...overlayInvoked].sort(), [...OVERLAY_ONLY, ...CHATS_CHANNELS].sort(), 'the overlay bridge reaches only the menu channels and the chat bindings channels');
   assert.ok(invoked.every((c) => !OVERLAY_ONLY.includes(c)), 'the UI window bridge cannot reach the overlay-only channels');
   assert.deepEqual([...sent].sort(), ON_CHANNELS);
   const listened = new Set([...preload.matchAll(/listen\('([^']+)'/g), ...overlayPreload.matchAll(/listen\('([^']+)'/g)].map((m) => m[1]));
@@ -335,7 +349,7 @@ test('IPC: an untrusted sender is refused on every channel and triggers no side 
     assert.ok(denied(result), `${channel} -> ${JSON.stringify(result)}`);
   }
   for (const fn of listeners.values()) await fn(stranger, 'text', { cols: 80, rows: 24 });
-  assert.deepEqual(calls, { switchMode: [], footer: [], write: [], resize: [], openExternal: [], start: [], refresh: 0, select: [], syncMode: [], openMenu: [], closeMenu: 0 });
+  assert.deepEqual(calls, { switchMode: [], footer: [], write: [], resize: [], openExternal: [], start: [], refresh: 0, select: [], syncMode: [], openMenu: [], closeMenu: 0, chats: [], notified: 0 });
 });
 
 test('IPC least privilege: the menu overlay can use only its own channels, and the UI window cannot use them', async () => {
@@ -347,7 +361,9 @@ test('IPC least privilege: the menu overlay can use only its own channels, and t
   for (const channel of handlers.keys()) {
     if (OVERLAY_ONLY.includes(channel)) {
       assert.ok(denied(await handlers.get(channel)(ui, { session: 's', workspaceId: 'w1' })), `${channel}: UI window refused`);
-    } else if (channel === 'overlay:open-workspace-menu') {
+    } else if (CHATS_CHANNELS.includes(channel)) {
+      continue;   // shared on purpose: covered by test/chat-bindings-ipc.test.js
+    } else if (channel === 'overlay:open-workspace-menu' || channel === 'overlay:open-chats-panel') {
       assert.ok(denied(await handlers.get(channel)(overlay, anchor)), `${channel}: overlay refused`);
     } else {
       assert.ok(denied(await handlers.get(channel)(overlay, { session: 's', workspaceId: 'w1', repoRoot: 'x' })), `${channel}: overlay refused`);
@@ -455,4 +471,44 @@ test('a ZIP generated by M00 (same naming and folder) is still recognized and de
   const actions = createGitActions({ artifactsDir: artifacts, clipboard: {} });
   assert.equal(actions.deleteZip(legacyZip).ok, true);
   assert.equal(fs.existsSync(legacyZip), false);
+});
+
+// ---- M01-I3A guard rails -------------------------------------------------------------------------------------
+
+test('M01-I3A: bindings never drive the page, the views, Herdr or the Chromium profile', () => {
+  const files = [...walk(path.join(SRC, 'main', 'chat-bindings')), path.join(SRC, 'main', 'ipc', 'chats.js'), path.join(SRC, 'shared', 'chat-bindings-view.js')];
+  assert.ok(files.length >= 5);
+  for (const f of files) {
+    const text = fs.readFileSync(f, 'utf8').replace(/^\s*\/\/.*$/gm, '');
+    assert.doesNotMatch(text, /loadURL|goHome|\.reload\(|focusWorkspace|workspace\.focus|webContents|WebContentsView|fromPartition|cookies|executeJavaScript|setPermission|\bselect\(/, path.relative(ROOT, f));
+  }
+  // No second chat view: exactly the ChatGPT view and the (idle-released) overlay create WebContentsViews.
+  const creators = sourceFiles.filter((f) => /new WebContentsView\(/.test(fs.readFileSync(f, 'utf8'))).map((f) => path.relative(SRC, f)).sort();
+  assert.deepEqual(creators, [path.join('main', 'chat-view.js'), path.join('main', 'overlay.js')]);
+  assert.equal([...fs.readFileSync(path.join(SRC, 'main', 'chat-view.js'), 'utf8').matchAll(/new WebContentsView\(/g)].length, 1);
+  assert.equal([...fs.readFileSync(path.join(SRC, 'main', 'window.js'), 'utf8').matchAll(/createChatView\(/g)].length, 1, 'the chat view is created once');
+  // The preference file knows nothing about bindings.
+  assert.doesNotMatch(read('src', 'main', 'persistence', 'ui-state.js'), /binding/i);
+});
+
+test('M01-I3A: the persistent identifiers that keep the login are unchanged and the bindings have a file of their own', () => {
+  const id = require('../src/main/persistence/identity');
+  assert.equal(id.CHAT_PARTITION, 'persist:project-dock-m00-chat');
+  assert.equal(id.USER_DATA_DIRNAME, 'Project Dock M00');
+  assert.equal(id.UI_STATE_FILE, 'ui-state.json');
+  assert.equal(id.CHAT_BINDINGS_FILE, 'chat-bindings.json');
+  assert.notEqual(id.CHAT_BINDINGS_FILE, id.UI_STATE_FILE);
+  assert.ok(Object.isFrozen(id));
+});
+
+test('M01-I3A: the chat view only reports navigations; its permission and popup policy is untouched', () => {
+  const chat = read('src', 'main', 'chat-view.js');
+  assert.match(chat, /contents\.on\('did-navigate-in-page', \(\) => onNavigated\?\.\(\)\)/);
+  assert.match(chat, /requestingHost === 'chatgpt\.com'/);
+  assert.match(chat, /setPermissionCheckHandler\(\(\) => false\)/);
+  assert.match(chat, /AUTH_POPUP_HOSTS/);
+});
+
+test('M01-I3A: documentation and decision record exist', () => {
+  for (const f of ['docs/validation/m01-i3a.md', 'docs/decisions/0002-chat-bindings.md']) assert.ok(fs.existsSync(path.join(ROOT, f)), f);
 });

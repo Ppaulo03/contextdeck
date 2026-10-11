@@ -16,7 +16,7 @@ const FOOTER_RANGE = [30, 420];
 // Owns the main window, the ChatGPT view layered over its content area, the active mode
 // (terminal | chat) and focus. Switching modes only attaches/detaches the chat view, so neither
 // the ChatGPT page nor the PTY is reloaded or restarted.
-function createWindowController({ uiState, uiStateFile, preloadPath, overlayPreloadPath, rendererHtml, overlayHtml, onClosed }) {
+function createWindowController({ uiState, uiStateFile, preloadPath, overlayPreloadPath, rendererHtml, overlayHtml, onClosed, onChatNavigated }) {
   let mainWindow;
   let chat;
   let chatObservation = null;   // experimental, off unless CONTEXTDECK_CHAT_OBSERVER=1 (see chat/index.js)
@@ -105,7 +105,7 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
       preloadPath: overlayPreloadPath,
       html: overlayHtml,
       onBeforeInput: handleShortcuts,
-      onHidden: () => send('overlay:closed')
+      onHidden: (kind) => send('overlay:closed', kind)
     });
     // A menu is modal and anchored to the current layout: any geometry change closes it.
     const relayout = () => { overlay.hide(); resizeChat(); };
@@ -132,7 +132,7 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     });
 
     await mainWindow.loadFile(rendererHtml);
-    chat = createChatView({ send, onBeforeInput: handleShortcuts });
+    chat = createChatView({ send, onBeforeInput: handleShortcuts, onNavigated: () => onChatNavigated?.() });
     chatObservation = startChatObservation({ contents: chat.contents, userDataDir: path.dirname(uiStateFile) });
     if (uiState.lastMode === 'chat') switchMode('chat');
     else send('dock:mode', 'terminal');
@@ -147,10 +147,11 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     getMode: () => activeMode,
     getWindow: () => mainWindow,
     getChat: () => chat,
+    getChatUrl: () => (chat ? chat.getUrl() : ''),
     isTrusted: (event) => Boolean(mainWindow) && event.sender === mainWindow.webContents,
     isOverlay: (event) => Boolean(overlay) && overlay.isOverlay(event),
     // The workspace menu overlay (see overlay.js). The anchor is the trigger's rectangle in the UI window.
-    openMenu: (anchor) => (overlay ? overlay.show(anchor) : Promise.resolve(false)),
+    openMenu: (anchor, kind) => (overlay ? overlay.show(anchor, kind) : Promise.resolve(false)),
     closeMenu: () => (overlay ? overlay.hide() : false),
     sendToOverlay: (channel, data) => { if (overlay && overlay.isOpen()) overlay.send(channel, data); },
     focus: () => {

@@ -16,6 +16,12 @@
       <ul id="menu-list" class="menu" role="listbox" tabindex="0" aria-label="Workspaces"></ul>
       <p id="menu-message" class="menu-message" role="status" hidden></p>
     </section>
+    <!-- Chat bindings panel: same view, second mode (opened from the top-bar indicator). -->
+    <section id="chats" class="menu-panel chats-panel" role="dialog" aria-modal="true" aria-labelledby="chats-title" hidden>
+      <header class="chats-head"><strong id="chats-title">Conversas vinculadas</strong><span class="spacer"></span><button id="chats-close" class="btn" type="button" aria-label="Fechar">&times;</button></header>
+      <div id="chats-body" class="chats-body"></div>
+      <p id="chats-message" class="menu-message" role="status" hidden></p>
+    </section>
   </div>
   <script src="./overlay.bundle.js"></script>
 </body>

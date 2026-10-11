@@ -9,6 +9,7 @@ import { initHeader } from './components/header.js';
 import { initGitPanel } from './components/git-panel.js';
 import { initHerdrPanel } from './components/herdr-panel.js';
 import { initWorkspaceSelector } from './components/workspace-selector.js';
+import { initChatLink } from './components/chat-link.js';
 
 const dock = window.dock;
 const feedback = createFeedback();
@@ -17,6 +18,7 @@ const terminal = createTerminalView({ dock, root: $('terminal-root'), feedback }
 const header = initHeader({ dock, onReconnect: () => void terminal.start() });
 const herdrPanel = initHerdrPanel({ dock, store });
 initWorkspaceSelector({ dock, store, feedback });
+initChatLink({ dock, feedback });
 initGitPanel({ dock, feedback });
 
 dock.onMode((mode) => {

@@ -21,6 +21,8 @@ const { fromObserverState, effectiveValue, GenerationState, DraftState, Attentio
 // action that shows the view, the chat tab/window becoming interactive with the view on screen, or keyboard input in
 // it. A visit means "the user could see it", not "the user read it".
 
+const UNCERTAIN_REASONS = new Set(['end-unconfirmed', 'signals-unusable', 'busy-signal', 'stop-control-elsewhere']);
+
 function createObservationHub({ manager, startObserver, now = () => Date.now(), setTimer = setTimeout, clearTimer = clearTimeout, ttlMs = 20000, sweepMs = 5000 }) {
   const entries = new Map();          // viewId -> { observer, visible, sig }
   const listeners = new Set();
@@ -57,11 +59,13 @@ function createObservationHub({ manager, startObserver, now = () => Date.now(), 
       attention: state.attention.pending ? AttentionState.PENDING : AttentionState.NONE,
       evidence: usable ? runtime.generation.reliability : 'unknown',
       stale: usable && generation === GenerationState.UNKNOWN && state.generation.state !== 'unknown',
+      // A response believed to be in progress on thin evidence (M01-I3B-2R): the end is not confirmed, or the signals went quiet.
+      uncertain: usable && generation === GenerationState.RESPONDING && UNCERTAIN_REASONS.has(state.generation.reason),
       observedAt
     };
   }
 
-  const signature = (s) => (s ? JSON.stringify([s.phase, s.identityKey, s.identityOk, s.generation, s.generationReason, s.draft, s.attention, s.stale]) : '');
+  const signature = (s) => (s ? JSON.stringify([s.phase, s.identityKey, s.identityOk, s.generation, s.generationReason, s.draft, s.attention, s.stale, s.uncertain]) : '');
 
   // Emits only when something the UI shows changed.
   function refresh(id) {

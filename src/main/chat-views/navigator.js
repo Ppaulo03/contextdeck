@@ -209,6 +209,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
       // Before the first answer, or while loading, nothing is claimed.
       unknown: s.phase === 'ready' && s.observedAt !== null && s.generation === 'unknown',
       stale: s.stale,
+      uncertain: s.uncertain === true,
       evidence: s.evidence
     };
   }

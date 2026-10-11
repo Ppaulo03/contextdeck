@@ -203,15 +203,18 @@ test('losing the detector, a missing composer or a probe error while responding 
   a1.contents.probeError = new Error('world gone');          // the probe throws
   await w.clock.advance(6000);
   let act = w.tab(w.A[0]).activity;
-  assert.deepEqual([act.responding, act.attention, act.unknown], [false, false, true]);
+  assert.deepEqual([act.responding, act.attention, act.uncertain], [true, false, true], 'a failing probe is not an ending: the response is kept, flagged uncertain');
   a1.contents.probeError = null;
   w.set(a1, { composer: false, stop: false });              // DOM changed: no composer
   await w.clock.advance(6000);
   act = w.tab(w.A[0]).activity;
-  assert.deepEqual([act.responding, act.attention, act.unknown], [false, false, true]);
+  assert.deepEqual([act.responding, act.attention, act.uncertain], [true, false, true]);
   w.set(a1, { composer: null, stop: null, draft: null });   // signals not determinable
   await w.clock.advance(6000);
   assert.equal(w.tab(w.A[0]).activity.attention, false);
+  await w.clock.advance(40000);                             // a long run of nothing usable: the claim is dropped, still no attention
+  act = w.tab(w.A[0]).activity;
+  assert.deepEqual([act.responding, act.attention, act.unknown], [false, false, true]);
   assert.equal(w.hub.stats().signalsLost > 0, true);
 }));
 

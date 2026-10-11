@@ -351,3 +351,19 @@ test('probe: surface is any visible editable element; a streaming class token co
   assert.equal(probe({}).surface, false);
   assert.equal(probe({ [BUSY_SEL]: [el({ class: 'AdaptiveStreaming-abc' })] }).busy, true);
 });
+
+test('LIVE: an established ending survives the composer being re-drawn (form missing / undeterminable) until a new response or a new identity', () => {
+  const h = responding('hidden');
+  h.repeat(sig({ stop: false }), END_CONFIRMATIONS);
+  assert.equal(h.state.generation.reason, 'ended-unclassified');
+  h.repeat(sig({ composer: false, surface: true, stop: false }), 5);
+  h.observe(sig({ composer: null, stop: null }));
+  h.dispatch({ type: 'signals-lost', epoch: h.state.epoch });
+  assert.equal(h.state.generation.reason, 'ended-unclassified', 'not overwritten by composer-missing / incomplete / lost');
+  assert.equal(h.state.attention.pending, true);
+  h.observe(sig({ stop: true }));
+  assert.equal(h.state.generation.state, GEN.RESPONDING, 'a new response replaces it');
+  h.repeat(sig({ stop: false }), END_CONFIRMATIONS);
+  h.dispatch({ type: 'navigated', url: CONV_B, inPage: true });
+  assert.equal(h.state.generation.reason, 'identity-changed');
+});

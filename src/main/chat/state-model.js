@@ -98,9 +98,11 @@ function classifyGeneration(prev, s, probe) {
     }
     return holdUncertain(probe);
   }
+  // An ending that was established stays until a new response is seen or the identity changes: the page re-draws its composer
+  // (seen live: the form disappears again right after an answer), and that is not a reason to forget what happened.
+  if (isEnded(prev) && s.stop !== true) return { generation: prev, probe: NO_STREAK };
   if (s.stop === null || s.composer === null) return { generation: GEN_UNKNOWN('signals-incomplete'), probe: NO_STREAK };
   if (s.stop === false && s.composer === true) {
-    if (isEnded(prev)) return { generation: prev, probe: NO_STREAK };      // sticky until responding again or the identity changes
     return { generation: s.error === true ? gen(GEN.ERROR, EVIDENCE.INFERRED, 'error-signal') : gen(GEN.IDLE, EVIDENCE.INFERRED, 'composer-ready-no-stop'), probe: NO_STREAK };
   }
   return { generation: GEN_UNKNOWN('composer-missing'), probe: NO_STREAK };
@@ -168,6 +170,8 @@ function reduce(state, event) {
         const held = holdUncertain(state.endProbe);
         return withChanges(state, { generation: held.generation, draft: DRAFT_UNKNOWN, endProbe: held.probe });
       }
+      // An established ending is not forgotten because one probe failed (draft is: it is unknown now).
+      if (isEnded(state.generation)) return withChanges(state, { draft: DRAFT_UNKNOWN });
       return withChanges(state, { generation: GEN_UNKNOWN('signal-lost'), draft: DRAFT_UNKNOWN });
     }
     case 'visibility':

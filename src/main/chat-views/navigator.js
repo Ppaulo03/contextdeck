@@ -30,6 +30,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
   let again = false;
   const choice = new Map();          // workspace key -> id of a temporary view the user picked there
   let notes = null;                  // optional (viewId) -> text: why a page in a workspace is not bound yet (set by the adoption service)
+  let lifecycle = null;              // optional (set by setLifecycle): describe(viewId) -> what the user may do about a page's resources
 
   const selectedWorkspace = () => {
     const sel = selection.getState();
@@ -44,6 +45,13 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
   function syncViews(all) {
     const byKey = new Map(all.map((b) => [b.conversationKey, b]));
     const views = manager.list();
+    // A conversation that has a view again (restored, or shown by another page) is not suspended any more; per-view bookkeeping of
+    // views that no longer exist (released by a suspension) goes with them.
+    for (const rec of manager.suspendedList()) if (manager.findByKey(rec.key)) manager.dropSuspended(rec.key);
+    const live = new Set(views.map((v) => v.id));
+    for (const id of [...contextual.keys()]) if (!live.has(id)) contextual.delete(id);
+    for (const id of [...busyMemo.keys()]) if (!live.has(id)) busyMemo.delete(id);
+    for (const [wk, id] of [...choice]) if (!live.has(id)) choice.delete(wk);
     for (const v of views) {
       if (v.expectedKey) {
         const b = byKey.get(v.expectedKey);
@@ -343,10 +351,21 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     return v && v.scope === null && v.page !== 'destroyed' && !v.pristine ? v : null;
   };
 
+  // Suspended conversations nobody has a binding for: the unscoped pages that were released. (A bound one stays a tab of its workspace.)
+  const suspendedResiduals = () => {
+    const bound = new Set(mine(bindings.all()).map((b) => b.conversationKey));
+    return manager.suspendedList().filter((r) => !bound.has(r.key));
+  };
+  const suspendedResidual = (viewId) => (typeof viewId === 'string' ? suspendedResiduals().find((r) => r.id === viewId) || null : null);
+
   function getUnbound() {
     const duplicated = new Set(manager.duplicates().flatMap((d) => d.viewIds));
     const visibleId = manager.getVisibleId();
-    return unboundViews().map((v) => {
+    const released = suspendedResiduals().map((r) => ({
+      viewId: r.id, label: 'Conversa', hint: r.key.slice(-4), identity: 'durable',
+      responding: false, attention: false, draft: false, loading: false, failed: false, duplicate: false, active: false, suspended: true
+    }));
+    return [...unboundViews().map((v) => {
       const a = activityOf(v);
       const durable = v.identity.state === 'durable';
       return {
@@ -357,16 +376,23 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
         responding: Boolean(a && a.responding), attention: Boolean(a && a.attention), draft: Boolean(a && a.draft),
         loading: v.page === 'loading', failed: v.page === 'error',
         duplicate: duplicated.has(v.id),
-        active: v.id === visibleId && manager.isAttached()
+        active: v.id === visibleId && manager.isAttached(),
+        suspended: false,
+        lifecycle: lifecycle ? lifecycle.describe(v.id) : null
       };
-    });
+    }), ...released];
   }
 
   function openUnbound({ viewId } = {}) {
     if (mode !== 'chat') return fail('not_in_chat', 'A aba ChatGPT nao esta ativa.');
+    const sel = selectedWorkspace();
+    // A suspended page has no view: opening it brings it back (a fresh page on the same session, on its recovery address) and then
+    // follows the normal path below. A second request finds the page already loading (the record is consumed by create()).
+    const record = suspendedResidual(viewId);
+    if (record && sel.pending) return fail('selection_pending', 'Uma troca de workspace esta em andamento.');
+    if (record) { const back = manager.create({ url: record.url, scope: null }); if (!back) return fail('open_failed', 'Nao foi possivel restaurar a conversa.'); viewId = back; }
     const v = unboundView(viewId);
     if (!v) return fail('view_not_found', 'Esta conversa nao existe mais ou ja pertence a um workspace.');
-    const sel = selectedWorkspace();
     if (sel.pending) return fail('selection_pending', 'Uma troca de workspace esta em andamento.');
     if (v.page === 'error') manager.reloadFailed(v.id, homeUrl);
     if (sel.id) {
@@ -399,6 +425,8 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
       // Ready, probed at least once, and still no usable answer (composer missing, probe failing, reading expired).
       // Before the first answer, or while loading, nothing is claimed.
       unknown: s.phase === 'ready' && s.observedAt !== null && s.generation === 'unknown',
+      // Observed at rest: a fresh reading that says nothing is going on. Never claimed for a view that is not observed (suspended included).
+      idle: s.phase === 'ready' && s.observedAt !== null && s.generation !== 'unknown' && s.generation !== 'responding' && !s.stale,
       stale: s.stale,
       uncertain: s.uncertain === true,
       evidence: s.evidence
@@ -434,7 +462,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     const all = mine(bindings.all());
     const byKey = new Map(all.map((b) => [b.conversationKey, b]));
     const labelOf = new Map(sel.options.map((o) => [o.id, o.label]));
-    const totals = { responding: 0, attention: 0, drafts: 0, observed: 0, loaded: 0 };
+    const totals = { responding: 0, attention: 0, drafts: 0, observed: 0, loaded: 0, suspended: manager.suspendedList().length };
     const groups = new Map();
     for (const v of manager.list()) {
       totals.loaded += 1;
@@ -484,6 +512,51 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     }
     const v = typeof viewId === 'string' ? manager.get(viewId) : null;
     return v && v.scope === wk && v.page !== 'destroyed' ? { kind: 'temporary', wk, viewId: v.id } : null;
+  }
+
+  // ---- lifecycle (M01-I3C-1) ---------------------------------------------------------------------------------------------------
+  // What chat-views/lifecycle.js needs to know about a page to judge whether its resources can be released. Facts only, read from the
+  // state that already exists (nothing is stored here for it); the policy and the release are not here.
+  //   kind  binding    the page is the tab of a conversation bound to the workspace it lives in
+  //         residual   unscoped page that is not the initial one (left over after an unbind, a transfer, a deduplication, ...)
+  //         temporary  a page under a workspace without a binding of its own
+  //         pristine   the application's initial page
+  function lifecycleFacts(viewId) {
+    const v = typeof viewId === 'string' ? manager.get(viewId) : null;
+    if (!v || v.page === 'destroyed') return null;
+    const byKey = new Map(mine(bindings.all()).map((b) => [b.conversationKey, b]));
+    const own = v.expectedKey ? byKey.get(v.expectedKey) : null;
+    const ownedHere = Boolean(own && v.scope && wsKeyOf(own) === v.scope);
+    const there = v.identity.state === 'durable' ? byKey.get(v.identity.key) : null;
+    const kind = v.pristine ? 'pristine' : ownedHere ? 'binding' : v.scope === null ? 'residual' : 'temporary';
+    return {
+      viewId: v.id, kind, scope: v.scope, page: v.page, relation: v.relation, reached: v.reached,
+      identity: { ...v.identity }, expectedKey: v.expectedKey,
+      selected: v.id === manager.getVisibleId(),
+      binding: ownedHere ? { bindingId: own.bindingId, status: own.status, url: own.url } : null,
+      conflict: Boolean(v.scope && there && wsKeyOf(there) !== v.scope),
+      duplicate: manager.duplicates().some((d) => d.viewIds.includes(v.id)),
+      creating: Boolean((contextual.get(v.id) || {}).pending),
+      decision: Boolean(notes && normalizeNote(notes(v.id))),
+      switching: selectedWorkspace().pending,
+      restored: v.restored, restoreMs: v.restoreMs,
+      summary: activity ? activity.summaryOf(v.id) : null,
+      observed: Boolean(activity && activity.isObserved(v.id)),
+      recoveryUrl: ownedHere ? own.url : (v.identity.state === 'durable' ? v.identity.url : '')
+    };
+  }
+
+  // The view that serves binding `bindingId` right now (the same choice the tabs make), or null.
+  function viewIdOfBinding(bindingId) {
+    const b = mine(bindings.all()).find((x) => x.bindingId === bindingId);
+    if (!b) return null;
+    const v = manager.list().find((x) => x.expectedKey === b.conversationKey && x.scope === wsKeyOf(b) && x.identity.state === 'durable' && x.identity.key === b.conversationKey);
+    return v ? v.id : null;
+  }
+
+  function suspendedList() {
+    const byKey = new Map(mine(bindings.all()).map((b) => [b.conversationKey, b]));
+    return manager.suspendedList().map((r) => { const b = byKey.get(r.key); return { viewId: r.id, key: r.key, at: r.at, kind: b ? 'binding' : 'residual', scope: b ? wsKeyOf(b) : null, bindingId: b ? b.bindingId : null }; });
   }
 
   // ---- mode and state ------------------------------------------------------------------------------------------
@@ -540,6 +613,8 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
         bindingId: b.bindingId, label: b.label || 'Conversa', status: b.status,
         hint: (labelCount.get(b.label || '') || 0) > 1 ? b.conversationKey.slice(-4) : '',
         loaded: Boolean(v), loading: Boolean(v && v.page === 'loading'), failed: Boolean(v && v.page === 'error'),
+        suspended: !v && manager.isSuspended(b.conversationKey),
+        lifecycle: lifecycle && v ? lifecycle.describe(v.id) : null,
         activity: v ? activityOf(v, b.conversationKey) : null,
         active: Boolean(v && v.id === visibleId), needsConfirm: b.status !== 'linked',
         relation: v ? v.relation : null
@@ -556,6 +631,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
       return {
         viewId: v.id, label, relation: v.relation, active: v.id === visibleId, loading: v.page === 'loading', failed: v.page === 'error',
         activity: activityOf(v),
+        lifecycle: lifecycle ? lifecycle.describe(v.id) : null,
         note: notes ? ((normalizeNote(notes(v.id)) || {}).text || '') : '',
         warning: v.relation === REL.DIVERGED || v.relation === REL.LEFT || Boolean(elsewhere) || duplicated.has(v.id), bound: Boolean(other)
       };
@@ -616,7 +692,8 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
 
   return {
     reconcile, getWorkspaceActivity, getGlobalActivity, resolveActivityTarget, setMode, selectBinding, newConversation, selectTemporary, openUnscoped, getState,
-    getUnbound, openUnbound, releaseConversation, contextViews, confirmAdopted, moveToBinding, backFromConflict, pagesShowing, releasePage, focusExisting, isBusy,
+    getUnbound, openUnbound, releaseConversation, lifecycleFacts, viewIdOfBinding, suspendedList, selectedWorkspaceKey: () => keyFor(selectedWorkspace().id),
+    setLifecycle: (lc) => { lifecycle = lc && typeof lc.describe === 'function' ? lc : null; }, contextViews, confirmAdopted, moveToBinding, backFromConflict, pagesShowing, releasePage, focusExisting, isBusy,
     urlOf: (viewId) => { const h = typeof viewId === 'string' ? manager.handleOf(viewId) : null; return h && !h.isDestroyed() ? h.getUrl() : ''; },
     canGoBack: (viewId) => manager.canGoBack(viewId),
     goBackPage: (viewId) => manager.goBack(viewId),

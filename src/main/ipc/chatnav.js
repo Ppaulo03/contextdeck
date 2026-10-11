@@ -58,6 +58,26 @@ function registerChatNavIpc({ ipcMain, trusted, trustedOverlay = () => false, wi
     return resolve({ viewId: args.viewId, action: args.action });
   });
 
+  // Release the resources of one loaded conversation (M01-I3C-1), on the user's explicit request. The target is a tab of the selected
+  // workspace (bindingId + workspaceKey) or a page of the exceptional list (viewId); the arguments only NAME it. Whether it may be
+  // released is decided in main, from fresh state and a fresh reading (chat-views/lifecycle.js), never from anything the renderer says.
+  ipcMain.handle('chatnav:suspend', async (event, args) => {
+    if (!trusted(event)) return denied;
+    const navigator = nav();
+    const lifecycle = win.getLifecycle ? win.getLifecycle() : null;
+    if (!navigator || !lifecycle) return { ok: false, error: { code: 'not_ready', message: 'O ChatGPT ainda nao esta pronto.' } };
+    if (!isPlainObject(args)) return invalid();
+    if (args.bindingId !== undefined) {
+      if (args.viewId !== undefined || typeof args.bindingId !== 'string' || !BINDING_RE.test(args.bindingId) || typeof args.workspaceKey !== 'string' || !KEY_RE.test(args.workspaceKey)) return invalid();
+      if (args.workspaceKey !== navigator.selectedWorkspaceKey()) return { ok: false, error: { code: 'context_changed', message: 'O workspace selecionado mudou. Revise a escolha.' } };
+      const viewId = navigator.viewIdOfBinding(args.bindingId);
+      if (!viewId) return { ok: false, error: { code: 'not_loaded', message: 'Esta conversa nao esta carregada.' } };
+      return lifecycle.suspend({ viewId });
+    }
+    if (typeof args.viewId !== 'string' || !VIEW_RE.test(args.viewId)) return invalid();
+    return lifecycle.suspend({ viewId: args.viewId });
+  });
+
   ipcMain.handle('chatnav:open-unscoped', (event) => {
     if (!trusted(event)) return denied;
     const navigator = nav();

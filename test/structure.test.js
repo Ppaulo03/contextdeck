@@ -236,7 +236,7 @@ const HANDLE_CHANNELS = [
   'herdr:refresh', 'herdr:select-workspace', 'herdr:set-sync-mode', 'herdr:state',
   'overlay:choose', 'overlay:close', 'overlay:open-chats-panel', 'overlay:open-workspace-menu', 'overlay:state',
   'chats:bind', 'chats:reassign', 'chats:state', 'chats:unbind', 'chats:update', 'projects:link', 'projects:unlink',
-  'chatnav:new', 'chatnav:open-unscoped', 'chatnav:select', 'chatnav:select-temporary', 'chatnav:state',
+  'chatnav:new', 'chatnav:open-unscoped', 'chatnav:select', 'chatnav:select-temporary', 'chatnav:state', 'chatnav:suspend',
   'activity:dismiss', 'activity:open', 'activity:state', 'overlay:open-activity-center', 'activity:open-unbound', 'chatnav:resolve', 'conflict:resolve',
   'git:show', 'git:status', 'git:zip', 'pty:start'
 ].sort();
@@ -524,7 +524,7 @@ test('M01-I3A: documentation and decision record exist', () => {
 
 // ---- M01-I3B-1 guard rails -------------------------------------------------------------------------------------
 
-test('M01-I3B-1: ChatGPT views are created in one place, destroyed only on shutdown, and loaded only when created or retried', () => {
+test('M01-I3B-1 (amended by I3C-1): ChatGPT views are created in one place, destroyed only on shutdown or on an explicit suspension, and loaded only when created or retried', () => {
   const main = sourceFiles.filter((f) => f.includes(`${path.sep}main${path.sep}`));
   const code = (f) => fs.readFileSync(f, 'utf8').replace(/^\s*\/\/.*$/gm, '');
   // Destroying a view: the handle's destroy() is called by the manager's destroyAll() and nowhere else.
@@ -533,8 +533,10 @@ test('M01-I3B-1: ChatGPT views are created in one place, destroyed only on shutd
   assert.deepEqual(destroyers, [path.join('main', 'chat-views', 'manager.js'), path.join('main', 'herdr', 'api-client.js'), path.join('main', 'window.js')]);
   assert.match(code(path.join(SRC, 'main', 'window.js')).match(/.*\.destroy\(\).*/)[0], /overlay\.destroy\(\)/);
   const manager = code(path.join(SRC, 'main', 'chat-views', 'manager.js'));
-  assert.equal([...manager.matchAll(/\.destroy\(\)/g)].length, 1, 'a single destroy call, inside destroyAll');
+  // I3C-1: exactly two destroy calls, destroyAll() (shutdown) and suspend() (the user's explicit request, judged by chat-views/lifecycle.js).
+  assert.equal([...manager.matchAll(/\.destroy\(\)/g)].length, 2, 'destroyAll and suspend only');
   assert.match(manager.slice(manager.indexOf('function destroyAll')), /e\.handle\.destroy\(\)/);
+  assert.match(manager.slice(manager.indexOf('function suspend('), manager.indexOf('function snapshot')), /entries\.delete\(id\);\s*emit\(\);\s*try \{ entry\.handle\.destroy\(\)/, 'listeners (observers) are told before the page is destroyed');
   const win = code(path.join(SRC, 'main', 'window.js'));
   assert.equal([...win.matchAll(/destroyAll\(\)/g)].length, 1, 'only when the window closes');
   assert.match(win, /mainWindow\.on\('closed'[\s\S]*manager\?\.destroyAll\(\)/);
@@ -548,7 +550,7 @@ test('M01-I3B-1: ChatGPT views are created in one place, destroyed only on shutd
   assert.match(chatView, /sessionConfigured/);
 });
 
-test('M01-I3B-1: no pool, no eviction, no automatic suspension of views', () => {
+test('M01-I3B-1 (amended by I3C-1): no pool, no eviction, no automatic suspension of views', () => {
   for (const f of walk(path.join(SRC, 'main', 'chat-views'))) {
     let text = fs.readFileSync(f, 'utf8').replace(/^\s*\/\/.*$/gm, '');
     if (path.basename(f) === 'observation.js') {
@@ -558,8 +560,17 @@ test('M01-I3B-1: no pool, no eviction, no automatic suspension of views', () => 
       // Observing never creates, loads, navigates or destroys a view.
       assert.doesNotMatch(text, /\.create\(|loadURL|\.reload\(|\.destroy\(\)|\.show\(|\.hide\(|setAttached|executeJavaScript|webContents|session\./);
     }
-    assert.doesNotMatch(text, /MAX_VIEWS|poolSize|evict|\bLRU\b|setTimeout|setInterval|suspend|backgroundThrottling|lifecycleAdvice|setAudioMuted|\.close\(\)/, path.relative(ROOT, f));
+    // `suspend` exists in exactly the three files that implement the explicit action; nothing else in this folder may mention it.
+    assert.doesNotMatch(text, /MAX_VIEWS|poolSize|evict|\bLRU\b|setTimeout|setInterval|backgroundThrottling|lifecycleAdvice|setAudioMuted|\.close\(\)/, path.relative(ROOT, f));
+    if (!['manager.js', 'lifecycle.js', 'navigator.js'].includes(path.basename(f))) assert.doesNotMatch(text, /suspend/i, path.relative(ROOT, f));
   }
+  // The suspension is reachable only through the lifecycle's suspend(), which only the IPC handler (a user's click) calls: no timer, no
+  // listener of activity events, no automatic trigger of any kind.
+  const lifecycle = fs.readFileSync(path.join(SRC, 'main', 'chat-views', 'lifecycle.js'), 'utf8').replace(/^\s*\/\/.*$/gm, '');
+  assert.equal([...lifecycle.matchAll(/manager\.suspend\(/g)].length, 1);
+  assert.doesNotMatch(lifecycle, /setTimer|setInterval|setImmediate|hub\.onChange|activity\.onChange|onAttention/, 'nothing schedules or reacts to activity');
+  const callers = sourceFiles.filter((f) => /\.suspend\(/.test(fs.readFileSync(f, 'utf8').replace(/^\s*\/\/.*$/gm, ''))).map((f) => path.relative(SRC, f)).sort();
+  assert.deepEqual(callers, [path.join('main', 'chat-views', 'lifecycle.js'), path.join('main', 'ipc', 'chatnav.js')].sort());
 });
 
 test('M01-I3B-1: the navigation channels are UI-window-only and never reach the remote page or the overlay bridge', () => {

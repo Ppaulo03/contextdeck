@@ -11,7 +11,7 @@ const { ws } = require('./helpers/bindings-world');
 const ui = { trusted: true };
 const overlay = { overlay: true };
 const stranger = { trusted: false };
-const CHANNELS = ['chatnav:new', 'chatnav:open-unscoped', 'chatnav:resolve', 'chatnav:select', 'chatnav:select-temporary', 'chatnav:state', 'conflict:resolve'];
+const CHANNELS = ['chatnav:new', 'chatnav:open-unscoped', 'chatnav:resolve', 'chatnav:select', 'chatnav:select-temporary', 'chatnav:state', 'chatnav:suspend', 'conflict:resolve'];
 
 function setup({ ready = true } = {}) {
   const w = createViewsWorld({ workspaces: [ws('w1', 'api'), ws('w2', 'app')] });
@@ -28,7 +28,7 @@ function setup({ ready = true } = {}) {
   return { w, bound, handlers, call, key: 'contextdeck/w1', done: () => { w.navigator.stop(); w.cleanup(); } };
 }
 
-test('exactly the five navigation channels exist; strangers and the overlay get nothing and cause nothing', async () => {
+test('exactly the navigation channels exist; strangers and the overlay get nothing and cause nothing', async () => {
   const t = setup();
   try {
     assert.deepEqual([...t.handlers.keys()].sort(), CHANNELS);

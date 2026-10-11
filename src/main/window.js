@@ -8,6 +8,7 @@ const { CHAT_HOME } = require('./persistence/identity');
 const { createChatViewManager } = require('./chat-views/manager');
 const { createChatNavigator } = require('./chat-views/navigator');
 const { createObservationHub } = require('./chat-views/observation');
+const { createViewLifecycle } = require('./chat-views/lifecycle');
 const { startChatObservation } = require('./chat');
 const { createOverlay } = require('./overlay');
 const { createShortcutHandler } = require('./shortcuts');
@@ -29,6 +30,7 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
   let navigator;
   let initialViewId = null;
   let hub = null;               // per-view status observation (see chat-views/observation.js)
+  let lifecycle = null;         // which views can give their resources back, and the explicit suspension (see chat-views/lifecycle.js)
   let noticeCount = 0;          // activity notices wanted on screen (see syncNotices)
   let interactive = false;
   let overlay;
@@ -235,6 +237,8 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
       onClosed?.();
       if (overlay) overlay.destroy();
       overlay = undefined;
+      lifecycle?.stop();
+      lifecycle = null;
       hub?.stop();                    // observers first: nothing may probe a view that is being closed
       hub = null;
       navigator?.stop();
@@ -277,6 +281,9 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
         setLast: (key, bindingId) => { uiState.chat.last[key] = bindingId; persist(); }
       }
     });
+    // Explicit suspension only (no timers, no automatic policy): the navigator asks it what to offer on each tab.
+    lifecycle = createViewLifecycle({ manager, navigator, hub });
+    navigator.setLifecycle(lifecycle);
     navigator.onChange((state) => { lastNavState = state; onNavChange?.(); syncConflict(); });
     // The application's own initial page (what M00 always had), loaded as before and kept unscoped until the user
     // hands it to a workspace ("new conversation"). Nothing else is loaded until it is asked for.
@@ -296,6 +303,7 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     getWindow: () => mainWindow,
     getChat: attachedChat,
     getNavigator: () => navigator,
+    getLifecycle: () => lifecycle,
     getObservationStats: () => (hub ? hub.stats() : null),
     getChatUrl: () => (navigator ? navigator.getVisibleUrl() : ''),
     isTrusted: (event) => Boolean(mainWindow) && event.sender === mainWindow.webContents,

@@ -146,6 +146,18 @@ function createObservationHub({ manager, startObserver, now = () => Date.now(), 
     if (entry.observer.getState().attention.pending) { entry.observer.markViewed(); refresh(id); }
     return true;
   }
+  // One extra reading of ONE observed view, on request (the lifecycle asks for it right before it releases a view, so the decision
+  // never rests on the last scheduled poll). Not a new timer and not a loop: it runs the observer's own probe once. Resolves
+  // false when the view is not observed (or stops being observed meanwhile); callers must re-read summaryOf() afterwards.
+  async function probeNow(id) {
+    const entry = entries.get(id);
+    if (!entry) return false;
+    await entry.observer.pollNow();
+    if (entries.get(id) !== entry) return false;
+    refresh(id);
+    return true;
+  }
+
   const visitVisible = () => (manager.getVisibleId() ? visit(manager.getVisibleId()) : false);
 
   function runtimeOf(id) {
@@ -160,7 +172,7 @@ function createObservationHub({ manager, startObserver, now = () => Date.now(), 
   sync();
 
   return {
-    sync, setInteractive, visit, visitVisible, runtimeOf,
+    sync, setInteractive, visit, visitVisible, runtimeOf, probeNow,
     summaryOf: summarize,
     isObserved: (id) => entries.has(id),
     onChange(listener) { listeners.add(listener); return () => listeners.delete(listener); },

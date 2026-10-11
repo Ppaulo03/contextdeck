@@ -22,9 +22,14 @@ const { initialRuntime, observation, PageLifecycle, Reliability, Source } = requ
 // its conversation is NOT mutated by an event: it keeps its expectation until someone explicitly takes it over
 // (open()/demote()), so a transient redirect cannot detach a view, and a real divergence cannot go unnoticed.
 //
-// Lifecycle rules (docs/decisions/0003-multi-view.md): views are created only on demand; an existing view is
-// never reloaded or navigated to select it; hiding a view only detaches it; nothing is destroyed except by
-// destroyAll() when the application closes. No pool, no eviction.
+// Lifecycle rules (docs/decisions/0003-multi-view.md, 0005-view-lifecycle.md): views are created only on demand; an existing
+// view is never reloaded or navigated to select it; hiding a view only detaches it; a view is destroyed in exactly two
+// places: destroyAll() when the application closes, and suspend() on the user's explicit request (chat-views/lifecycle.js
+// decides whether that is safe; this file only refuses what is structurally wrong). No pool, no eviction, no timers.
+//
+// A suspended conversation has NO view. The manager keeps only a minimal in-memory record of it (`suspended`: conversation
+// key -> recovery address), so the navigation can still list it and restoring it is the normal path (create()). The binding,
+// not this record, stays the source of truth for what a conversation is; nothing here is persisted.
 
 // See setIdentity().
 const REDIRECT_WINDOW_MS = 3000;
@@ -57,6 +62,7 @@ const identityOf = (url) => {
 
 function createChatViewManager({ createView, host, now = () => Date.now() }) {
   const entries = new Map();
+  const suspended = new Map();   // conversationKey -> { id, key, url, at }: conversations whose view was released on request
   const listeners = new Set();
   let seq = 0;
   let visibleId = null;      // the view that should be on screen when the chat tab is shown
@@ -69,6 +75,7 @@ function createChatViewManager({ createView, host, now = () => Date.now() }) {
 
   function setPage(entry, page) {
     entry.page = page;
+    if (page === PageLifecycle.READY && entry.firstReadyAt === null) entry.firstReadyAt = now();
     entry.runtime = { ...entry.runtime, page: observation(page, { source: Source.NAVIGATION, reliability: Reliability.OBSERVED, observedAt: now() }) };
   }
 
@@ -118,7 +125,7 @@ function createChatViewManager({ createView, host, now = () => Date.now() }) {
     const entry = {
       id, handle, scope, expectedKey, pristine,
       identity: identityOf(handle.getUrl ? handle.getUrl() : ''),
-      epoch: 0, reached: false, reachedAt: 0, page: PageLifecycle.LOADING, loadSeq: 0, createdAt: now(), lastShownAt: 0,
+      epoch: 0, reached: false, reachedAt: 0, page: PageLifecycle.LOADING, loadSeq: 0, createdAt: now(), firstReadyAt: null, restoredFrom: null, lastShownAt: 0,
       runtime: initialRuntime()
     };
     entries.set(id, entry);
@@ -133,6 +140,10 @@ function createChatViewManager({ createView, host, now = () => Date.now() }) {
     const id = `v${++seq}`;
     const handle = createView({ id, url, onEvent: (kind, payload) => onEvent(id, kind, payload) });
     const entry = register(handle, { scope, expectedKey, id, pristine });
+    // A view that comes back for a suspended conversation consumes its record: from here on the conversation HAS a view
+    // (loading, which is the restoring state), so it can never be listed as suspended and loaded at once.
+    const key = expectedKey || identityOf(url).key;
+    if (key && suspended.has(key)) { entry.restoredFrom = suspended.get(key).at; suspended.delete(key); }
     load(entry, url);
     emit();
     return id;
@@ -233,11 +244,34 @@ function createChatViewManager({ createView, host, now = () => Date.now() }) {
     return [...byKey.entries()].filter(([, ids]) => ids.length > 1).map(([key, ids]) => ({ key, viewIds: ids }));
   }
 
+  // Releases the view of one conversation on explicit request. Structural checks only (the policy is lifecycle.js):
+  // the view must be alive, not the one the user is looking at or that is attached, and show a durable conversation
+  // whose canonical address is the recovery address. The entry leaves `entries` and listeners are told BEFORE the
+  // page is destroyed, so observers stop before their WebContents goes away; late events of the old id are dropped.
+  function suspend(id, { url } = {}) {
+    if (destroyed) return { ok: false, code: 'closed' };
+    const entry = entries.get(id);
+    if (!alive(entry)) return { ok: false, code: 'view_gone' };
+    if (id === visibleId || id === attachedId) return { ok: false, code: 'selected' };
+    if (entry.identity.state !== 'durable') return { ok: false, code: 'identity' };
+    const target = identityOf(url);
+    if (target.state !== 'durable' || target.key !== entry.identity.key) return { ok: false, code: 'recovery_url' };
+    if (suspended.has(entry.identity.key)) return { ok: false, code: 'already_suspended' };
+    const record = Object.freeze({ id, key: entry.identity.key, url: target.url, at: now() });
+    suspended.set(record.key, record);
+    entries.delete(id);
+    emit();
+    try { entry.handle.destroy(); } catch { /* Already gone. */ }
+    return { ok: true, record };
+  }
+
   function snapshot(entry) {
     return {
       id: entry.id, scope: entry.scope, expectedKey: entry.expectedKey, identity: { ...entry.identity }, epoch: entry.epoch,
       page: entry.page, relation: relation(entry), visible: entry.id === visibleId, attached: entry.id === attachedId,
-      pristine: entry.pristine, reached: entry.reached, lastShownAt: entry.lastShownAt
+      pristine: entry.pristine, reached: entry.reached, lastShownAt: entry.lastShownAt,
+      createdAt: entry.createdAt, restored: entry.restoredFrom !== null,
+      restoreMs: entry.restoredFrom !== null && entry.firstReadyAt !== null ? entry.firstReadyAt - entry.createdAt : null
     };
   }
 
@@ -257,12 +291,13 @@ function createChatViewManager({ createView, host, now = () => Date.now() }) {
       if (e.page !== 'destroyed') { try { e.handle.destroy(); } catch { /* Already gone. */ } setPage(e, PageLifecycle.DESTROYED); }
     }
     entries.clear();
+    suspended.clear();
     emit();                           // observers of the closed views stop on this signal
     listeners.clear();
   }
 
   return {
-    create, reloadFailed, show, hide, setAttached, relayout, setScope, setExpected,
+    create, suspend, reloadFailed, show, hide, setAttached, relayout, setScope, setExpected,
     findByKey, findLoadingFor, findNeverReached, duplicates, runtimeOf, destroyAll,
     get: (id) => (entries.has(id) ? snapshot(entries.get(id)) : null),
     list: () => [...entries.values()].filter(alive).map(snapshot),
@@ -273,6 +308,10 @@ function createChatViewManager({ createView, host, now = () => Date.now() }) {
     getVisibleId: () => visibleId,
     getAttachedId: () => attachedId,
     isAttached: () => attached,
+    isClosed: () => destroyed,
+    isSuspended: (key) => suspended.has(key),
+    suspendedList: () => [...suspended.values()],
+    dropSuspended: (key) => suspended.delete(key),
     isVisible: (id) => id === visibleId && attached,
     onChange(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     _size: () => entries.size

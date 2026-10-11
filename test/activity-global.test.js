@@ -43,7 +43,7 @@ const run = async (fn, opts) => { const w = setup(opts); try { await fn(w); } fi
 
 test('nothing loaded: no groups, no claims; a conversation that was never loaded is absent (not idle)', () => run((w) => {
   const g = w.global();
-  assert.deepEqual(g.totals, { responding: 0, attention: 0, drafts: 0, observed: 0, loaded: 0 });
+  assert.deepEqual(g.totals, { responding: 0, attention: 0, drafts: 0, observed: 0, loaded: 0, suspended: 0 });
   assert.deepEqual(g.groups, []);
   assert.equal(g.selectedId, 'w1');
 }));

@@ -226,7 +226,7 @@ test('markup and styles: the indicator is a button in the top bar for BOTH tabs,
 // ---- the overlay: activity center and notices -------------------------------------------------------------------------------------
 
 function mountOverlay(initial = payload()) {
-  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message', 'activity', 'activity-body', 'activity-message', 'notices']);
+  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message', 'chats-close', 'activity', 'activity-body', 'activity-message', 'activity-close', 'notices']);
   for (const id of ['scrim', 'chats', 'chats-message', 'activity', 'activity-message', 'notices']) document.getElementById(id).hidden = true;
   let current = initial; let openCb; let pushCb;
   const calls = { open: [], dismiss: [], close: 0 };

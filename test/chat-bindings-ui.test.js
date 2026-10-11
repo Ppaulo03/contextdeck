@@ -84,7 +84,7 @@ test('the view-model mirrors the service rule for confirmation', () => {
 // ---- the panel (overlay) --------------------------------------------------------------------------------------------
 
 function mountPanel(initial = chatsState(), { results = {} } = {}) {
-  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message', 'activity', 'activity-body', 'activity-message', 'notices']);
+  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message', 'chats-close', 'activity', 'activity-body', 'activity-message', 'activity-close', 'notices']);
   document.getElementById('scrim').hidden = true;
   document.getElementById('chats').hidden = true;
   document.getElementById('chats-message').hidden = true;
@@ -123,9 +123,19 @@ function mountPanel(initial = chatsState(), { results = {} } = {}) {
     setState: (s) => { current = s; },
     click: async (b) => { await b.fire('click'); await new Promise((r) => setImmediate(r)); },
     type: async (key, value) => { const n = byKey(key); n.value = value; await n.fire('input'); },
-    key: (k) => document.fire('keydown', { key: k })
+    key: (k) => document.fire('keydown', { key: k }),
+    // The dropdowns of the panel: the trigger is `byKey(key)`; its list is the second child of the same wrapper.
+    options: (key) => byKeyRows(byKey(key)),
+    choose: async (key, value) => {
+      const trigger = byKey(key);
+      await trigger.fire('click');
+      const row = byKeyRows(trigger).find((r) => r.dataset.value === value);
+      await row.fire('click');
+      await new Promise((r) => setImmediate(r));
+    }
   };
 }
+const byKeyRows = (trigger) => trigger.parent.children[1].children[0].children;
 
 test('panel opens in chats mode: the menu is hidden, the destination and its conversations are shown, positioned under the trigger', async () => {
   const s = chatsState({ bindings: [binding(1, { role: 'architecture' }), binding(2)] });
@@ -137,7 +147,8 @@ test('panel opens in chats mode: the menu is hidden, the destination and its con
   assert.match(t.text(), /Destino escolhido no ContextDeck/);
   const select = t.byKey('target');
   assert.equal(select.value, 'w1');
-  assert.deepEqual(select.children.map((o) => o.textContent), ['w1 · api', 'w2 · app', 'w3 · app']);
+  assert.deepEqual(t.options('target').map((o) => o.textContent), ['w1 · api', 'w2 · app', 'w3 · app'], 'same rows as every other list');
+  assert.equal(select.tag, 'button', 'no native <select>: its open list would look different');
   assert.match(t.text(), /chat 1/);
   assert.match(t.text(), /Arquitetura/);
   assert.match(t.text(), /chat 2/);
@@ -154,7 +165,7 @@ test('bind current: sends the destination shown, what was selected at open, and 
   const t = mountPanel();
   await t.open();
   await t.type('label', 'Arquitetura base');
-  const role = t.byKey('role'); role.value = 'architecture'; await role.fire('change');
+  await t.choose('role', 'architecture');
   await t.click(t.button('Vincular conversa atual'));
   assert.deepEqual(t.calls.bind, [{ source: 'current', target: { session: 'contextdeck', workspaceId: 'w1' }, selectedAtOpen: 'w1', confirmTarget: false, label: 'Arquitetura base', role: 'architecture' }]);
   assert.match(t.message.textContent, /Conversa vinculada/);
@@ -197,7 +208,7 @@ test('choosing another destination in the panel is explicit but needs confirmati
   const s = chatsState({ bindings: [binding(1), binding(2, { workspaceIdentity: { session: 'contextdeck', workspaceId: 'w2' }, label: 'in w2' })] });
   const t = mountPanel(s);
   await t.open();
-  const select = t.byKey('target'); select.value = 'w2'; await select.fire('change');
+  await t.choose('target', 'w2');
   assert.match(t.text(), /in w2/);
   assert.doesNotMatch(t.text(), /chat 1/);
   assert.match(t.text(), /Destino escolhido neste painel/);
@@ -262,7 +273,7 @@ test('editing label and category inline sends only those fields', async () => {
   await t.click(t.button('Editar'));
   const id = binding(1).bindingId;
   await t.type(`edit-label-${id}`, 'new name');
-  const role = t.byKey(`edit-role-${id}`); role.value = 'planning'; await role.fire('change');
+  await t.choose(`edit-role-${id}`, 'planning');
   await t.click(t.button('Salvar'));
   assert.deepEqual(t.calls.update, [{ bindingId: id, label: 'new name', role: 'planning' }]);
 });

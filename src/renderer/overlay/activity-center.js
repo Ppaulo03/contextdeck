@@ -122,6 +122,8 @@ export function createActivityOverlay({ api, closeOverlay }) {
     if (model.moreText) noticeBox.append(el('p', 'act-notice-more', model.moreText));
   }
 
+  $('activity-close').addEventListener('click', () => void closeOverlay());
+
   return {
     async openCenter(opened) {
       mode = 'center';

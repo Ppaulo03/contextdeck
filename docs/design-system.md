@@ -31,6 +31,7 @@ Animation exists in one place (the pending spinner) and is disabled by `prefers-
 | `workspace-selector.js` | Combobox-style trigger + Auto/Manual toggle; opens the menu overlay. | `store`, `feedback`, shared view-model |
 | `git-panel.js` | Git tools and pickers in the footer. | `dom`, `feedback`, bridge |
 | `herdr-panel.js` | Read-only diagnostics over the terminal area. | `dom`, `store`, bridge |
+| `dropdown.js` | Select-like trigger + the shared list, for the overlay panels (replaces the native `<select>`). | `dom` |
 
 `app.js` only creates the components and connects them. `src/shared/workspace-view.js` is a pure view-model
 (trigger text/tone/busy, menu items, filtering) used by the trigger and by the menu, and unit-tested in Node.
@@ -38,6 +39,13 @@ Animation exists in one place (the pending spinner) and is disabled by `prefers-
 ## Top bar
 
 Order: ContextDeck name · Terminal/ChatGPT segmented switch · workspace selector and Auto/Manual · global activity indicator · contextual actions · "Chat sem projeto" hint (ChatGPT view only). The switch is one fixed-size group (`.segmented` / `.segment`, same height family as the workspace controls); the selected segment is a filled pill, hover and `:focus-visible` states use the shared tokens, and nothing changes size when switching. The Herdr session name is not in the bar: it is shown in the diagnostics panel. Narrow windows hide the name and the "Workspace" label (≤1000 px) and let the actions scroll (≤700 px effective).
+
+## Opened lists and the spinner (shared, M01-I3B-2H polish)
+
+- **One look for every list that opens.** The workspace menu (`.menu-panel`), the Git pickers (`.picker-panel`) and the dropdowns inside the overlay panels (`.dd-popup`) share ONE container rule in `components.css` (surface `--bg-raised`, `--border-strong`, `--radius-lg`, `--shadow-popover`, `--space-3` padding) and ONE row rule (`.menu` / `.menu-item`: same padding, hover/active/selected states, keyboard focus ring). Only placement and maximum height differ per list. A test fails if a list gets a look of its own.
+- **No native `<select>`.** The operating system draws its open list, which cannot match. `components/dropdown.js` is the replacement used by the bindings panel (destination, category): the same trigger as the workspace selector (`.control.select`) and a list of `.menu-item` rows; ↑/↓/Home/End/Enter/Space, Esc closes only the list (a second Esc closes the panel), a click outside closes it.
+- **One spinner.** A thin arc whose tail fades out (conic gradient cut into a ring by a mask), one rule for every use: the pending caret of the workspace selector, a loading tab, the "responding" indicators. The only `@keyframes` of the application; with `prefers-reduced-motion` the arc stays as a static ring.
+- The × of the activity center and of the bindings panel closes the overlay like Esc and a click outside.
 
 ## Global activity (M01-I3B-2H)
 

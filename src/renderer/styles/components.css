@@ -33,6 +33,22 @@
 .field { display: flex; align-items: center; gap: var(--space-3); color: var(--text-muted); font-size: var(--text-xs); }
 .resolved { font: var(--text-xs) var(--font-mono); color: var(--text-muted); white-space: nowrap; }
 
+/* ---- Every list that opens looks the same ----------------------------------------------------------------
+   The workspace menu, the Git pickers and the dropdowns inside the overlay panels share one container (surface, border,
+   radius, shadow, padding) and one set of rows (.menu / .menu-item below). Only placement and height differ. */
+.menu-panel, .picker-panel, .dd-popup {
+  padding: var(--space-3);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-popover);
+}
+.dd { position: relative; display: block; flex: 1; min-width: 120px; }
+.dd .dd-trigger { width: 100%; }
+.dd-popup { position: absolute; top: calc(100% + var(--space-2)); left: 0; z-index: var(--z-menu); min-width: 100%; max-width: 360px; }
+.dd-popup[hidden] { display: none; }
+.dd-popup .menu { max-height: min(220px, 40vh); outline: none; }
+
 /* Select-like trigger. Its width is fixed per breakpoint so label changes never move the top bar. */
 .select {
   position: relative;
@@ -56,16 +72,8 @@
   color: var(--text-muted);
 }
 .select-caret::before { content: "\25BE"; }
-/* Pending operation: the caret becomes a small spinner; the label keeps the last known workspace. */
-.select[aria-busy="true"] .select-caret::before {
-  content: "";
-  width: 10px;
-  height: 10px;
-  border: 2px solid var(--border-strong);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin var(--duration-spin) linear infinite;
-}
+/* Pending operation: the caret becomes the application spinner (see "Spinner" below); the label keeps the last known workspace. */
+.select[aria-busy="true"] .select-caret::before { content: ""; width: 10px; height: 10px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---- Top bar pieces -------------------------------------------------------------------------- */
@@ -129,7 +137,6 @@
 .chat-tab.is-warn .chat-tab-text { color: var(--warning-soft); }
 .chat-tab.is-armed { background: var(--warning-bg); }
 .chat-tab-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-tab-spin { flex: none; width: 9px; height: 9px; border: 2px solid var(--border-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin var(--duration-spin) linear infinite; }
 .chat-empty-title { margin: 0; font-size: var(--text-md); }
 .chat-empty-text { margin: 0; max-width: 460px; font-size: var(--text-sm); color: var(--text-muted); }
 
@@ -141,13 +148,30 @@
 .activity-text { display: inline-flex; align-items: center; gap: var(--space-4); white-space: nowrap; }
 .act-part { display: inline-flex; align-items: center; gap: var(--space-2); }
 .act-ico { display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; line-height: 1; }
-.act-ico.is-spin { box-sizing: border-box; border: 2px solid var(--border-strong); border-top-color: var(--info); border-radius: 50%; animation: spin var(--duration-spin) linear infinite; }
 .act-part.is-attention .act-ico { color: var(--warning); }
 .act-part.is-draft .act-ico { color: var(--text-muted); }
 .act-part.is-responding { color: var(--info); }
-.act-ico.is-responding { box-sizing: border-box; border: 2px solid var(--border-strong); border-top-color: var(--info); border-radius: 50%; animation: spin var(--duration-spin) linear infinite; }
 .act-ico.is-attention { color: var(--warning); }
 .act-ico.is-draft { color: var(--text-muted); }
+
+/* ---- Spinner: ONE for the whole application ---------------------------------------------------------------
+   A thin arc whose tail fades out (conic gradient cut into a ring by a mask), instead of a flat border with one coloured
+   side. Sizes are set where it is used; the colour is --info. With reduced motion the arc stays as a static ring. */
+.select[aria-busy="true"] .select-caret::before,
+.chat-tab-spin,
+.status-ico.is-responding,
+.act-ico.is-spin,
+.act-ico.is-responding {
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 8%, var(--info));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), black calc(100% - 1.5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), black calc(100% - 1.5px));
+  animation: spin var(--duration-spin) linear infinite;
+}
+.chat-tab-spin { flex: none; width: 10px; height: 10px; }
+.select[aria-busy="true"] .select-caret::before { background: conic-gradient(from 0deg, transparent 8%, var(--accent)); }
 
 /* Indicators inside a tab: fixed slot, distinct shapes, not only colors. */
 .chat-tab-status { display: inline-flex; flex: none; align-items: center; justify-content: flex-end; gap: var(--space-2); min-width: 26px; height: 12px; }
@@ -155,7 +179,6 @@
 .status-ico.is-attention { color: var(--warning); }
 .status-ico.is-draft { color: var(--text-muted); }
 .status-ico.is-unknown { color: var(--text-muted); border: 1px dashed var(--border-strong); border-radius: 50%; }
-.status-ico.is-responding { box-sizing: border-box; border: 2px solid var(--border-strong); border-top-color: var(--info); border-radius: 50%; animation: spin var(--duration-spin) linear infinite; }
 .ws-activity { flex: none; margin-left: var(--space-3); font-size: var(--text-2xs); color: var(--info); white-space: nowrap; }
 .ws-activity[hidden] { display: none; }
 .badge.is-activity { min-width: 0; }
@@ -180,7 +203,9 @@
 
 /* ---- Menus (git pickers in the footer and the workspace menu overlay share these) ---------------- */
 .menu { margin: 0; padding: 0; list-style: none; overflow-y: auto; }
-.menu-item { display: flex; align-items: baseline; gap: var(--space-4); padding: 3px var(--space-4); font-size: var(--text-sm); cursor: pointer; border-radius: var(--radius-sm); }
+.menu-item { display: flex; align-items: center; gap: var(--space-4); padding: 5px var(--space-4); font-size: var(--text-sm); cursor: pointer; border-radius: var(--radius-sm); }
+.menu-item[aria-disabled="true"] { opacity: var(--opacity-disabled); cursor: default; }
+.menu.is-keyboard .menu-item.is-active { outline: 2px solid var(--accent); outline-offset: -2px; }
 .menu-item.is-active { background: var(--bg-hover); }
 .menu-item.is-selected .menu-label { color: var(--accent); font-weight: 700; }
 .menu-group { padding: 7px var(--space-4) 3px; font-size: var(--text-2xs); letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); cursor: default; }
@@ -188,7 +213,6 @@
 .menu-label { font-family: var(--font-mono); white-space: nowrap; }
 .menu-detail { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-muted); }
 
-.picker-panel { padding: var(--space-3); background: var(--bg-control); border: 1px solid var(--border-strong); border-radius: var(--radius-md); }
 .picker-panel .control { width: 100%; height: var(--control-h); background: var(--bg-bar); }
 .picker-panel .menu { margin-top: var(--space-3); max-height: min(220px, 30vh); }
 

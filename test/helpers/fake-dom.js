@@ -47,6 +47,7 @@ function createDocument(ids) {
   doc.createElement = (tag) => new El(tag, doc);
   doc.getElementById = (id) => doc.elements[id] || Object.values(doc.elements).flatMap((e) => e._all()).find((n) => n.id === id) || null;
   doc.addEventListener = (type, fn) => { (doc.listeners[type] ||= []).push(fn); };
+  doc.removeEventListener = (type, fn) => { doc.listeners[type] = (doc.listeners[type] || []).filter((f) => f !== fn); };
   doc.fire = async (type, event = {}) => { const e = { type, target: doc, preventDefault() { this.defaultPrevented = true; }, ...event }; for (const fn of doc.listeners[type] || []) await fn(e); return e; };
   doc.documentElement = new El('html', doc);
   for (const id of ids) { const el = new El(id.includes('list') ? 'ul' : 'div', doc); el.id = id; doc.elements[id] = el; }

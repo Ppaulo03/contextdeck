@@ -23,7 +23,9 @@ const pickSelected = (v) => (v === null || typeof v === 'string' ? v : undefined
 
 // Project links (M01-I3B-3, experimental, off unless CONTEXTDECK_PROJECTS=1): `projects` is null when off.
 // "Link the current Project" never trusts the renderer for the address: main reads it from the ChatGPT view, like for chats.
-function registerChatsIpc({ ipcMain, trusted, win, bindings, notify, projects = null }) {
+// `onUnbind(conversationKey)` (optional): told when the user removed a binding, so the page that still shows that conversation is
+// not bound again by the workspace-first rule (unbinding is a decision, not a state to be "repaired").
+function registerChatsIpc({ ipcMain, trusted, win, bindings, notify, projects = null, onUnbind = null }) {
   const guard = (fn) => (event, args) => {
     if (!trusted(event)) return denied;
     if (!isPlainObject(args)) return invalid();
@@ -88,7 +90,13 @@ function registerChatsIpc({ ipcMain, trusted, win, bindings, notify, projects = 
     return bindings.update({ bindingId: args.bindingId, label: args.label });
   }));
 
-  ipcMain.handle('chats:unbind', guard((args) => (typeof args.bindingId === 'string' ? bindings.unbind({ bindingId: args.bindingId }) : invalid())));
+  ipcMain.handle('chats:unbind', guard((args) => {
+    if (typeof args.bindingId !== 'string') return invalid();
+    const known = bindings.all().find((b) => b.bindingId === args.bindingId);
+    const result = bindings.unbind({ bindingId: args.bindingId });
+    if (result && result.ok && known && onUnbind) onUnbind(known.conversationKey);
+    return result;
+  }));
 
   ipcMain.handle('chats:reassign', guard((args) => {
     if (typeof args.bindingId !== 'string') return invalid();

@@ -21,6 +21,10 @@
 // with a note and a direct action to retry; nothing is destroyed.
 function createContextAdoption({ session, navigator, bindings, selection }) {
   const pendingNotes = new Map();      // viewId -> { code, text }
+  // Conversations the user explicitly unbound while a page still shows them. Without this the next evaluation would bind them
+  // again (the page is on screen, in the workspace). Forgotten as soon as no page shows the conversation any more, so opening
+  // it again later, in a workspace, is a new act.
+  const declined = new Set();
   let resolving = false;
 
   const TEXT = {
@@ -43,6 +47,7 @@ function createContextAdoption({ session, navigator, bindings, selection }) {
       }
       return 'conflict';                         // shown by the navigator; never moved here
     }
+    if (declined.has(v.identity.key) && !force) return 'declined';
     if (!(v.pending || v.visible || force)) return 'passive';
     const r = bindings.adopt({ target: { session, workspaceId: v.workspaceId }, url: v.identity.url });
     if (!r.ok) {
@@ -61,7 +66,10 @@ function createContextAdoption({ session, navigator, bindings, selection }) {
     resolving = true;
     try {
       let changed = false;
-      for (const v of navigator.contextViews()) {
+      const views = navigator.contextViews();
+      const shown = new Set(views.filter((x) => x.identity.state === 'durable').map((x) => x.identity.key));
+      for (const key of [...declined]) if (!shown.has(key)) declined.delete(key);
+      for (const v of views) {
         if (v.identity.state !== 'durable') continue;
         const out = evaluate(v);
         if (out === 'adopted') changed = true;
@@ -108,8 +116,10 @@ function createContextAdoption({ session, navigator, bindings, selection }) {
   }
 
   const back = ({ viewId } = {}) => navigator.moveToBinding(viewId);
+  // The user removed the binding of this conversation: leave it unbound while a page shows it.
+  const decline = (key) => { if (typeof key === 'string') declined.add(key); };
 
-  return { resolve, retry, transfer, back, noteOf: (viewId) => (pendingNotes.get(viewId) || {}).text || '', pending: () => [...pendingNotes.keys()] };
+  return { resolve, retry, transfer, back, decline, noteOf: (viewId) => (pendingNotes.get(viewId) || {}).text || '', pending: () => [...pendingNotes.keys()] };
 }
 
 module.exports = { createContextAdoption };

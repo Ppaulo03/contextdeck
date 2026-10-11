@@ -368,3 +368,50 @@ test('banner model: transfer needs its own second click, pending offers one dire
   assert.equal(barModel({ ...base, conflict }).banner.actions.find((a) => a.action === 'transfer').label, 'Transferir vínculo…');
   assert.deepEqual(barModel({ ...base, pending: 'Conversa ainda nao vinculada: x' }).banner.actions.map((a) => a.action), ['retry']);
 });
+
+// ---- unbinding the conversation that is open --------------------------------------------------------------------------------------------------
+test('unbinding the open conversation sticks: it is not bound again while the page shows it', () => run(async (w) => {
+  const r = w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') });
+  const v = w.view(r.viewId);
+  v.finishLoad(w.A[0].url);
+  const key = w.A[0].conversationKey;
+  assert.equal(w.bindings.unbind({ bindingId: w.A[0].bindingId }).ok, true);
+  w.adoption.decline(key);                                          // what the chats:unbind handler does
+  w.navigator.reconcile();
+  v.navigate(w.A[0].url);
+  w.adoption.resolve();
+  assert.equal(w.bound(1, w.A[0].url), null, 'still unbound');
+  assert.equal(w.bindings.all().length, 1);
+  assert.equal(w.manager.get(v.id).expectedKey, null);
+  assert.equal(v.loads.length, 1, 'the page was kept');
+  assert.equal(w.navigator.getState().pending, null, 'and it is not reported as a failure');
+}));
+
+test('after unbinding, opening the conversation again later (page left it) is a new act; an explicit retry also binds', () => run(async (w) => {
+  const r = w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') });
+  const v = w.view(r.viewId);
+  v.finishLoad(w.A[0].url);
+  w.bindings.unbind({ bindingId: w.A[0].bindingId });
+  w.adoption.decline(w.A[0].conversationKey);
+  w.navigator.reconcile();
+  assert.equal(w.bound(1, w.A[0].url), null);
+  assert.equal(w.adoption.retry({ viewId: v.id }).ok, true, 'the user asks for it');
+  assert.equal(w.bound(1, w.A[0].url).workspaceIdentity.workspaceId, 'w1');
+  w.bindings.unbind({ bindingId: w.bound(1, w.A[0].url).bindingId });
+  w.adoption.decline(w.A[0].conversationKey);
+  v.navigate(chatUrl(8));                                           // the page leaves the conversation
+  assert.equal(w.bound(8).workspaceIdentity.workspaceId, 'w1');
+  v.navigate(w.A[0].url);                                           // and comes back: opened again in the context
+  assert.equal(w.bound(1, w.A[0].url).workspaceIdentity.workspaceId, 'w1');
+}));
+
+test('chats:unbind tells main which conversation was unbound, only on success', () => {
+  const { registerChatsIpc } = require('../src/main/ipc/chats');
+  const handlers = new Map(); const told = [];
+  const bindings = { all: () => [{ bindingId: 'b_0000000000000001', conversationKey: 'c:abc' }], unbind: ({ bindingId }) => (bindingId === 'b_0000000000000001' ? { ok: true } : { ok: false, error: { code: 'binding_not_found' } }), getState: () => ({}) };
+  registerChatsIpc({ ipcMain: { handle: (c, fn) => handlers.set(c, fn) }, trusted: () => true, win: { getChatUrl: () => '' }, bindings, notify: () => {}, onUnbind: (k) => told.push(k) });
+  handlers.get('chats:unbind')({}, { bindingId: 'b_ffffffffffffffff' });
+  assert.deepEqual(told, []);
+  handlers.get('chats:unbind')({}, { bindingId: 'b_0000000000000001' });
+  assert.deepEqual(told, ['c:abc']);
+});

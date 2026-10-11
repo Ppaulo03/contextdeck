@@ -63,7 +63,17 @@ app.whenReady().then(async () => {
     const probe = await electron.net.fetch('https://chatgpt.com/', { method: 'HEAD', signal: AbortSignal.timeout(10000) });
     report.networkProbe = probe.status;
   } catch (e) { return finishWith(77, { skipped: `chatgpt.com is not reachable from this machine (${e && e.message}); the harness needs it to load real pages` }); }
-  const check = (name, ok, detail) => { report.checks.push({ name, ok: Boolean(ok), detail }); progress(`${ok ? 'ok  ' : 'FAIL'} ${name}${ok ? '' : ' :: ' + detail}`); };
+  // Sanitized picture of every chat view when a check fails: structure only (ids, scope, identity state, relation, page
+  // lifecycle, the SHAPE of the address with ids blanked), never page content.
+  const shape = (u) => String(u || '').replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gi, '<uuid>').replace(/g-p-[0-9a-f]{32}/g, 'g-p-<id>').slice(0, 120);
+  const snapshotViews = () => {
+    try {
+      const nav = win && win.getNavigator && win.getNavigator();
+      const wcs = webContents.getAllWebContents().filter((w) => !w.isDestroyed() && w.getURL().startsWith('https://chatgpt.com')).map((w) => ({ url: shape(w.getURL()), loading: w.isLoading() }));
+      return { views: nav ? nav._debugViews().map((v) => ({ id: v.id, scope: v.scope, relation: v.relation, page: v.page, identity: v.identity.state, expected: Boolean(v.expectedKey), reached: v.reached, visible: v.visible })) : [], pages: wcs };
+    } catch (e) { return { error: String(e && e.message) }; }
+  };
+  const check = (name, ok, detail) => { report.lastCheck = name; report.checks.push({ name, ok: Boolean(ok), detail, ...(ok ? {} : { diagnostics: snapshotViews() }) }); progress(`${ok ? 'ok  ' : 'FAIL'} ${name}${ok ? '' : ' :: ' + detail + ' :: ' + JSON.stringify(snapshotViews())}`); };
   process.on('unhandledRejection', (e) => { report.errors.push(String((e && e.stack) || e)); progress(`UNHANDLED ${e}`); });
 
   // ---- fake Herdr + real bindings ------------------------------------------------------------------------------------------
@@ -137,7 +147,29 @@ app.whenReady().then(async () => {
   const respondingOn = (wc) => wc.executeJavaScript(`(() => { const b = document.querySelector('button[data-composer-submit]'); if (!b) return false; b.setAttribute('aria-label', 'Interromper geração'); return true; })()`);
   const respondingOff = (wc) => wc.executeJavaScript(`(() => { const b = document.querySelector('button[data-composer-submit]'); if (!b) return false; b.setAttribute('aria-label', 'Enviar mensagem'); return true; })()`);
   const draftSet = (wc, on) => wc.executeJavaScript(`(() => { const t = document.querySelector('textarea[data-octane-input], textarea[name=prompt], textarea'); if (!t) return false; Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(t, ${on ? "'rascunho'" : "''"}); t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
-  const bePage = (wc, n) => wc.executeJavaScript(`history.pushState({}, '', '/c/${uuid(n)}'); location.pathname`);
+  // Makes a logged-out page "be" conversation n. The logged-out SPA redirects an unavailable conversation back to "/" some time
+  // after it booted (that delay depends on the network and on the session being cold: the first page of a run is the slowest),
+  // so a single pushState can be silently undone. Condition-based, not a fixed sleep: assert the address, then require it to
+  // survive until the SPA has demonstrably settled (the page is not loading and the address is unchanged across a navigation
+  // event round-trip); if it was undone, assert again. The retries are reported (a harness property, never a product claim).
+  const want = (n) => '/c/' + uuid(n);
+  const bePage = async (wc, n) => {
+    report.steps.pageRetries = report.steps.pageRetries || {};
+    for (let attempt = 1; attempt <= 6; attempt++) {
+      await wc.executeJavaScript("history.pushState({}, '', '" + want(n) + "'); location.pathname");
+      // Wait for the address to still be the wanted one after the SPA had the chance to run (two idle frames of the page's own loop).
+      const stable = await wc.executeJavaScript("new Promise((r) => setTimeout(() => r(location.pathname), 1500))");
+      if (stable === want(n) && !wc.isLoading()) { report.steps.pageRetries[n] = attempt - 1; return true; }
+    }
+    report.steps.pageRetries[n] = 'gave up';
+    return false;
+  };
+  // Before the checks that depend on it: a page that was moved away by the SPA is asserted again (and counted).
+  const keepPages = async () => {
+    for (const [n, wc] of [[1, pages['Code Review']], [2, pages.Arquitetura], [3, pages.Planejamento], [4, pages.B1]]) {
+      if (wc && !wc.isDestroyed() && !(await wc.executeJavaScript('location.pathname')).startsWith('/c/')) { report.steps.reasserted = (report.steps.reasserted || 0) + 1; await bePage(wc, n); }
+    }
+  };
 
   progress('start');
   const base = metrics();
@@ -146,10 +178,11 @@ app.whenReady().then(async () => {
 
   // ---- three conversations loaded; each page "is" its conversation ----------------------------------------------------------------
   const pages = {};
-  for (const [i, b] of A.entries()) { pick(b); await settled(2 + i); pages[b.label] = win.getChat().contents; await bePage(pages[b.label], i + 1); await sleep(500); }
+  for (const [i, b] of A.entries()) { pick(b); await settled(2 + i); pages[b.label] = win.getChat().contents; check('page ' + (i + 1) + ' holds its conversation address', await bePage(pages[b.label], i + 1), JSON.stringify(report.steps.pageRetries)); }
   sel.selected = { workspaceId: 'w7', origin: 'dock' }; fire();
   pick(B[0]); await settled(5);
-  pages.B1 = win.getChat().contents; await bePage(pages.B1, 4); await sleep(500);
+  pages.B1 = win.getChat().contents; check('page 4 holds its conversation address', await bePage(pages.B1, 4), JSON.stringify(report.steps.pageRetries));
+  await keepPages();
   report.steps.beforeOverlay = metrics();
 
   // ---- A: activity of another workspace, with the Terminal tab on screen ------------------------------------------------------------
@@ -171,6 +204,7 @@ app.whenReady().then(async () => {
 
   // ---- B: the end of a response raises a notice that takes no focus --------------------------------------------------------------------
   report.steps.beforeNoticeFocus = { uiFocused: ui.isFocused() };
+  await keepPages();
   const e0 = Date.now();
   await respondingOff(pages['Code Review']);
   const noticeAt = await waitFor(async () => { const o = overlayWc(); return o && (await o.executeJavaScript(`document.getElementById('notices').textContent`)).includes('Atividade para revisar'); }, 15000);

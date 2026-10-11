@@ -1,7 +1,7 @@
 'use strict';
 
 const path = require('node:path');
-const { BrowserWindow } = require('electron');
+const { BrowserWindow, app } = require('electron');
 const { saveUiState } = require('./persistence/ui-state');
 const { createChatView } = require('./chat-view');
 const { CHAT_HOME } = require('./persistence/identity');
@@ -9,6 +9,8 @@ const { createChatViewManager } = require('./chat-views/manager');
 const { createChatNavigator } = require('./chat-views/navigator');
 const { createObservationHub } = require('./chat-views/observation');
 const { createViewLifecycle } = require('./chat-views/lifecycle');
+const { buildResourceReport } = require('./chat-views/resource-report');
+const { createDiagnosticsLog } = require('./chat/diagnostics');
 const { startChatObservation } = require('./chat');
 const { createOverlay } = require('./overlay');
 const { createShortcutHandler } = require('./shortcuts');
@@ -185,6 +187,16 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     }
   }
 
+  // Resource picture of the ChatGPT views (chat-views/resource-report.js). Built on demand only; never attributes a process to one view.
+  function resourceReport() {
+    const pids = {};
+    if (manager) for (const v of manager.list()) { const h = manager.handleOf(v.id); pids[v.id] = h && h.getProcessId ? h.getProcessId() : 0; }
+    return buildResourceReport({
+      summary: lifecycle ? lifecycle.summary() : null, inventory: lifecycle ? lifecycle.inventory() : [],
+      metrics: app.getAppMetrics(), pids, hubStats: hub ? hub.stats() : null
+    });
+  }
+
   function setFooterHeight(value) {
     const height = Math.round(Number(value));
     if (Number.isFinite(height) && height >= FOOTER_RANGE[0] && height <= FOOTER_RANGE[1] && height !== footerHeight) {
@@ -282,7 +294,10 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
       }
     });
     // Explicit suspension only (no timers, no automatic policy): the navigator asks it what to offer on each tab.
-    lifecycle = createViewLifecycle({ manager, navigator, hub });
+    // CONTEXTDECK_LIFECYCLE_LOG=1 appends each suspension, refusal and restoration (with a resource snapshot) to
+    // <userData>\diagnostics\lifecycle.jsonl: evidence for the manual homologation, never read back as state.
+    const lifecycleLog = process.env.CONTEXTDECK_LIFECYCLE_LOG === '1' ? createDiagnosticsLog({ file: path.join(path.dirname(uiStateFile), 'diagnostics', 'lifecycle.jsonl') }) : null;
+    lifecycle = createViewLifecycle({ manager, navigator, hub, onEvent: lifecycleLog ? (event) => lifecycleLog.note({ lifecycle: event, resources: resourceReport().totals }) : null });
     navigator.setLifecycle(lifecycle);
     navigator.onChange((state) => { lastNavState = state; onNavChange?.(); syncConflict(); });
     // The application's own initial page (what M00 always had), loaded as before and kept unscoped until the user
@@ -304,6 +319,7 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     getChat: attachedChat,
     getNavigator: () => navigator,
     getLifecycle: () => lifecycle,
+    getResourceReport: resourceReport,
     getObservationStats: () => (hub ? hub.stats() : null),
     getChatUrl: () => (navigator ? navigator.getVisibleUrl() : ''),
     isTrusted: (event) => Boolean(mainWindow) && event.sender === mainWindow.webContents,

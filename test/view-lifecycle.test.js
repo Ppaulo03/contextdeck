@@ -677,3 +677,29 @@ test('the Gerenciar rows carry the state and the reasons; the activity center of
   const after = centerModel({ global: w.navigator.getGlobalActivity(), notices: { items: [], more: 0 } });
   assert.deepEqual([after.unbound.items[0].canSuspend, after.unbound.items[0].suspended, after.unbound.items[0].stateText], [false, true, 'Suspensa (não monitorada)']);
 }));
+
+// ---- resource report ---------------------------------------------------------------------------------------------------------------------
+
+const { buildResourceReport } = require('../src/main/chat-views/resource-report');
+
+test('the resource report never divides a shared process among views, separates host processes from the rest, and carries no content', () => run(async (w) => {
+  await w.open(w.A[0]); await w.open(w.A[1]); await w.open(w.A[2]);
+  const ids = w.manager.list().map((v) => v.id);
+  const metrics = [
+    { pid: 10, type: 'Browser', memory: { workingSetSize: 204800 }, cpu: { percentCPUUsage: 1, idleWakeupsPerSecond: 2 } },
+    { pid: 20, type: 'Tab', memory: { workingSetSize: 307200, privateBytes: 1024 }, cpu: { percentCPUUsage: 0.5, idleWakeupsPerSecond: 1 } },
+    { pid: 30, type: 'Tab', memory: { workingSetSize: 102400 }, cpu: { percentCPUUsage: 0 } },
+    { pid: 40, type: 'GPU', memory: { workingSetSize: 51200 }, cpu: { percentCPUUsage: 0.25 } }
+  ];
+  const report = buildResourceReport({ summary: w.lifecycle.summary(), inventory: w.lifecycle.inventory(), metrics, pids: { [ids[0]]: 20, [ids[1]]: 20, [ids[2]]: 30, vX: 999 }, hubStats: w.hub.stats(), at: 1 });
+  const p20 = report.processes.find((p) => p.pid === 20);
+  assert.deepEqual([p20.views, p20.shared, p20.workingSetMB], [[ids[0], ids[1]], true, 300], 'shared: both views listed, memory not split');
+  assert.equal(report.processes.find((p) => p.pid === 10).views.length, 0);
+  assert.deepEqual([report.totals.viewHosts, report.totals.viewHostsMB, report.totals.sharedHosts, report.totals.allWorkingSetMB], [2, 400, 1, 650]);
+  assert.deepEqual(report.totals.byType.Tab, { processes: 2, workingSetMB: 400 });
+  assert.deepEqual(report.unmappedViews, ['vX']);
+  assert.equal(report.views.created, 3);
+  assert.ok(report.notes.some((n) => /upper bound/.test(n)));
+  assert.doesNotMatch(JSON.stringify(report), /chatgpt\.com|https?:/, 'no address or content');
+  assert.deepEqual(buildResourceReport().totals.processes, 0, 'an empty report is valid');
+}));

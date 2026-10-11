@@ -104,6 +104,8 @@ function createChatView({ onBeforeInput, onEvent, status, onNavigated }) {
     // Browser history of this page (the user's own navigation inside it); used by the conflict modal's "Voltar".
     canGoBack: () => alive() && contents.navigationHistory.canGoBack(),
     goBack: () => { if (alive() && contents.navigationHistory.canGoBack()) { contents.navigationHistory.goBack(); return true; } return false; },
+    // OS process hosting this page (resource report only; shared with other views when Chromium reuses a renderer).
+    getProcessId: () => (alive() ? contents.getOSProcessId() : 0),
     isDestroyed: () => !alive(),
     destroy: () => { if (alive()) contents.close(); }
   };

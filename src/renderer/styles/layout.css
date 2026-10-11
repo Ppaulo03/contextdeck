@@ -41,3 +41,8 @@
   .topbar { gap: var(--space-4); padding: 0 var(--space-4); }
   .topbar .brand, .topbar .ws-label, .topbar .session-chip { display: none; }
 }
+/* Very narrow effective widths (small window at high DPI zoom): actions scroll instead of overflowing the bar. */
+@media (max-width: 700px) {
+  .topbar .view-actions { min-width: 0; flex: 1; overflow-x: auto; scrollbar-width: none; }
+  .topbar .view-actions .actions { flex-wrap: nowrap; white-space: nowrap; }
+}

@@ -91,6 +91,21 @@ It drives the real window controller, chat views, manager, navigator and IPC wit
 - The manager's tests assert *events never rewrite an expectation*: a transient redirect (`/c/<id>` → `/auth/…` → `/c/<id>`, seen in the I3P run as a brief `other`) must not detach a view from its conversation.
 - After editing the mutation-sensitive code (`navigator.js` scope/confirmation checks, `manager.js` attach order and destroy rules) re-run the mutation checks listed in the validation document.
 
+### View lifecycle (M01-I3C-1)
+
+```powershell
+npm run build
+npx electron test/electron/lifecycle-harness.js     # ~3-4 min, needs network, throwaway profile; HARNESS_OUT picks the report folder
+```
+
+Writes `lifecycle-report.json` (memory / processes / CPU by view count, before and after suspending at +0/+3/+10 s, release and restore times, switching time, what is pushed to the UI at rest) and exits 0/1/2/3/77/78 like the activity harness (`EXPECTED_MIN_CHECKS` = 25). Unit tests: `test/view-lifecycle.test.js` (the status world of `helpers/views-world.js` now also builds the lifecycle). Learned while building it:
+
+- `contents.close()` is asynchronous: for a few ms after `manager.suspend()` the page is still in `webContents.getAllWebContents()`. A harness check that looks for "the page is gone" must wait (`waitFor`), or it is a race.
+- A response simulated on a *hidden* page leaves **attention pending** when it ends (correct): the page stays ineligible until the user visits it. In a harness, `pick()` the page and then another one to acknowledge it before expecting eligibility.
+- The model needs a second reading to see a draft disappear: after clearing a draft, wait (or advance the virtual clock) before expecting the page to be eligible. The fresh reading taken by `suspend()` catches a draft that APPEARED at once.
+- `app.getAppMetrics()` working sets include shared pages in every process; compare deltas, and expect Chromium to trim background renderers by itself (an earlier sample can be hundreds of MB above a later one).
+- `CONTEXTDECK_LIFECYCLE_LOG=1` makes the real app append suspension / refusal / restoration events (with a resource snapshot) to `<userData>\diagnostics\lifecycle.jsonl`; no conversation content, never read back as state.
+
 ### Conversation status (M01-I3B-2)
 
 Unit tests run the REAL I3P observer on a fake `WebContents` with virtual time (`test/helpers/views-world.js`: `createStatusWorld`, `createClock`; the clock replaces `Date.now` and the observers' timers, so hours of polling run in milliseconds and `cleanup0()` restores it). Real Electron:
@@ -148,7 +163,7 @@ It wires the same pieces as `src/main/index.js` (notices, activity pusher, direc
 - `node --test test/` fails on Node 24 (treated as a module); use the glob `test/*.test.js`.
 - A dependency version in `package.json` is exact-pinned; keep `package-lock.json` in sync (`npm install`).
 
-### Electron harness exit codes (activity-harness)
+### Electron harness exit codes (activity-harness, lifecycle-harness)
 `0` every check passed; `1` a check failed or an error was recorded; `2` fewer than 20 checks ran (stopped early); `3` timeout (9 min); `77` SKIPPED because chatgpt.com is not reachable (reason printed). The report is `activity-report.json` in `HARNESS_OUT` or, by default, `%TEMP%\contextdeck-harness-out` (it used to be written into the throwaway profile and deleted, and the exit code was always 0). Known on the base commit: 2 failing checks and an unhandled script error in the logged-out environment (see validation/m01-i3b-3.md).
 
 ### Start-up smoke and harness exit 78

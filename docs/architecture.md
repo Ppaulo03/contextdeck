@@ -173,7 +173,7 @@ prefs.chat.last[workspace] (ui-state) ───┘        ▲  explicit actions:
                                                   │  (chatnav:* from the UI window, validated)    └ events: navigation-started, navigated, loaded, load-failed, process-gone, destroyed
 ```
 
-**Manager** ([chat-views/manager.js](../src/main/chat-views/manager.js)). Entries `{ id, handle, scope, expectedKey, identity, epoch, page, loadSeq, pristine }`. `create()` loads an address once; `show(id)`/`hide()` change the logical visible view; `setAttached()` is the chat tab appearing/disappearing (the logical view is kept); the only attached view is detached *before* the next one is attached. `findByKey(key)` finds the view that **shows** a conversation (identity), preferring the one opened for it; `duplicates()` reports two views on one conversation (both are kept). Page events carry no authority: a `loaded` for an older request, an aborted navigation (`ERR_ABORTED`) or anything after `destroyed` is ignored. `destroyAll()` is the only place a view is closed (window `closed`). No pool, eviction, timer or suspension exists (test-enforced).
+**Manager** ([chat-views/manager.js](../src/main/chat-views/manager.js)). Entries `{ id, handle, scope, expectedKey, identity, epoch, page, loadSeq, pristine }`. `create()` loads an address once; `show(id)`/`hide()` change the logical visible view; `setAttached()` is the chat tab appearing/disappearing (the logical view is kept); the only attached view is detached *before* the next one is attached. `findByKey(key)` finds the view that **shows** a conversation (identity), preferring the one opened for it; `duplicates()` reports two views on one conversation (both are kept). Page events carry no authority: a `loaded` for an older request, an aborted navigation (`ERR_ABORTED`) or anything after `destroyed` is ignored. A view is closed in exactly two places: `destroyAll()` (window `closed`) and `suspend()` (the user's explicit request, M01-I3C-1, see below). No pool, eviction, timer or *automatic* suspension exists (test-enforced).
 
 **Relation** (derived from identity, never stored): `match`, `loading`, `diverged` (a different durable conversation: the user navigated inside ChatGPT), `left` (a page without a durable id), `temporary`, `acquired` (a temporary view that received an address; *not* bound).
 
@@ -249,6 +249,25 @@ activity center "Abrir" ──► activity:open ──► directOpen.open(): res
 **Notices.** The hub emits an event only for a NEW `none → pending` attention on a valid, ready view (a view already pending when first seen is a baseline; reload, timeout, identity change, expiry and startup never emit). The notice controller keeps one card per view, newest first, at most three shown (the rest counted), a shared timer (8 s), and retires a card when its attention is acknowledged. The cards live in the overlay view laid out as a small rectangle at the top right (outside it everything keeps receiving input), added on top and **never focused**, shown only while the window is interactive and no modal owns the overlay (then they remain in the center). Closing or expiring a card never acknowledges attention. Wording: **"Atividade para revisar"**, never "concluída".
 
 **IPC** (new, named): `activity:state` (UI window or overlay), `activity:open` and `activity:dismiss` (overlay only), `overlay:open-activity-center` (UI window only); pushes `activity:state` (UI) and `overlay:activity-push`. Arguments are ids validated in main (exactly one of `bindingId`/`viewId`); no address, path, command or Herdr method can be passed.
+
+## View lifecycle and resource management (M01-I3C-1)
+
+Decision: [0005](decisions/0005-view-lifecycle.md). Results, measurements, limits and manual script: [validation/m01-i3c-1.md](validation/m01-i3c-1.md).
+
+```text
+navigator.lifecycleFacts(view) ──► lifecycle.blockers(facts)  (pure; [] = eligible)      describe / inventory / summary / byBinding  (reads)
+UI: "Suspender conversa" ──chats:suspend──► lifecycle.suspend: judge → hub.probeNow(view) → judge (sync) → manager.suspend(view, url)
+                                                    manager: entries.delete → emit (hub stops the observer, strip re-derived) → page destroyed
+                                                    manager.suspended: conversationKey → { id, url, at }   (memory only)
+select a suspended tab / open a suspended residual ──► viewFor() / openUnbound() ──► manager.create() (consumes the record; page `loading` = restoring)
+```
+
+- **No second source of truth.** The binding says what a conversation is; a suspended conversation is one without a page. The only addition is the manager's in-memory record, dropped when the conversation has a page again or at shutdown. Nothing about activity is persisted; `ChatBinding`, `ProjectBinding`, `ui-state.json` and the Chromium session are untouched.
+- **States** are derived, not stored: `created`, `restoring`, `active`, `background`, `suspended`. Kinds: `binding`, `residual`, `temporary`, `pristine`.
+- **Judgement** (`chat-views/lifecycle.js#blockers`) is a closed list of reasons; unknown / stale / unreadable always blocks. The release is serialised per page, re-judged synchronously after one fresh reading of that page, and `manager.suspend()` re-checks what is structurally wrong (selected / attached, non-durable identity, recovery address ≠ identity).
+- **UI.** *Gerenciar* rows (state, reasons or the button), the strip (suspended tab: distinct glyph and words; tooltips; never "ociosa"), the exceptional list (*Suspender* for eligible residual pages, *Abrir* restores). Words: `shared/lifecycle-view.js`.
+- **IPC.** One channel, `chats:suspend` (UI window and overlay): `{ bindingId }` or `{ viewId }`, validated, no address, no Herdr. `chats:state` carries `lifecycle: { bindingId: { state, eligible, reasons } }`; `chatnav:state` tabs carry `suspended` / `lifecycle`; global totals carry `suspended`.
+- **Diagnostics.** `chat-views/resource-report.js` (pure) + `window.getResourceReport()`: processes joined with the views that run in them, shared processes marked, never divided; built on demand only. `CONTEXTDECK_LIFECYCLE_LOG=1` appends suspension / refusal / restoration events with a snapshot to `diagnostics\lifecycle.jsonl`. Harness: `test/electron/lifecycle-harness.js`.
 
 ## Persistent identifiers (do not change casually)
 

@@ -106,3 +106,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; color: var(--text); font
 .ws-busy { color: var(--accent); font-size: 14px; animation: ws-pulse 1s ease-in-out infinite; }
 @keyframes ws-pulse { 50% { opacity: .25; } }
 @media (max-width: 1500px) { .unlinked { display: none; } }
+.view-actions .action { white-space: nowrap; }
+@media (max-width: 1000px) {
+  .ws-label, .session-label { display: none; }
+  #ws-select { min-width: 110px; }
+  .view-actions .action { padding: 6px 8px; }
+}

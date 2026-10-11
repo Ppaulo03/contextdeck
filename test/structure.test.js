@@ -59,14 +59,23 @@ test('build emits a self-contained renderer into the requested directory (dist/ 
   const out = path.join(tmp('dock-build-'), 'renderer');
   const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'build.js'), out], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
-  for (const f of ['index.html', 'styles.css', 'terminal.bundle.js', 'terminal.bundle.css']) assert.ok(fs.existsSync(path.join(out, f)), f);
-  const html = fs.readFileSync(path.join(out, 'index.html'), 'utf8');
-  const refs = [...html.matchAll(/(?:href|src)="\.\/([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(refs.sort(), ['styles.css', 'terminal.bundle.css', 'terminal.bundle.js']);
-  for (const ref of refs) assert.ok(fs.existsSync(path.join(out, ref)), `index.html references ${ref}`);
-  assert.doesNotMatch(html, /node_modules/);
-  assert.match(html, /<title>ContextDeck<\/title>/);
-  assert.match(fs.readFileSync(path.join(out, 'terminal.bundle.js'), 'utf8'), /\[ContextDeck\]/);
+  for (const f of ['index.html', 'overlay.html', 'overlay.css', 'styles.css', 'app.bundle.js', 'app.bundle.css', 'overlay.bundle.js']) assert.ok(fs.existsSync(path.join(out, f)), f);
+  const pages = { 'index.html': ['app.bundle.css', 'app.bundle.js', 'styles.css'], 'overlay.html': ['overlay.bundle.js', 'overlay.css', 'styles.css'] };
+  for (const [page, expected] of Object.entries(pages)) {
+    const html = fs.readFileSync(path.join(out, page), 'utf8');
+    const refs = [...html.matchAll(/(?:href|src)="\.\/([^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(refs.sort(), expected, page);
+    for (const ref of refs) assert.ok(fs.existsSync(path.join(out, ref)), `${page} references ${ref}`);
+    assert.doesNotMatch(html, /node_modules/);
+  }
+  assert.match(fs.readFileSync(path.join(out, 'index.html'), 'utf8'), /<title>ContextDeck<\/title>/);
+  assert.match(fs.readFileSync(path.join(out, 'app.bundle.js'), 'utf8'), /\[ContextDeck\]/);
+  // styles.css is one self-contained file: tokens, base, layout and components, with the @imports inlined.
+  const css = fs.readFileSync(path.join(out, 'styles.css'), 'utf8');
+  assert.doesNotMatch(css, /@import/);
+  assert.match(css, /--bg-terminal:/);
+  assert.match(css, /\.menu-item/);
+  assert.match(css, /\.select\[aria-busy=["']?true["']?\]/);
 });
 
 test('generated and local files are git-ignored; no build output or secrets are tracked in source dirs', () => {
@@ -75,27 +84,62 @@ test('generated and local files are git-ignored; no build output or secrets are 
   assert.ok(!sourceFiles.some((f) => /bundle/.test(f)), 'no bundles inside src/');
 });
 
-test('every element id the renderer scripts look up exists in index.html (a missing id would break the whole UI at load)', () => {
-  const html = read('src', 'renderer', 'index.html');
-  const htmlIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
-  const used = new Set();
+test('every element id a renderer script looks up exists in the page that loads it (a missing id would break the UI at load)', () => {
+  const idsOf = (page) => new Set([...read('src', 'renderer', page).matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+  const pages = { main: idsOf('index.html'), overlay: idsOf(path.join('overlay', 'overlay.html')) };
+  const used = { main: new Set(), overlay: new Set() };
   for (const file of sourceFiles.filter((f) => f.includes(`${path.sep}renderer${path.sep}`))) {
     const text = fs.readFileSync(file, 'utf8');
-    for (const [, id] of text.matchAll(/getElementById\('([^']+)'\)/g)) used.add(id);
-    for (const [, id] of text.matchAll(/\$\('([^']+)'\)/g)) used.add(id); // git-panel.js shorthand
+    const bucket = file.includes(`${path.sep}overlay${path.sep}`) ? used.overlay : used.main;
+    for (const [, id] of text.matchAll(/getElementById\('([^']+)'\)/g)) bucket.add(id);
+    for (const [, id] of text.matchAll(/\$\('([^']+)'\)/g)) bucket.add(id);          // dom.js shorthand
   }
-  assert.ok(used.size > 20, 'sanity: the scan found the ids');
-  assert.deepEqual([...used].filter((id) => !htmlIds.has(id)), []);
+  assert.ok(used.main.size > 25 && used.overlay.size >= 5, 'sanity: the scan found the ids');
+  assert.deepEqual([...used.main].filter((id) => !pages.main.has(id)), []);
+  assert.deepEqual([...used.overlay].filter((id) => !pages.overlay.has(id)), []);
 });
 
-test('the selector sends workspace selection only from its user "change" handler (state updates cannot trigger a focus command)', () => {
-  const source = read('src', 'renderer', 'workspace-selector.js');
-  assert.equal([...source.matchAll(/dock\.herdrSelectWorkspace\(/g)].length, 1, 'a single call site');
-  const handler = source.slice(source.indexOf("select.addEventListener('change'"), source.indexOf("modeButton.addEventListener('click'"));
-  assert.match(handler, /dock\.herdrSelectWorkspace\(/);
-  assert.match(handler, /if \(applying/);
-  const render = source.slice(source.indexOf('function render()'), source.indexOf("select.addEventListener('change'"));
-  assert.doesNotMatch(render, /herdrSelectWorkspace|dispatchEvent|\.click\(\)/);
+test('a workspace choice can only come from the menu overlay; the top bar component and state rendering never send one', () => {
+  const overlay = read('src', 'renderer', 'overlay', 'overlay.js');
+  assert.equal([...overlay.matchAll(/window\.overlay\.choose\(/g)].length, 1, 'a single call site');
+  const choose = overlay.slice(overlay.indexOf('async function choose('), overlay.indexOf('function move('));
+  assert.match(choose, /window\.overlay\.choose\(/);
+  assert.match(choose, /if \(busy \|\| !m\.connected/);
+  // Every call of choose() is a user gesture: a click on a row or Enter in the keydown handler.
+  const callers = overlay.split('\n').filter((line) => /[^.\w]choose\(/.test(line) && !/async function choose/.test(line));
+  assert.ok(callers.length >= 2);
+  for (const line of callers) assert.match(line, /addEventListener\('click'|case 'Enter'/, line.trim());
+  for (const file of ['components/workspace-selector.js', 'components/herdr-panel.js', 'components/herdr-store.js', 'app.js']) {
+    assert.doesNotMatch(read('src', 'renderer', file), /herdrSelectWorkspace|overlay\.choose/, file);
+  }
+});
+
+test('styles are token-driven: raw colors, layers and font stacks exist only in tokens.css', () => {
+  const dir = path.join(SRC, 'renderer', 'styles');
+  for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.css') && f !== 'tokens.css')) {
+    const css = fs.readFileSync(path.join(dir, file), 'utf8');
+    assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}\b/, `${file}: raw hex color`);
+    assert.doesNotMatch(css, /rgba?\(/, `${file}: raw rgb color`);
+    assert.doesNotMatch(css, /z-index:\s*\d/, `${file}: literal z-index`);
+    assert.doesNotMatch(css, /font-family:\s*(?!var\()\S/, `${file}: font stack outside tokens`);
+  }
+  assert.doesNotMatch(read('src', 'renderer', 'overlay', 'overlay.css'), /#[0-9a-fA-F]{3,8}\b|z-index:\s*\d/);
+  const tokens = fs.readFileSync(path.join(dir, 'tokens.css'), 'utf8');
+  for (const name of ['--bg-terminal', '--accent', '--space-4', '--radius-md', '--control-h', '--z-menu', '--duration-spin']) assert.match(tokens, new RegExp(`${name}:`));
+  assert.ok(!fs.existsSync(path.join(SRC, 'renderer', 'styles.css')), 'the old monolithic stylesheet is gone');
+  const components = fs.readFileSync(path.join(dir, 'components.css'), 'utf8');
+  assert.match(components, /prefers-reduced-motion|var\(--duration-spin\)/);
+  assert.match(fs.readFileSync(path.join(dir, 'base.css'), 'utf8'), /prefers-reduced-motion: reduce/);
+});
+
+test('renderer wiring: each bridge subscription is registered once (no duplicated listeners)', () => {
+  const files = sourceFiles.filter((f) => f.includes(`${path.sep}renderer${path.sep}`) && !f.includes(`${path.sep}overlay${path.sep}`));
+  const text = files.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
+  for (const name of ['onHerdrState', 'onMode', 'onPtyData', 'onPtyExit', 'onFocusTerminal', 'onChatStatus', 'onChatHost', 'onChatError', 'onOverlayClosed']) {
+    assert.equal([...text.matchAll(new RegExp(`dock\\.${name}\\(`, 'g'))].length, 1, `dock.${name}( is subscribed in exactly one place`);
+  }
+  assert.equal([...text.matchAll(/herdrState\(\)/g)].length, 1, 'one initial state read (in the store)');
+  assert.equal([...text.matchAll(/new ResizeObserver\(/g)].length, 2, 'terminal root and footer');
 });
 
 test('required documentation exists and every relative markdown link resolves', () => {
@@ -117,9 +161,13 @@ test('required documentation exists and every relative markdown link resolves', 
 // ---- layering ------------------------------------------------------------------------------
 
 test('only the Electron-facing modules require "electron"; the rest stays unit-testable', () => {
-  const allowed = new Set(['index.js', 'window.js', 'chat-view.js'].map((f) => path.join(SRC, 'main', f)).concat(path.join(SRC, 'preload', 'index.js')));
+  const allowed = new Set(['index.js', 'window.js', 'chat-view.js', 'overlay.js'].map((f) => path.join(SRC, 'main', f)).concat(path.join(SRC, 'preload', 'index.js'), path.join(SRC, 'preload', 'overlay.js')));
   const offenders = sourceFiles.filter((f) => !f.includes(`${path.sep}renderer${path.sep}`) && !allowed.has(f) && /require\('electron'\)/.test(fs.readFileSync(f, 'utf8')));
   assert.deepEqual(offenders.map((f) => path.relative(ROOT, f)), []);
+  // Shared view-models are pure: no Electron, no Node built-ins, no imports from main/preload/renderer.
+  for (const f of sourceFiles.filter((x) => x.includes(`${path.sep}shared${path.sep}`))) {
+    assert.doesNotMatch(fs.readFileSync(f, 'utf8'), /require\('(electron|node:|fs|path|child_process)|require\('\.\.\/(main|preload|renderer)/, path.relative(ROOT, f));
+  }
 });
 
 test('main-process modules never import from the renderer or preload, and vice versa', () => {
@@ -166,6 +214,13 @@ test('preload only bridges named functions through contextBridge and never expos
   assert.doesNotMatch(preload, /exposeInMainWorld\([^)]*ipcRenderer\b[^)]*\)/);
   assert.doesNotMatch(preload, /:\s*ipcRenderer\s*[,}]/);
   assert.doesNotMatch(preload, /require\('(fs|child_process|node:)/);
+  // The overlay bridge is smaller still: only the menu's own channels, nothing else.
+  const overlay = read('src', 'preload', 'overlay.js');
+  assert.deepEqual([...overlay.matchAll(/require\('([^']+)'\)/g)].map((m) => m[1]), ['electron']);
+  assert.match(overlay, /contextBridge\.exposeInMainWorld\('overlay'/);
+  assert.doesNotMatch(overlay, /:\s*ipcRenderer\s*[,}]|require\('(fs|child_process|node:)/);
+  const channels = [...overlay.matchAll(/ipcRenderer\.invoke\('([^']+)'|listen\('([^']+)'/g)].map((m) => m[1] || m[2]).sort();
+  assert.deepEqual(channels, ['overlay:choose', 'overlay:close', 'overlay:open', 'overlay:state', 'overlay:state-push']);
 });
 
 // ---- IPC contract ------------------------------------------------------------------------------
@@ -174,8 +229,11 @@ const HANDLE_CHANNELS = [
   'clipboard:read', 'clipboard:write', 'dock:chat-home', 'dock:external-chat', 'dock:info', 'dock:layout',
   'dock:reload-chat', 'dock:switch', 'git:delete-zip', 'git:diff', 'git:pick-repo', 'git:refs', 'git:set-refs',
   'herdr:refresh', 'herdr:select-workspace', 'herdr:set-sync-mode', 'herdr:state',
+  'overlay:choose', 'overlay:close', 'overlay:open-workspace-menu', 'overlay:state',
   'git:show', 'git:status', 'git:zip', 'pty:start'
 ].sort();
+// What the local UI window may invoke vs what only the menu overlay may invoke (least privilege).
+const OVERLAY_ONLY = ['overlay:choose', 'overlay:close', 'overlay:state'];
 const ON_CHANNELS = ['pty:resize', 'pty:write'];
 
 function fakeIpc() {
@@ -191,9 +249,12 @@ function fakeIpc() {
 function registerWithFakes(overrides = {}) {
   const { registerIpc } = require('../src/main/ipc');
   const ipc = fakeIpc();
-  const calls = { switchMode: [], footer: [], write: [], resize: [], openExternal: [], start: [], refresh: 0, select: [], syncMode: [] };
+  const calls = { switchMode: [], footer: [], write: [], resize: [], openExternal: [], start: [], refresh: 0, select: [], syncMode: [], openMenu: [], closeMenu: 0 };
   const win = {
     isTrusted: (event) => event.trusted === true,
+    isOverlay: (event) => event.overlay === true,
+    openMenu: async (anchor) => { calls.openMenu.push(anchor); return true; },
+    closeMenu: () => { calls.closeMenu += 1; return true; },
     switchMode: (m) => calls.switchMode.push(m),
     setFooterHeight: (h) => calls.footer.push(h),
     getMode: () => 'terminal',
@@ -247,17 +308,21 @@ test('IPC: Herdr channels are state/refresh plus the explicit selection and mode
     assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /['"]workspace\.(create|rename|close|move|move_block|report_metadata)['"]|['"]worktree\.[a-z_]+['"]|['"]tab\.(create|close|rename|move)['"]|['"]pane\.(send_text|send_keys|send_input|close|split)['"]|['"]agent\.(prompt|start|send_keys)['"]|['"]server\.[a-z_]+['"]/, path.relative(ROOT, file));
   }
   // The renderer cannot name a Herdr method either: it only sees the named bridge functions.
-  assert.doesNotMatch(read('src', 'renderer', 'workspace-selector.js') + read('src', 'renderer', 'herdr-panel.js'), /['"]workspace\.focus['"]|ipcRenderer/);
+  assert.doesNotMatch(read('src', 'renderer', 'components', 'workspace-selector.js') + read('src', 'renderer', 'components', 'herdr-panel.js') + read('src', 'renderer', 'overlay', 'overlay.js'), /['"]workspace\.focus['"]|ipcRenderer/);
 });
 
 test('IPC: preload channels all exist in main, and main only sends channels the preload listens to', () => {
   const preload = read('src', 'preload', 'index.js');
+  const overlayPreload = read('src', 'preload', 'overlay.js');
   const invoked = [...preload.matchAll(/ipcRenderer\.invoke\('([^']+)'/g)].map((m) => m[1]);
+  const overlayInvoked = [...overlayPreload.matchAll(/ipcRenderer\.invoke\('([^']+)'/g)].map((m) => m[1]);
   const sent = [...preload.matchAll(/ipcRenderer\.send\('([^']+)'/g)].map((m) => m[1]);
-  assert.deepEqual([...invoked].sort(), HANDLE_CHANNELS, 'every handler is reachable from the preload and vice versa');
+  assert.deepEqual([...invoked, ...overlayInvoked].sort(), HANDLE_CHANNELS, 'every handler is reachable from one of the two preloads and vice versa');
+  assert.deepEqual([...overlayInvoked].sort(), OVERLAY_ONLY, 'the overlay bridge reaches only the menu channels');
+  assert.ok(invoked.every((c) => !OVERLAY_ONLY.includes(c)), 'the UI window bridge cannot reach the overlay-only channels');
   assert.deepEqual([...sent].sort(), ON_CHANNELS);
-  const listened = new Set([...preload.matchAll(/listen\('([^']+)'/g)].map((m) => m[1]));
-  const emitted = new Set(sourceFiles.filter((f) => f.includes(`${path.sep}main${path.sep}`)).flatMap((f) => [...fs.readFileSync(f, 'utf8').matchAll(/\bsend\('([a-z]+:[a-z-]+)'/g)].map((m) => m[1])));
+  const listened = new Set([...preload.matchAll(/listen\('([^']+)'/g), ...overlayPreload.matchAll(/listen\('([^']+)'/g)].map((m) => m[1]));
+  const emitted = new Set(sourceFiles.filter((f) => f.includes(`${path.sep}main${path.sep}`)).flatMap((f) => [...fs.readFileSync(f, 'utf8').matchAll(/\b(?:send|sendToOverlay)\('([a-z]+:[a-z-]+)'/g)].map((m) => m[1])));
   assert.deepEqual([...emitted].sort(), [...listened].sort());
 });
 
@@ -270,7 +335,37 @@ test('IPC: an untrusted sender is refused on every channel and triggers no side 
     assert.ok(denied(result), `${channel} -> ${JSON.stringify(result)}`);
   }
   for (const fn of listeners.values()) await fn(stranger, 'text', { cols: 80, rows: 24 });
-  assert.deepEqual(calls, { switchMode: [], footer: [], write: [], resize: [], openExternal: [], start: [], refresh: 0, select: [], syncMode: [] });
+  assert.deepEqual(calls, { switchMode: [], footer: [], write: [], resize: [], openExternal: [], start: [], refresh: 0, select: [], syncMode: [], openMenu: [], closeMenu: 0 });
+});
+
+test('IPC least privilege: the menu overlay can use only its own channels, and the UI window cannot use them', async () => {
+  const { handlers, calls } = registerWithFakes();
+  const denied = (value) => value === false || value === null || value === '' || (value && value.ok === false);
+  const overlay = { overlay: true };
+  const ui = { trusted: true };
+  const anchor = { x: 10, y: 20, width: 200, height: 26 };
+  for (const channel of handlers.keys()) {
+    if (OVERLAY_ONLY.includes(channel)) {
+      assert.ok(denied(await handlers.get(channel)(ui, { session: 's', workspaceId: 'w1' })), `${channel}: UI window refused`);
+    } else if (channel === 'overlay:open-workspace-menu') {
+      assert.ok(denied(await handlers.get(channel)(overlay, anchor)), `${channel}: overlay refused`);
+    } else {
+      assert.ok(denied(await handlers.get(channel)(overlay, { session: 's', workspaceId: 'w1', repoRoot: 'x' })), `${channel}: overlay refused`);
+    }
+  }
+  assert.deepEqual([calls.select, calls.openMenu, calls.closeMenu, calls.switchMode], [[], [], 0, []], 'nothing happened');
+  // The right senders work; the anchor is validated.
+  assert.deepEqual(await handlers.get('overlay:open-workspace-menu')(ui, anchor), { ok: true });
+  for (const bad of [null, undefined, 'x', {}, { x: 1, y: 1, width: 1 }, { x: -1, y: 0, width: 1, height: 1 }, { x: NaN, y: 0, width: 1, height: 1 }, { x: 1e9, y: 0, width: 1, height: 1 }, { x: '1', y: 0, width: 1, height: 1 }]) {
+    assert.equal((await handlers.get('overlay:open-workspace-menu')(ui, bad)).ok, false, JSON.stringify(bad));
+  }
+  assert.deepEqual(calls.openMenu, [anchor], 'only the valid anchor opened the menu');
+  assert.deepEqual(await handlers.get('overlay:state')(overlay), { session: 'contextdeck', connection: 'stopped', selection: { mode: 'auto' } });
+  await handlers.get('overlay:choose')(overlay, { session: 'contextdeck', workspaceId: 'w2', method: 'workspace.close' });
+  await handlers.get('overlay:choose')(overlay, { session: ['x'], workspaceId: 9 });
+  assert.deepEqual(calls.select, [['contextdeck', 'w2'], [null, null]]);
+  assert.equal(await handlers.get('overlay:close')(overlay), true);
+  assert.equal(calls.closeMenu, 1);
 });
 
 test('IPC: a trusted sender reaches the handlers and validation still applies', async () => {
@@ -326,7 +421,7 @@ test('persistent identifiers are unchanged from Project Dock M00', () => {
 });
 
 test('ContextDeck name appears in visible UI; the legacy name only survives in the persistent-ID module', () => {
-  const offenders = sourceFiles.concat(path.join(SRC, 'renderer', 'index.html'), path.join(SRC, 'renderer', 'styles.css'))
+  const offenders = sourceFiles.concat(path.join(SRC, 'renderer', 'index.html'), path.join(SRC, 'renderer', 'overlay', 'overlay.html'), ...fs.readdirSync(path.join(SRC, 'renderer', 'styles')).map((f) => path.join(SRC, 'renderer', 'styles', f)))
     .filter((f) => !f.endsWith(`${path.sep}identity.js`))
     .filter((f) => /Project Dock|project-dock/i.test(fs.readFileSync(f, 'utf8')));
   assert.deepEqual(offenders.map((f) => path.relative(ROOT, f)), []);

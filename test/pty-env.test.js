@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildPtyEnv } = require('../src/pty-env');
+const { buildPtyEnv } = require('../src/main/herdr/env');
 
 test('strips HERDR_* variables (any case) and keeps the rest', () => {
   const env = buildPtyEnv({

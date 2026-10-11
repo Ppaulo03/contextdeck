@@ -7,10 +7,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const refsLib = require('../src/git-refs');
-const { createGitContext } = require('../src/git-context');
-const { createGitActions } = require('../src/git-actions');
-const { sanitize, getRepoPrefs, repoKey } = require('../src/ui-state');
+const refsLib = require('../src/main/git/refs');
+const { createGitContext } = require('../src/main/git/context');
+const { createGitActions } = require('../src/main/git/actions');
+const { sanitize, getRepoPrefs, repoKey } = require('../src/main/persistence/ui-state');
 
 const G = ['-c', 'user.name=Test', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', '-c', 'core.autocrlf=false'];
 const run = (cwd, ...args) => execFileSync('git', [...G, ...args], { cwd, encoding: 'utf8' });

@@ -7,6 +7,7 @@ const { createChatViewManager } = require('../../src/main/chat-views/manager');
 const { createObservationHub } = require('../../src/main/chat-views/observation');
 const { createStateObserver } = require('../../src/main/chat/state-observer');
 const { createChatNavigator } = require('../../src/main/chat-views/navigator');
+const { createViewLifecycle } = require('../../src/main/chat-views/lifecycle');
 const { createWorld, chatUrl } = require('./bindings-world');
 
 function createFakeViews() {
@@ -149,7 +150,10 @@ function createStatusWorld(opts = {}) {
   const last = {};
   const prefs = { getLast: (wk) => last[wk] || null, setLast: (wk, id) => { last[wk] = id; } };
   const navigator = createChatNavigator({ manager, session: world.session, bindings: world.bindings, selection: world.selection, prefs, homeUrl: HOME, activity: hub });
+  const lifecycleEvents = [];
+  const lifecycle = createViewLifecycle({ manager, navigator, hub, now: () => clock.t, clock: () => clock.t, onEvent: (e) => lifecycleEvents.push(e) });
+  navigator.setLifecycle(lifecycle);
   hub.setInteractive(true);
-  const cleanup = () => { navigator.stop(); hub.stop(); clock.restore(); world.cleanup(); };
-  return { ...world, fake, manager, hub, navigator, prefs, last, HOME, clock, started, cleanup0: cleanup };
+  const cleanup = () => { lifecycle.stop(); navigator.stop(); hub.stop(); clock.restore(); world.cleanup(); };
+  return { ...world, fake, manager, hub, navigator, lifecycle, lifecycleEvents, prefs, last, HOME, clock, started, cleanup0: cleanup };
 }

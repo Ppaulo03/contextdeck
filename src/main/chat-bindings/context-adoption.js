@@ -94,7 +94,10 @@ function createContextAdoption({ session, navigator, bindings, selection, wait =
 
   // Explicit transfer to the workspace the page lives in. Same rules and confirmation as the I3A reassignment; only possible
   // while that workspace is the selected one (the user is looking at it), so the form-staleness check of I3A holds.
-  function transfer({ viewId } = {}) {
+  // After the binding is here, a conversation must be ONE tab. If another page already shows it (the one the conversation had in its
+  // old workspace), that page becomes the tab and the page the user clicked in goes back in its history; with no history to go back to,
+  // the clicked page stays the tab and the other one leaves the workspace (kept, unscoped, never destroyed).
+  async function transfer({ viewId } = {}) {
     const v = find(viewId);
     if (!v || v.identity.state !== 'durable') return fail('view_not_found', 'Conversa nao encontrada neste workspace.');
     const b = bindings.lookup(v.identity.url);
@@ -110,9 +113,24 @@ function createContextAdoption({ session, navigator, bindings, selection, wait =
       confirmReassign: true
     });
     if (!r.ok) return r;
+    const key = v.identity.key;
+    const others = navigator.pagesShowing(key).filter((p) => p.viewId !== viewId);
+    if (others.length) {
+      if (navigator.canGoBack(viewId) && navigator.goBackPage(viewId) && (await waitLeft(viewId, key))) { navigator.reconcile(); return { ok: true }; }
+      for (const o of others) navigator.releasePage(o.viewId);
+    }
     navigator.confirmAdopted(viewId);
     navigator.reconcile();
     return { ok: true };
+  }
+
+  async function waitLeft(viewId, key) {
+    for (let waited = 0; waited <= leaveTimeoutMs; waited += 25) {          // bounded by count, not by the clock
+      const now = navigator.viewInfo(viewId);
+      if (!now || now.identity.key !== key) return true;
+      await wait(25);
+    }
+    return false;
   }
 
   const back = ({ viewId } = {}) => navigator.backFromConflict(viewId);

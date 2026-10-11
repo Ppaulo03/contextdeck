@@ -105,7 +105,7 @@ test('a conversation bound to B opened in A: never moved; a conflict is reported
 test('transfer is explicit and uses the I3A reassignment; the view keeps its page', () => run(async (w) => {
   const v = w.newChat();
   v.navigate(w.B[0].url);
-  const r = w.adoption.transfer({ viewId: v.id });
+  const r = await w.adoption.transfer({ viewId: v.id });
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(w.bound(4, w.B[0].url).workspaceIdentity.workspaceId, 'w1');
   assert.equal(w.navigator.getState().conflict, null);
@@ -116,13 +116,13 @@ test('transfer only while the page\'s workspace is the selected one, and never f
   const v = w.newChat();
   v.navigate(w.B[0].url);
   w.select('w2');
-  assert.equal(w.adoption.transfer({ viewId: v.id }).error.code, 'context_changed');
+  assert.equal((await w.adoption.transfer({ viewId: v.id })).error.code, 'context_changed');
   assert.equal(w.bound(4, w.B[0].url).workspaceIdentity.workspaceId, 'w2');
   w.select('w1');
   const o = w.view(w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') }).viewId);
   w.navigator.setMode('terminal');
   o.navigate(chatUrl(5));                                           // hidden and not pending: passive, so unbound
-  assert.equal(w.adoption.transfer({ viewId: o.id }).error.code, 'not_bound');
+  assert.equal((await w.adoption.transfer({ viewId: o.id })).error.code, 'not_bound');
 }));
 
 test('Voltar: the page moves to the workspace the conversation belongs to; A shows what it showed before; the binding is unchanged', () => run(async (w) => {
@@ -428,3 +428,54 @@ test('chats:unbind tells main which conversation was unbound, only on success', 
   handlers.get('chats:unbind')({}, { bindingId: 'b_0000000000000001' });
   assert.deepEqual(told, ['c:abc']);
 });
+
+// ---- transfer never leaves a duplicate tab -------------------------------------------------------------------------------------------------
+const tabsOf = (w, key) => w.navigator.getState().tabs.filter((t) => t.loaded && t.bindingId && w.bindings.all().find((b) => b.bindingId === t.bindingId && b.conversationKey === key));
+const showing = (w, key) => w.manager.list().filter((v) => v.identity.state === 'durable' && v.identity.key === key);
+
+test('transfer when the conversation already has a page in its old workspace: one tab, the old page, the clicked page goes back', () => run(async (w) => {
+  w.select('w2');
+  const own = w.view(w.navigator.selectBinding({ bindingId: w.B[0].bindingId, workspaceKey: WK('w2') }).viewId);
+  own.finishLoad(w.B[0].url);
+  w.select('w1');
+  const r = w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') });
+  const page = w.view(r.viewId);
+  page.finishLoad(w.A[0].url);
+  page.navigate(w.B[0].url);                                        // opened B's conversation in w1's page
+  assert.equal(showing(w, w.B[0].conversationKey).length, 2);
+  const t = await w.adoption.transfer({ viewId: page.id });
+  assert.equal(t.ok, true, JSON.stringify(t));
+  assert.equal(w.bound(4, w.B[0].url).workspaceIdentity.workspaceId, 'w1');
+  assert.equal(showing(w, w.B[0].conversationKey).length, 1, 'ONE page shows the conversation');
+  assert.equal(w.manager.get(own.id).scope, WK('w1'), 'the page it already had is the tab now');
+  assert.equal(tabsOf(w, w.B[0].conversationKey).length, 1);
+  assert.equal(w.navigator.getState().temporaries.length, 0, 'no duplicate chip');
+  assert.equal(w.manager.get(page.id).identity.key, w.A[0].conversationKey, 'the clicked page is back on its conversation');
+  assert.equal(w.manager.duplicates().length, 0);
+}));
+
+test('transfer when the conversation has no other page: the clicked page simply becomes its tab', () => run(async (w) => {
+  const v = w.newChat();
+  v.navigate(w.B[0].url);
+  assert.equal((await w.adoption.transfer({ viewId: v.id })).ok, true);
+  assert.equal(showing(w, w.B[0].conversationKey).length, 1);
+  assert.equal(tabsOf(w, w.B[0].conversationKey).length, 1);
+  assert.equal(w.manager.get(v.id).expectedKey, w.B[0].conversationKey);
+  assert.equal(w.fake.views.length, 1);
+}));
+
+test('transfer with another page but no history to go back to: the clicked page stays the tab, the other leaves the workspace (kept, not destroyed)', () => run(async (w) => {
+  w.select('w2');
+  const own = w.view(w.navigator.selectBinding({ bindingId: w.B[0].bindingId, workspaceKey: WK('w2') }).viewId);
+  own.finishLoad(w.B[0].url);
+  w.select('w1');
+  const v = w.newChat();
+  v.navigate(w.B[0].url);                                           // a fresh page: no history behind it
+  assert.equal(w.manager.get(v.id).identity.key, w.B[0].conversationKey);
+  assert.equal((await w.adoption.transfer({ viewId: v.id })).ok, true);
+  assert.equal(showing(w, w.B[0].conversationKey).length, 2, 'both pages still exist');
+  assert.equal(w.manager.get(own.id).scope, null, 'the old one is no longer a tab anywhere');
+  assert.equal(w.manager.get(v.id).scope, WK('w1'));
+  assert.equal(tabsOf(w, w.B[0].conversationKey).length, 1);
+  assert.equal(w.fake.log.some((l) => l[0] === 'destroy'), false);
+}));

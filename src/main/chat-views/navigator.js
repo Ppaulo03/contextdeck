@@ -43,7 +43,8 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
   // conversation bound in its own scope becomes that binding's view. Never touches a page.
   function syncViews(all) {
     const byKey = new Map(all.map((b) => [b.conversationKey, b]));
-    for (const v of manager.list()) {
+    const views = manager.list();
+    for (const v of views) {
       if (v.expectedKey) {
         const b = byKey.get(v.expectedKey);
         if (!b) manager.setExpected(v.id, null);
@@ -54,7 +55,8 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
       } else if (v.identity.state === 'durable') {
         const b = byKey.get(v.identity.key);
         // A conversation bound later (or by navigating to a bound one) leaves the exceptional unscoped list with its view intact.
-        if (b && v.scope === null) { manager.setScope(v.id, wsKeyOf(b)); manager.setExpected(v.id, v.identity.key); }
+        // (unless another page already is that conversation's tab: then this one stays out, never a second tab)
+        if (b && v.scope === null) { if (!views.some((x) => x.id !== v.id && x.expectedKey === v.identity.key)) { manager.setScope(v.id, wsKeyOf(b)); manager.setExpected(v.id, v.identity.key); } }
         else if (b && v.scope !== null && wsKeyOf(b) === v.scope) manager.setExpected(v.id, v.identity.key);
       }
     }
@@ -228,6 +230,18 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     manager.setExpected(v.id, v.identity.key);
     const c = contextual.get(v.id);
     if (c) c.pending = false;
+    return true;
+  }
+
+  // The pages that show one conversation (durable identity), and the moves the transfer needs on them.
+  const pagesShowing = (key) => manager.list().filter((v) => v.identity.state === 'durable' && v.identity.key === key).map((v) => ({ viewId: v.id, scope: v.scope }));
+  function releasePage(viewId) {
+    const v = typeof viewId === 'string' ? manager.get(viewId) : null;
+    if (!v || v.page === 'destroyed') return false;
+    if (v.scope) choice.delete(v.scope);
+    manager.setExpected(v.id, null);
+    manager.setScope(v.id, null);
+    contextual.delete(v.id);
     return true;
   }
 
@@ -560,7 +574,9 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
 
   return {
     reconcile, getWorkspaceActivity, getGlobalActivity, resolveActivityTarget, setMode, selectBinding, newConversation, selectTemporary, openUnscoped, getState,
-    getUnbound, openUnbound, releaseConversation, contextViews, confirmAdopted, moveToBinding, backFromConflict,
+    getUnbound, openUnbound, releaseConversation, contextViews, confirmAdopted, moveToBinding, backFromConflict, pagesShowing, releasePage,
+    canGoBack: (viewId) => manager.canGoBack(viewId),
+    goBackPage: (viewId) => manager.goBack(viewId),
     setNoteProvider: (fn) => { notes = typeof fn === 'function' ? fn : null; },
     // Read-only view of one page for the creation service: scope, identity (from the URL only), epoch and lifecycle.
     viewInfo: (viewId) => (typeof viewId === 'string' ? manager.get(viewId) : null),

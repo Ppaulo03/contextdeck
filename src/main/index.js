@@ -97,7 +97,7 @@ async function bootstrap() {
   const unbound = createUnboundActions({ navigator: { openUnbound: (a) => navigatorOf().openUnbound(a) }, showChatTab: () => win.switchMode('chat'), getMode: () => win.getMode() });
   // Workspace-first association: a page opened in a workspace's context gets that workspace's binding (context-adoption.js).
   const nav = () => navigatorOf();
-  const adoption = createContextAdoption({ session: settings.herdrSession, bindings, selection, navigator: { viewInfo: (v) => nav().viewInfo(v), contextViews: () => nav().contextViews(), confirmAdopted: (v) => nav().confirmAdopted(v), backFromConflict: (v) => nav().backFromConflict(v), reconcile: () => nav().reconcile() } });
+  const adoption = createContextAdoption({ session: settings.herdrSession, bindings, selection, navigator: { viewInfo: (v) => nav().viewInfo(v), contextViews: () => nav().contextViews(), confirmAdopted: (v) => nav().confirmAdopted(v), backFromConflict: (v) => nav().backFromConflict(v), pagesShowing: (k) => nav().pagesShowing(k), releasePage: (v) => nav().releasePage(v), canGoBack: (v) => nav().canGoBack(v), goBackPage: (v) => nav().goBackPage(v), reconcile: () => nav().reconcile() } });
   // The user's decision on a page (retry its association, or resolve a conflict).
   const resolveChat = async ({ viewId, action }) => {
     if (action === 'retry') return adoption.retry({ viewId });

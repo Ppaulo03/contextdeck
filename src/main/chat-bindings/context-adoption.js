@@ -23,6 +23,7 @@ const { parseProjectUrl } = require('../chat/project-identity');
 
 function createContextAdoption({ session, navigator, bindings, selection, projects = null, wait = (ms) => new Promise((r) => setTimeout(r, ms)), leaveTimeoutMs = 2500 }) {
   const pendingNotes = new Map();      // viewId -> { kind: 'pending' | 'confirm', code, text }
+  const snoozed = new Set();            // `${viewId}|${code}`: a failure notice the user closed with "Agora nao" (kept as a note on the tab)
   const dismissedOffers = new Set();   // `${workspaceId}|${projectId}`: "Agora nao" on the offer to link a Project (this session only)
   // Conversations the user explicitly unbound while a page still shows them. Without this the next evaluation would bind them
   // again (the page is on screen, in the workspace). Forgotten as soon as no page shows the conversation any more, so opening
@@ -190,6 +191,7 @@ function createContextAdoption({ session, navigator, bindings, selection, projec
   function skip({ viewId } = {}) {
     const offer = offerFor(viewId);
     const note = pendingNotes.get(viewId);
+    if (note && note.kind === 'pending') { snoozed.add(`${viewId}|${note.code}`); return { ok: true }; }
     if (note && note.kind === 'confirm') {
       const v = find(viewId);
       if (v && v.identity.state === 'durable') decline(v.identity.key);
@@ -226,8 +228,9 @@ function createContextAdoption({ session, navigator, bindings, selection, projec
 
   return { resolve, retry, transfer, back, leave, decline, linkProject, skip,
     // What the page on screen needs from the user, if anything: a pending/confirm note of its own, else the offer to link its Project.
-    noteOf: (viewId) => {
+    noteOf: (viewId, purpose) => {
       const n = pendingNotes.get(viewId);
+      if (n && purpose === 'banner' && n.kind === 'pending' && snoozed.has(`${viewId}|${n.code}`)) return null;
       if (n) return n;
       const offer = offerFor(viewId);
       return offer ? { kind: 'offer', code: 'project_offer', text: `Você está no Project "${offer.label}". Vincular este Project ao workspace ${wsLabel(offer.workspaceId)}?` } : null;

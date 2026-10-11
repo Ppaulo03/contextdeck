@@ -18,7 +18,7 @@ const WK = (id) => `contextdeck/${id}`;
 const banner = (over = {}) => ({ kind: 'conflict', viewId: 'v3', text: 'Esta conversa pertence ao workspace app (w2). Você está em api (w1).', actions: [{ action: 'go', label: 'Ir para app', title: 'ir' }, { action: 'transfer', label: 'Transferir vínculo…', title: 'mover' }, { action: 'back', label: 'Voltar', title: 'voltar' }], ...over });
 
 function mountOverlay() {
-  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message', 'chats-close', 'activity', 'activity-body', 'activity-message', 'activity-close', 'conflict', 'conflict-text', 'conflict-actions', 'conflict-message', 'notices']);
+  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message', 'chats-close', 'activity', 'activity-body', 'activity-message', 'activity-close', 'conflict', 'conflict-title', 'conflict-text', 'conflict-actions', 'conflict-message', 'notices']);
   for (const id of ['scrim', 'chats', 'chats-message', 'activity', 'activity-message', 'notices', 'conflict', 'conflict-message']) document.getElementById(id).hidden = true;
   let openCb; let pushCb; const calls = { resolve: [], close: 0 }; let result = { ok: true };
   const window = {
@@ -117,7 +117,7 @@ test('a push with another conflict re-renders in place; the armed transfer is fo
 
 // ---- main side -------------------------------------------------------------------------------------------------------------------
 
-test('conflict:resolve is overlay-only, validated, and takes only go / transfer / back (retry stays on the strip channel)', async () => {
+test('conflict:resolve is overlay-only, validated, and takes only the known decisions', async () => {
   const handlers = new Map(); const calls = [];
   registerChatNavIpc({ ipcMain: { handle: (c, fn) => handlers.set(c, fn) }, trusted: (e) => e.ui === true, trustedOverlay: (e) => e.overlay === true, win: { getNavigator: () => ({}) }, resolve: (a) => { calls.push(a); return { ok: true }; } });
   const call = (args, e) => handlers.get('conflict:resolve')(e, args);
@@ -125,7 +125,7 @@ test('conflict:resolve is overlay-only, validated, and takes only go / transfer 
   assert.deepEqual(calls, [{ viewId: 'v3', action: 'go' }]);
   assert.equal((await call({ viewId: 'v3', action: 'go' }, { ui: true })).error.code, 'untrusted');
   assert.equal((await call({ viewId: 'v3', action: 'go' }, {})).error.code, 'untrusted');
-  for (const bad of [{ viewId: 'v3', action: 'retry' }, { viewId: 'v3', action: 'adopt' }, { viewId: '3', action: 'go' }, { action: 'go' }, null]) assert.equal((await call(bad, { overlay: true })).error.code, 'invalid_request', JSON.stringify(bad));
+  for (const bad of [{ viewId: 'v3', action: 'adopt' }, { viewId: 'v3', action: 'bind' }, { viewId: '3', action: 'go' }, { action: 'go' }, null]) assert.equal((await call(bad, { overlay: true })).error.code, 'invalid_request', JSON.stringify(bad));
   assert.equal(calls.length, 1);
 });
 
@@ -133,9 +133,10 @@ test('the window keeps the modal STATE-driven: shortcut swallowed, re-shown when
   const win = fs.readFileSync('src/main/window.js', 'utf8').replace(/^\s*\/\/.*$/gm, '');
   assert.match(win, /function syncConflict\(\)/);
   assert.match(win, /if \(conflictOpen\) \{ if \(input && input\.control/, 'the tab shortcut is swallowed while the modal is open');
-  assert.match(win, /if \(conflictOpen && kind === 'conflict'\)/, 'closed by anything else -> shown again');
+  assert.match(win, /if \(kind === 'conflict'\) \{ decisionOpen = false; conflictOpen = false;/, 'closed by anything else -> shown again');
   assert.match(win, /navigator\.onChange\(\(state\) => \{ lastNavState = state; onNavChange\?\.\(\); syncConflict\(\); \}\)/);
-  assert.match(win, /conflict && conflict\.kind === 'conflict'/);
+  assert.match(win, /const sticky = banner\.kind === 'conflict'/, 'only a conflict is undismissible');
+  assert.match(win, /if \(overlay\.isOpen\(\) && !sticky\) return;/, 'a question never interrupts a menu the user opened');
 });
 
 // ---- "Voltar" goes to the page that was active before ---------------------------------------------------------------------------------------
@@ -187,9 +188,9 @@ test('Voltar from a tab that navigated away (sidebar click inside the same page)
   } finally { w.cleanup0(); }
 });
 
-test('the strip does not duplicate the modal: only a pending association is offered there', () => {
+test('the strip shows no decisions any more: they are all modals', () => {
   const strip = fs.readFileSync('src/renderer/components/chat-strip.js', 'utf8');
-  assert.match(strip, /model\.banner\.kind !== 'conflict'/);
+  assert.doesNotMatch(strip, /banner/);
   assert.equal(bannerOf({ conflict: { viewId: 'v1', boundTo: { id: 'w2', label: 'app', openable: true }, current: { id: 'w1', label: 'api' }, transferable: false } }).actions.map((a) => a.action).join(), 'go,back');
 });
 
@@ -243,5 +244,47 @@ test('Ir para: if the page does not leave the conversation, nothing else happens
     assert.equal(r.error.code, 'back_failed');
     assert.equal(w.sel.selected.workspaceId, 'w1');
     assert.deepEqual(w.selectCalls, []);
+  } finally { w.cleanup0(); }
+});
+
+// ---- the other questions are modals too (offer / confirm / pending) -------------------------------------------------------------------------------
+const offer = () => ({ kind: 'offer', viewId: 'v3', text: 'Você está no Project "Bicho". Vincular este Project ao workspace api (w1)?', actions: [{ action: 'link-project', label: 'Vincular Project', title: 'v' }, { action: 'skip', label: 'Agora não', title: 'n' }] });
+
+test('a question modal has its own title and its buttons; clicking sends exactly that action', async () => {
+  const o = mountOverlay();
+  await o.open(offer());
+  assert.equal(o.get('conflict-title').textContent, 'Vincular Project?');
+  assert.deepEqual(o.buttons().map((b) => b.textContent), ['Vincular Project', 'Agora não']);
+  await o.click(o.buttons()[0]);
+  assert.deepEqual(o.calls.resolve, [{ viewId: 'v3', action: 'link-project' }]);
+});
+
+test('Esc on a question is its negative answer ("Agora não"); on a conflict it does nothing', async () => {
+  const o = mountOverlay();
+  await o.open(offer());
+  await o.key('Escape');
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(o.calls.resolve, [{ viewId: 'v3', action: 'skip' }]);
+  const c = mountOverlay();
+  await c.open();
+  await c.key('Escape');
+  assert.deepEqual(c.calls.resolve, []);
+});
+
+test('closing a failure notice with "Agora não" keeps the note on the tab but stops asking', () => {
+  const w = createStatusWorld({ workspaces: [ws('w1', 'api')] });
+  try {
+    w.select('w1');
+    w.navigator.setMode('chat');
+    const adoption = createContextAdoption({ session: w.session, navigator: w.navigator, bindings: w.bindings, selection: w.selection });
+    w.navigator.setNoteProvider((id, purpose) => adoption.noteOf(id, purpose));
+    w.navigator.onChange(() => adoption.resolve());
+    const id = w.navigator.newConversation({ workspaceKey: WK('w1') }).viewId;
+    w.disconnect();
+    w.fake.views.find((v) => v.id === id).navigate(chatUrl(7));
+    assert.equal(w.navigator.getState().pending.kind, 'pending');
+    assert.equal(adoption.skip({ viewId: id }).ok, true);
+    assert.equal(w.navigator.getState().pending, null, 'no modal');
+    assert.match(w.navigator.getState().temporaries[0].note || '', /Sem conexao/, 'the note stays on the tab');
   } finally { w.cleanup0(); }
 });

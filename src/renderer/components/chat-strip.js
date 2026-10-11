@@ -17,7 +17,6 @@ export function initChatStrip({ dock, feedback, openChatsPanel }) {
   const emptyManage = $('chat-empty-manage');
   let state = null;
   let armed = null;
-  let armedTransfer = false;
   let model = barModel(null);
 
   const tabButtons = () => Array.from(tabsRoot.children).filter((n) => n.dataset && n.dataset.key);
@@ -49,8 +48,7 @@ export function initChatStrip({ dock, feedback, openChatsPanel }) {
 
   function render(next) {
     state = next || state;
-    model = barModel(state, armed, armedTransfer);
-    if (!model.banner || model.banner.kind !== 'conflict') armedTransfer = false;
+    model = barModel(state, armed);
     const focusedKey = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.key : '';
     setText(title, model.title);
     if (title.title !== model.workspaceTitle) title.title = model.workspaceTitle;
@@ -58,9 +56,7 @@ export function initChatStrip({ dock, feedback, openChatsPanel }) {
     const activeIndex = Math.max(0, all.findIndex((t) => t.active));
     tabsRoot.textContent = '';
     all.forEach((item, index) => tabsRoot.append(tab(item, () => void choose(item), index, activeIndex)));
-    if (!all.length && model.ready && model.workspaceKey && !model.banner) tabsRoot.append(el('span', 'chatbar-none', 'Sem conversas vinculadas'));
-    // A conflict is a modal (overlay), not a strip item; only a pending association is offered here.
-    if (model.banner && model.banner.kind !== 'conflict') tabsRoot.append(bannerNode(model.banner));
+    if (!all.length && model.ready && model.workspaceKey) tabsRoot.append(el('span', 'chatbar-none', 'Sem conversas vinculadas'));
     newButton.disabled = !model.ready || (Boolean(model.workspaceKey) && !model.canCreate);
     setAttr(newButton, 'aria-label', model.createLabel);
     newButton.title = model.workspaceKey ? 'Nova conversa temporária neste workspace (não é vinculada automaticamente)' : 'Abrir o ChatGPT sem vínculo';
@@ -69,29 +65,6 @@ export function initChatStrip({ dock, feedback, openChatsPanel }) {
       if (again) again.focus();
     }
     renderEmpty();
-  }
-
-  // A decision about the page on screen (conflict with another workspace, or an association that is still pending).
-  function bannerNode(banner) {
-    const box = el('span', 'chatbar-banner');
-    box.setAttribute('role', 'alert');
-    box.append(el('span', 'chatbar-banner-text', banner.text));
-    for (const a of banner.actions) {
-      const b = el('button', 'btn' + (a.armed ? ' is-armed' : ''), a.label);
-      b.type = 'button';
-      b.title = a.title;
-      b.dataset.bannerAction = a.action;
-      b.addEventListener('click', () => void resolveBanner(banner, a));
-      box.append(b);
-    }
-    return box;
-  }
-
-  async function resolveBanner(banner, a) {
-    if (a.action === 'transfer' && !armedTransfer) { armedTransfer = true; render(); return; }   // the first click arms it
-    armedTransfer = false;
-    await call(() => dock.chatNavResolve({ viewId: banner.viewId, action: a.action }));
-    render();
   }
 
   function renderEmpty() {
@@ -146,7 +119,7 @@ export function initChatStrip({ dock, feedback, openChatsPanel }) {
     buttons.forEach((b, i) => { b.tabIndex = i === target ? 0 : -1; });
     buttons[target].focus();
   });
-  document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && (armed || armedTransfer)) { armed = null; armedTransfer = false; render(); } });
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && armed) { armed = null; render(); } });
 
   newButton.addEventListener('click', () => void createNew());
   emptyNew.addEventListener('click', () => void createNew());

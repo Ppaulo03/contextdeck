@@ -546,7 +546,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
       tabs, temporaries, empty,
       activeViewId: visible ? visible.id : null,
       conflict: conflictOf(visible, all, sel),
-      pending: visible && notes && visible.scope ? normalizeNote(notes(visible.id)) : null,
+      pending: visible && notes && visible.scope ? normalizeNote(notes(visible.id, 'banner')) : null,
       visibleRelation: visible ? visible.relation : null,
       duplicates: manager.duplicates().length
     };

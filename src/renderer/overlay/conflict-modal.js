@@ -9,6 +9,8 @@ export function createConflictModal({ api }) {
   const textNode = $('conflict-text');
   const actions = $('conflict-actions');
   const message = $('conflict-message');
+  const title = $('conflict-title');
+  const TITLES = { conflict: 'Conversa de outro workspace', offer: 'Vincular Project?', confirm: 'Conversa fora do Project', pending: 'Conversa ainda não vinculada' };
   let banner = null;
   let armedTransfer = false;
   let busy = false;
@@ -19,6 +21,7 @@ export function createConflictModal({ api }) {
 
   function render() {
     textNode.textContent = banner ? banner.text : '';
+    title.textContent = banner ? (TITLES[banner.kind] || TITLES.conflict) : '';
     actions.textContent = '';
     if (!banner) return;
     for (const a of banner.actions) {
@@ -71,7 +74,13 @@ export function createConflictModal({ api }) {
     handleKey(event) {
       const list = buttons().filter((b) => !b.disabled);
       const index = list.indexOf(document.activeElement);
-      if (event.key === 'Escape') { event.preventDefault(); return true; }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        // A conflict cannot be dismissed. The other questions have a negative answer, and Esc is it.
+        const no = banner && banner.kind !== 'conflict' ? banner.actions.find((a) => a.action === 'skip') : null;
+        if (no) void decide(no);
+        return true;
+      }
       if (event.key === 'Tab' || event.key === 'ArrowRight' || event.key === 'ArrowDown' || event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
         event.preventDefault();
         if (!list.length) return true;

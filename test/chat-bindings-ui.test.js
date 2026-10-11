@@ -87,7 +87,7 @@ test('the view-model mirrors the service rule for confirmation', () => {
 // ---- the panel (overlay) --------------------------------------------------------------------------------------------
 
 function mountPanel(initial = chatsState(), { results = {} } = {}) {
-  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message', 'chats-close', 'activity', 'activity-body', 'activity-message', 'activity-close', 'conflict', 'conflict-text', 'conflict-actions', 'conflict-message', 'notices']);
+  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message', 'chats-close', 'activity', 'activity-body', 'activity-message', 'activity-close', 'conflict', 'conflict-title', 'conflict-text', 'conflict-actions', 'conflict-message', 'notices']);
   document.getElementById('scrim').hidden = true;
   document.getElementById('chats').hidden = true;
   document.getElementById('chats-message').hidden = true;

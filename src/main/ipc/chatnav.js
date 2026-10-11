@@ -54,7 +54,7 @@ function registerChatNavIpc({ ipcMain, trusted, trustedOverlay = () => false, wi
   ipcMain.handle('conflict:resolve', (event, args) => {
     if (!trustedOverlay(event)) return denied;
     if (!resolve) return { ok: false, error: { code: 'not_ready', message: 'O ChatGPT ainda nao esta pronto.' } };
-    if (!isPlainObject(args) || typeof args.viewId !== 'string' || !VIEW_RE.test(args.viewId) || !['go', 'transfer', 'back'].includes(args.action)) return invalid();
+    if (!isPlainObject(args) || typeof args.viewId !== 'string' || !VIEW_RE.test(args.viewId) || !['go', 'transfer', 'back', 'retry', 'skip', 'link-project'].includes(args.action)) return invalid();
     return resolve({ viewId: args.viewId, action: args.action });
   });
 

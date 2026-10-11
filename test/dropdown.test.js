@@ -148,7 +148,7 @@ test('an empty list does not open; text is rendered as text', async () => {
 // ---- the panels: closing buttons ------------------------------------------------------------------------------------------
 
 function mountPanels() {
-  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message', 'chats-close', 'activity', 'activity-body', 'activity-message', 'activity-close', 'conflict', 'conflict-text', 'conflict-actions', 'conflict-message', 'notices']);
+  const document = createDocument(['scrim', 'menu', 'menu-search', 'menu-list', 'menu-message', 'chats', 'chats-body', 'chats-message', 'chats-close', 'activity', 'activity-body', 'activity-message', 'activity-close', 'conflict', 'conflict-title', 'conflict-text', 'conflict-actions', 'conflict-message', 'notices']);
   for (const id of ['scrim', 'chats', 'chats-message', 'activity', 'activity-message', 'notices']) document.getElementById(id).hidden = true;
   let openCb;
   const calls = { close: 0 };

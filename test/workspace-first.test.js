@@ -196,7 +196,7 @@ test('a suspect workspace refuses the association: the page stays in A with a no
   assert.equal(w.bound(7), null);
   const s = w.navigator.getState();
   assert.match(s.pending.text, /nao foi verificada/);
-  assert.deepEqual(barModel(s).banner.actions.map((a) => a.action), ['retry']);
+  assert.deepEqual(barModel(s).banner.actions.map((a) => a.action), ['retry', 'skip']);
   assert.equal(w.manager.get(v.id).scope, WK('w1'), 'still reachable in its workspace');
   assert.equal(v.loads.length, 1);
   assert.equal(w.adoption.retry({ viewId: v.id }).ok, false);
@@ -366,7 +366,7 @@ test('banner model: transfer needs its own second click, pending offers one dire
   const armed = barModel({ ...base, conflict }, null, true).banner.actions.find((a) => a.action === 'transfer');
   assert.deepEqual([armed.armed, armed.label], [true, 'Confirmar transferência']);
   assert.equal(barModel({ ...base, conflict }).banner.actions.find((a) => a.action === 'transfer').label, 'Transferir vínculo…');
-  assert.deepEqual(barModel({ ...base, pending: { kind: 'pending', code: 'x', text: 'Conversa ainda nao vinculada: x' } }).banner.actions.map((a) => a.action), ['retry']);
+  assert.deepEqual(barModel({ ...base, pending: { kind: 'pending', code: 'x', text: 'Conversa ainda nao vinculada: x' } }).banner.actions.map((a) => a.action), ['retry', 'skip']);
 });
 
 // ---- unbinding the conversation that is open --------------------------------------------------------------------------------------------------

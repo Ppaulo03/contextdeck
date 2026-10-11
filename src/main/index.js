@@ -155,7 +155,7 @@ async function bootstrap() {
   app.on('second-instance', () => win.focus());
   app.on('before-quit', shutdown);
   await win.create();
-  win.getNavigator().setNoteProvider((viewId) => adoption.noteOf(viewId));   // the navigator exists only after the window is created
+  win.getNavigator().setNoteProvider((viewId, purpose) => adoption.noteOf(viewId, purpose));   // the navigator exists only after the window is created
   // State goes to the UI window and, while the workspace menu is open, to the menu overlay too.
   stopPusher = startStatePusher({
     observer,

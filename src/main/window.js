@@ -35,7 +35,8 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
   let lastChatBounds = null;
   let activeMode = 'terminal';
   let footerHeight = DEFAULT_FOOTER_HEIGHT;
-  let conflictOpen = false;     // the conflict modal must be on screen (see syncConflict)
+  let conflictOpen = false;     // a CONFLICT modal must be on screen: the one that cannot be dismissed (see syncConflict)
+  let decisionOpen = false;     // a decision modal (any kind) was opened by syncConflict
   let lastNavState = null;
   let lastConflictText = '';
 
@@ -112,25 +113,34 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     void overlay.showNotice(rect);
   }
 
-  // The conflict modal (M01-I3B-3) is STATE-driven, not a menu: while the page on screen shows a conversation that belongs to
-  // another workspace the modal is open, nothing else can be done (the overlay covers the window, the tab shortcut is ignored)
-  // and anything that closes the overlay (resize, minimize, a menu) is undone here. It closes only when the conflict is gone.
+  // Decisions the user must take about the page on screen (M01-I3B-3) are shown as a MODAL in the overlay view, STATE-driven:
+  //   conflict   the conversation belongs to another workspace: cannot be dismissed, the tab shortcut is ignored, and anything that
+  //              closes the overlay (resize, minimize, a menu) is undone; it closes only when the conflict is gone;
+  //   offer / confirm / pending   (link this Project; confirm a chat outside the linked Project; an association that failed):
+  //              dismissible (Esc = the negative answer), they never interrupt a menu or panel the user opened, and they appear
+  //              after it is closed. Nothing is decided here; the modal only shows what the navigator reports.
   function syncConflict() {
     if (!overlay || !alive()) return;
     const state = lastNavState;
-    const conflict = state && state.conflict && activeMode === 'chat' ? bannerOf(state, false) : null;
-    if (conflict && conflict.kind === 'conflict') {
-      const text = JSON.stringify(conflict);
-      if (conflictOpen && overlay.isOpen() && overlay.kind() === 'conflict') {
-        if (text !== lastConflictText) { lastConflictText = text; overlay.send('overlay:conflict-push', { banner: conflict }); }
+    const banner = state && activeMode === 'chat' ? bannerOf(state, false) : null;
+    if (banner) {
+      const sticky = banner.kind === 'conflict';
+      const text = JSON.stringify(banner);
+      const ours = decisionOpen && overlay.isOpen() && overlay.kind() === 'conflict';
+      if (ours) {
+        conflictOpen = sticky;
+        if (text !== lastConflictText) { lastConflictText = text; overlay.send('overlay:conflict-push', { banner }); }
         return;
       }
-      conflictOpen = true;
+      if (overlay.isOpen() && !sticky) return;          // the user's own menu/panel is not interrupted by a question
+      decisionOpen = true;
+      conflictOpen = sticky;
       lastConflictText = text;
-      void overlay.show({ banner: conflict }, 'conflict');
+      void overlay.show({ banner }, 'conflict');
       return;
     }
-    if (conflictOpen) {
+    if (decisionOpen) {
+      decisionOpen = false;
       conflictOpen = false;
       lastConflictText = '';
       if (overlay.isOpen() && overlay.kind() === 'conflict') overlay.hide();
@@ -195,7 +205,7 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
       preloadPath: overlayPreloadPath,
       html: overlayHtml,
       onBeforeInput: handleShortcuts,
-      onHidden: (kind) => { send('overlay:closed', kind); syncNotices(); if (conflictOpen && kind === 'conflict') { conflictOpen = false; lastConflictText = ''; setImmediate(syncConflict); } }
+      onHidden: (kind) => { send('overlay:closed', kind); syncNotices(); if (kind === 'conflict') { decisionOpen = false; conflictOpen = false; lastConflictText = ''; } setImmediate(syncConflict); }
     });
     // A menu is modal and anchored to the current layout: any geometry change closes it.
     const relayout = () => { overlay.hide(); resizeChat(); syncNotices(); };

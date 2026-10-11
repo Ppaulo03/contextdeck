@@ -542,3 +542,24 @@ test('a hidden page changing route onto an open conversation is left alone (pass
   v1.navigate(c2.url);
   assert.equal(w.manager.get(v1.id).identity.key, c2.conversationKey, 'untouched while nobody looks');
 }));
+
+test('transfer from a NEW conversation page (even in an empty workspace) leaves exactly one tab: no blank "Nova conversa" behind', () => run(async (w) => {
+  w.bindings.unbind({ bindingId: w.A[0].bindingId });                // w1 has no conversations at all
+  w.select('w2');
+  const own = w.view(w.navigator.selectBinding({ bindingId: w.B[0].bindingId, workspaceKey: WK('w2') }).viewId);
+  own.finishLoad(w.B[0].url);
+  w.select('w1');
+  const fresh = w.newChat();
+  fresh.finishLoad(w.HOME);                                          // the page really loaded: it has history
+  fresh.navigate(w.B[0].url);                                        // and the user opened w2's conversation in it
+  assert.equal(w.navigator.getState().tabs.length, 0);
+  assert.equal((await w.adoption.transfer({ viewId: fresh.id })).ok, true);
+  const s = w.navigator.getState();
+  assert.equal(s.tabs.length, 1, 'one tab: the conversation');
+  assert.equal(s.temporaries.length, 0, 'and no blank new-conversation tab');
+  assert.equal(s.tabs[0].active, true);
+  assert.equal(w.manager.get(fresh.id).expectedKey, w.B[0].conversationKey);
+  assert.equal(showing(w, w.B[0].conversationKey).length, 2, 'the old page is kept, outside any workspace');
+  assert.equal(w.manager.get(own.id).scope, null);
+  assert.equal(w.navigator.getUnbound().length, 1);
+}));

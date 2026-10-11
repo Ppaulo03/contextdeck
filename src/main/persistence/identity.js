@@ -10,6 +10,8 @@ module.exports = Object.freeze({
   // Chromium partition holding the ChatGPT cookies/storage (userData\Partitions\project-dock-m00-chat).
   CHAT_PARTITION: 'persist:project-dock-m00-chat',
   UI_STATE_FILE: 'ui-state.json',
+  // Chat <-> workspace bindings (M01-I3A): a file of its own next to ui-state.json, see docs/decisions/0002-chat-bindings.md.
+  CHAT_BINDINGS_FILE: 'chat-bindings.json',
   ARTIFACTS_DIRNAME: 'artifacts',
   CHAT_HOME: 'https://chatgpt.com/'
 });

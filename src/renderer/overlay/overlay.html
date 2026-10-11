@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; frame-src 'none'">
+  <title>ContextDeck menu</title>
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./overlay.css">
+</head>
+<body class="overlay">
+  <!-- The scrim covers the window so any click outside the menu closes it. -->
+  <div id="scrim" class="scrim" hidden>
+    <section id="menu" class="menu-panel" role="dialog" aria-modal="true" aria-label="Workspaces do Herdr">
+      <input id="menu-search" class="control" type="text" role="combobox" aria-controls="menu-list" aria-expanded="true" aria-autocomplete="list" aria-label="Buscar workspace" placeholder="Buscar workspace" maxlength="80" spellcheck="false" autocomplete="off" hidden>
+      <ul id="menu-list" class="menu" role="listbox" tabindex="0" aria-label="Workspaces"></ul>
+      <p id="menu-message" class="menu-message" role="status" hidden></p>
+    </section>
+  </div>
+  <script src="./overlay.bundle.js"></script>
+</body>
+</html>

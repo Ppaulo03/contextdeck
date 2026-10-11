@@ -9,5 +9,7 @@ const PROJECT_ROOT = path.join(__dirname, '..', '..');
 module.exports = Object.freeze({
   PROJECT_ROOT,
   PRELOAD: path.join(PROJECT_ROOT, 'src', 'preload', 'index.js'),
-  RENDERER_HTML: path.join(PROJECT_ROOT, 'dist', 'renderer', 'index.html')
+  OVERLAY_PRELOAD: path.join(PROJECT_ROOT, 'src', 'preload', 'overlay.js'),
+  RENDERER_HTML: path.join(PROJECT_ROOT, 'dist', 'renderer', 'index.html'),
+  OVERLAY_HTML: path.join(PROJECT_ROOT, 'dist', 'renderer', 'overlay.html')
 });

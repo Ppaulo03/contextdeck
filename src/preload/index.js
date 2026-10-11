@@ -26,6 +26,8 @@ contextBridge.exposeInMainWorld('dock', {
   gitDeleteZip: () => ipcRenderer.invoke('git:delete-zip'),
   herdrState: () => ipcRenderer.invoke('herdr:state'),
   herdrRefresh: () => ipcRenderer.invoke('herdr:refresh'),
+  openWorkspaceMenu: (anchor) => ipcRenderer.invoke('overlay:open-workspace-menu', anchor),
+  onOverlayClosed: (cb) => listen('overlay:closed', cb),
   herdrSelectWorkspace: (args) => ipcRenderer.invoke('herdr:select-workspace', args),
   herdrSetSyncMode: (args) => ipcRenderer.invoke('herdr:set-sync-mode', args),
   startTerminal: (dimensions) => ipcRenderer.invoke('pty:start', dimensions),

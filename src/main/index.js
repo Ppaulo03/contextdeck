@@ -13,7 +13,7 @@ const { startStatePusher } = require('./ipc/herdr');
 const { createSessionLocator } = require('./herdr/session-locator');
 const { createWorkspaceObserver } = require('./herdr/workspace-observer');
 const { createWorkspaceSelection } = require('./herdr/workspace-selection');
-const { PROJECT_ROOT, PRELOAD, RENDERER_HTML } = require('./paths');
+const { PROJECT_ROOT, PRELOAD, OVERLAY_PRELOAD, RENDERER_HTML, OVERLAY_HTML } = require('./paths');
 
 const { app } = electron;
 
@@ -53,7 +53,9 @@ async function bootstrap() {
     uiState,
     uiStateFile,
     preloadPath: PRELOAD,
+    overlayPreloadPath: OVERLAY_PRELOAD,
     rendererHtml: RENDERER_HTML,
+    overlayHtml: OVERLAY_HTML,
     onClosed: shutdown
   });
 
@@ -61,7 +63,12 @@ async function bootstrap() {
   app.on('second-instance', () => win.focus());
   app.on('before-quit', shutdown);
   await win.create();
-  stopPusher = startStatePusher({ observer, selection, send: (channel, data) => win.send(channel, data) });
+  // State goes to the UI window and, while the workspace menu is open, to the menu overlay too.
+  stopPusher = startStatePusher({
+    observer,
+    selection,
+    send: (channel, data) => { win.send(channel, data); if (channel === 'herdr:state') win.sendToOverlay('overlay:state-push', data); }
+  });
   selection.start();
   observer.start();
 }

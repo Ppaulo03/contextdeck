@@ -5,6 +5,7 @@ const { registerTerminalIpc } = require('./terminal');
 const { registerClipboardIpc } = require('./clipboard');
 const { registerGitIpc } = require('./git');
 const { registerHerdrIpc } = require('./herdr');
+const { registerOverlayIpc } = require('./overlay');
 
 // Registers every IPC channel the local UI may use. `electron` is injected ({ ipcMain, shell,
 // clipboard, dialog }) so the registration can be tested without launching Electron. Channel
@@ -16,6 +17,7 @@ function registerIpc({ electron, win, herdr, observer, selection, settings, uiSt
   registerTerminalIpc({ ipcMain, trusted, herdr });
   registerClipboardIpc({ ipcMain, clipboard, trusted });
   registerHerdrIpc({ ipcMain, trusted, observer, selection });
+  registerOverlayIpc({ ipcMain, trustedUi: trusted, trustedOverlay: (event) => win.isOverlay(event), win, observer, selection });
   registerGitIpc({ ipcMain, clipboard, dialog, trusted, win, settings, uiState, persist, userDataDir });
 }
 

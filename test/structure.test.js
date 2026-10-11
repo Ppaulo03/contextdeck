@@ -150,8 +150,9 @@ test('preload only bridges named functions through contextBridge and never expos
 const HANDLE_CHANNELS = [
   'clipboard:read', 'clipboard:write', 'dock:chat-home', 'dock:external-chat', 'dock:info', 'dock:layout',
   'dock:reload-chat', 'dock:switch', 'git:delete-zip', 'git:diff', 'git:pick-repo', 'git:refs', 'git:set-refs',
+  'herdr:refresh', 'herdr:state',
   'git:show', 'git:status', 'git:zip', 'pty:start'
-];
+].sort();
 const ON_CHANNELS = ['pty:resize', 'pty:write'];
 
 function fakeIpc() {
@@ -167,7 +168,7 @@ function fakeIpc() {
 function registerWithFakes(overrides = {}) {
   const { registerIpc } = require('../src/main/ipc');
   const ipc = fakeIpc();
-  const calls = { switchMode: [], footer: [], write: [], resize: [], openExternal: [], start: [] };
+  const calls = { switchMode: [], footer: [], write: [], resize: [], openExternal: [], start: [], refresh: 0 };
   const win = {
     isTrusted: (event) => event.trusted === true,
     switchMode: (m) => calls.switchMode.push(m),
@@ -187,7 +188,8 @@ function registerWithFakes(overrides = {}) {
   const clipboard = { writeText: () => {}, readText: () => 'CLIP' };
   registerIpc({
     electron: { ipcMain: ipc.ipcMain, shell: { openExternal: (u) => calls.openExternal.push(u) }, clipboard, dialog: { showOpenDialog: async () => ({ canceled: true, filePaths: [] }) } },
-    win, herdr, settings: { herdrSession: 'contextdeck', workingDirectory: undefined },
+    win, herdr, observer: { getState: () => ({ session: 'contextdeck', connection: 'stopped' }), refresh: async () => { calls.refresh += 1; } },
+    settings: { herdrSession: 'contextdeck', workingDirectory: undefined },
     uiState: require('../src/main/persistence/ui-state').sanitize(undefined), persist: () => {}, userDataDir
   });
   return { ...ipc, calls };
@@ -197,6 +199,19 @@ test('IPC: exactly the contract channels are registered, each once, with the sam
   const { handlers, listeners } = registerWithFakes();
   assert.deepEqual([...handlers.keys()].sort(), HANDLE_CHANNELS);
   assert.deepEqual([...listeners.keys()].sort(), ON_CHANNELS);
+});
+
+test('IPC: the Herdr integration exposes read-only channels only (no workspace mutation, no method forwarding)', () => {
+  const { handlers, listeners } = registerWithFakes();
+  const herdrChannels = [...handlers.keys(), ...listeners.keys()].filter((c) => c.startsWith('herdr:'));
+  assert.deepEqual(herdrChannels.sort(), ['herdr:refresh', 'herdr:state']);
+  const preload = read('src', 'preload', 'index.js');
+  assert.doesNotMatch(preload, /herdr[A-Za-z]*:\s*\([^)]*\)\s*=>\s*ipcRenderer\.(invoke|send)\('(?!herdr:(state|refresh)')/);
+  const apiClient = read('src', 'main', 'herdr', 'api-client.js');
+  assert.match(apiClient, /READ_ONLY_METHODS = Object\.freeze\(\['ping', 'session\.snapshot', 'workspace\.list', 'workspace\.get'\]\)/);
+  for (const file of sourceFiles.filter((f) => f.includes(path.join('main', 'herdr')) || f.includes(path.join('main', 'ipc')))) {
+    assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /['"]workspace\.(create|focus|rename|close|move)['"]|['"]pane\.(send_text|send_keys|close)['"]|['"]server\.stop['"]/, path.relative(ROOT, file));
+  }
 });
 
 test('IPC: preload channels all exist in main, and main only sends channels the preload listens to', () => {
@@ -219,7 +234,7 @@ test('IPC: an untrusted sender is refused on every channel and triggers no side 
     assert.ok(denied(result), `${channel} -> ${JSON.stringify(result)}`);
   }
   for (const fn of listeners.values()) await fn(stranger, 'text', { cols: 80, rows: 24 });
-  assert.deepEqual(calls, { switchMode: [], footer: [], write: [], resize: [], openExternal: [], start: [] });
+  assert.deepEqual(calls, { switchMode: [], footer: [], write: [], resize: [], openExternal: [], start: [], refresh: 0 });
 });
 
 test('IPC: a trusted sender reaches the handlers and validation still applies', async () => {
@@ -244,6 +259,9 @@ test('IPC: a trusted sender reaches the handlers and validation still applies', 
   assert.deepEqual(calls.resize, [[120, 40]]);
   assert.deepEqual(calls.switchMode, ['chat']);
   assert.deepEqual(calls.footer, [120]);
+  assert.deepEqual(await handlers.get('herdr:state')(ui), { session: 'contextdeck', connection: 'stopped' });
+  assert.deepEqual(await handlers.get('herdr:refresh')(ui), { session: 'contextdeck', connection: 'stopped' });
+  assert.equal(calls.refresh, 1);
   const git = await handlers.get('git:status')(ui);
   assert.equal(git.configured, false);
   assert.match(git.error, /nao configurado/);

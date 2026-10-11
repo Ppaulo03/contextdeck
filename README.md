@@ -53,6 +53,7 @@ Existing `config.json` files (including the Project Dock M00 session name `proje
 
 - **Switch views:** click the tabs or press `Ctrl+Tab` (one switch per physical press; holding the keys does not repeat). Both views keep their state; the ChatGPT page is never reloaded and the Herdr client is never restarted by switching.
 - **Clipboard:** `Ctrl+Shift+C` / `Ctrl+Shift+V` in the terminal; normal `Ctrl+C` / `Ctrl+V` in ChatGPT. Pasted newlines may be treated as Enter by the receiving agent: review before pasting.
+- **Chat bindings (ChatGPT tab):** the indicator at the right of the top bar shows whether the current conversation is bound to the selected workspace, to another one, or to none. Click it to bind the current conversation (or one by URL) to a workspace, name it, give it a category, unbind it, or move it explicitly. Bindings are stored locally in `chat-bindings.json`; unbinding never deletes anything in ChatGPT, and a brand-new chat can be bound only after it has its own address. Nothing is bound automatically and the app never changes the Herdr workspace by itself.
 - **Closing the app** only closes the Herdr *client*; Herdr's server and your agents keep running.
 - **Workspace selector** (top bar): lists the workspaces of the configured Herdr session as `id · name`. Picking one moves Herdr to it (this is session-wide: it moves every client attached to the session, normally only ContextDeck). In **Auto** (default) it follows the workspace you switch to in Herdr; **Manual** keeps your choice. Auto is an estimate: with more than one Herdr client attached it follows whichever client moved last. Your last explicit choice is remembered; starting the app never moves Herdr.
 - **Workspaces** (terminal view): a read-only diagnostic panel listing the workspaces of the configured Herdr session, the connection state and the last events. It cannot change Herdr, and it cannot tell which workspace *your* client is showing (Herdr's API has no per-client focus); see [docs/validation/m01-i1.md](docs/validation/m01-i1.md).
@@ -73,7 +74,7 @@ Details of every rule are in [docs/architecture.md](docs/architecture.md).
 - Embedded login can be blocked by the identity provider in the future; the app does not try to bypass it. **Abrir no navegador** opens chatgpt.com in your default browser (cookies are not shared).
 - One instance at a time; a second launch focuses the first window.
 - No packaged installer; run from source.
-- ChatGPT conversations are not yet associated with projects (planned for M01).
+- ChatGPT conversations can be bound to Herdr workspaces (M01-I3A: top-bar indicator → panel); the app does not yet switch conversations by itself (M01-I3B).
 
 ## Documentation
 

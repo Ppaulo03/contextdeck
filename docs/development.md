@@ -64,6 +64,15 @@ M01-I2 additions ([validation/m01-i2.md](validation/m01-i2.md)): to drive the re
 
 `$env:CONTEXTDECK_CHAT_OBSERVER='1'; npm start` writes state transitions to `<userData>diagnosticschat-observer.jsonl` (hashed ids, control attributes, no content). Harness techniques that worked: `webContents.executeJavaScriptInIsolatedWorld(1001, [{ code }])` for passive probes (booleans only); an observer attached to a throwaway-profile `WebContentsView` loading logged-out chatgpt.com (never send a message); injecting stand-in DOM elements into that throwaway page to test the pipeline; `history.pushState` in the page to exercise `did-navigate-in-page` (Electron also emits `did-start-loading` for it: use `did-start-navigation` with `isInPlace` to tell real loads apart). Details and results: [validation/m01-i3p.md](validation/m01-i3p.md).
 
+### Chat bindings (M01-I3A)
+
+Bindings live in `%APPDATA%\Project Dock M00\chat-bindings.json` (own file; `CONTEXTDECK_USER_DATA` redirects it for harnesses). Back it up together with `ui-state.json` before testing on the real profile. Tests never touch it: `test/helpers/bindings-world.js` wires the real store and service to a temporary directory and a fake Herdr observer/selection. Learned while building it:
+
+- `herdr session list --json` has no session UUID (only `name`, `socket_path`, `session_dir`, `default`, `running`) and workspace ids restart at `w1` in a recreated session. That is why each workspace keeps a label/directory recovery record and a mismatch is `suspect`, not trusted ([ADR 0002](decisions/0002-chat-bindings.md)).
+- The fake DOM of the component tests does not model mixed text + child nodes (the `textContent` of a node with children ignores its own text) nor `disabled` buttons ignoring clicks: build panels from `el()` pieces (a `span` for text next to a button) and assert `disabled` instead of clicking.
+- The WHATWG `URL` turns a backslash in the path of an https URL into `/`, so `https://chatgpt.com/c\<uuid>` is the same address as `/c/<uuid>`; the identity parser rebuilds the URL from parsed parts, so nothing raw is stored.
+- A feature that needs the page address must read it in main (`win.getChatUrl()`), never accept it from the renderer or the remote page.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

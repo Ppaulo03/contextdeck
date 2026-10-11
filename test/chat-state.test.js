@@ -8,7 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 const { EventEmitter } = require('node:events');
-const { PAGE, GEN, DRAFT, EVIDENCE, createState, reduce, parseConversationIdentity, lifecycleAdvice } = require('../src/main/chat/state-model');
+const { PAGE, GEN, DRAFT, EVIDENCE, END_CONFIRMATIONS, UNUSABLE_LIMIT, BUSY_ONLY_LIMIT, createState, reduce, parseConversationIdentity, lifecycleAdvice } = require('../src/main/chat/state-model');
 const { probeSource, normalizeSignals, CANDIDATES } = require('../src/main/chat/state-detector');
 const { createStateObserver } = require('../src/main/chat/state-observer');
 const { createDiagnosticsLog, shortHash } = require('../src/main/chat/diagnostics');
@@ -18,7 +18,10 @@ const CONV_A = 'https://chatgpt.com/c/11111111-aaaa-bbbb-cccc-000000000001';
 const CONV_B = 'https://chatgpt.com/c/22222222-aaaa-bbbb-cccc-000000000002';
 const PROJECT_CONV = 'https://chatgpt.com/g/g-p-0123456789abcdef-demo/c/33333333-aaaa-bbbb-cccc-000000000003';
 
-const sig = (over = {}) => ({ composer: true, stop: false, turnActions: false, error: false, interrupted: null, draft: false, ...over });
+const sig = (over = {}) => ({ composer: true, stop: false, stopWide: false, busy: false, turnActions: false, error: false, interrupted: null, draft: false, ...over });
+
+// A response end needs END_CONFIRMATIONS consecutive confirming observations (M01-I3B-2R): this repeats one.
+function settle(h, signals, n = END_CONFIRMATIONS) { for (let i = 0; i < n; i += 1) h.observe(signals); return h.state; }
 
 // Drives the reducer like the observer does: the epoch is the one current when the probe was requested.
 function harness() {
@@ -74,13 +77,16 @@ test('idle -> responding -> completed needs corroboration; the stop control vani
   h.observe(sig({ stop: true }));
   assert.deepEqual(h.state.generation, { state: GEN.RESPONDING, evidence: EVIDENCE.OBSERVED, reason: 'stop-control' });
   h.observe(sig({ stop: false }));
+  assert.equal(h.state.generation.state, GEN.RESPONDING, 'one quiet observation is not an end');
+  assert.equal(h.state.generation.reason, 'end-unconfirmed');
+  settle(h, sig({ stop: false }), END_CONFIRMATIONS - 1);
   assert.equal(h.state.generation.state, GEN.UNKNOWN);
   assert.equal(h.state.generation.reason, 'ended-unclassified');
   // sticky: a later quiet poll does not rewrite it to idle
   h.observe(sig({ stop: false }));
   assert.equal(h.state.generation.reason, 'ended-unclassified');
   h.observe(sig({ stop: true }));
-  h.observe(sig({ stop: false, turnActions: true }));
+  settle(h, sig({ stop: false, turnActions: true }));
   assert.deepEqual(h.state.generation, { state: GEN.COMPLETED, evidence: EVIDENCE.INFERRED, reason: 'stop-gone+turn-actions' });
   h.observe(sig({ turnActions: true }));
   assert.equal(h.state.generation.state, GEN.COMPLETED, 'completed is sticky');
@@ -91,17 +97,21 @@ test('idle -> responding -> completed needs corroboration; the stop control vani
 test('interruption and failure: only explicit signals classify; otherwise unknown', () => {
   const h = harness(); h.load(CONV_A);
   h.observe(sig({ stop: true }));
-  h.observe(sig({ stop: false, interrupted: true }));
+  settle(h, sig({ stop: false, interrupted: true }));
   assert.equal(h.state.generation.state, GEN.INTERRUPTED);
   const g = harness(); g.load(CONV_A);
   g.observe(sig({ stop: true }));
-  g.observe(sig({ stop: false, error: true }));
+  settle(g, sig({ stop: false, error: true }));
   assert.equal(g.state.generation.state, GEN.ERROR);
   const k = harness(); k.load(CONV_A);
   k.observe(sig({ stop: true }));
+  settle(k, sig({ stop: false, composer: false }), Math.min(UNUSABLE_LIMIT, 100) - 1);
+  assert.equal(k.state.generation.state, GEN.RESPONDING, 'composer disappeared with the stop control: could be navigation; still uncertain');
+  assert.equal(k.state.generation.reason, 'signals-unusable');
   k.observe(sig({ stop: false, composer: false }));
-  assert.equal(k.state.generation.state, GEN.UNKNOWN, 'composer disappeared with the stop control: could be navigation');
-  assert.equal(k.state.generation.reason, 'signals-incomplete');
+  assert.equal(k.state.generation.state, GEN.UNKNOWN, 'a long run of nothing usable stops claiming a response');
+  assert.equal(k.state.generation.reason, 'uncertain-timeout');
+  assert.equal(k.state.attention.pending, false);
 });
 
 test('ambiguous signals never produce a confident state', () => {
@@ -114,13 +124,18 @@ test('ambiguous signals never produce a confident state', () => {
   assert.equal(h.state.generation.reason, 'composer-missing');
 });
 
-test('signal loss while responding degrades to unknown instead of keeping "responding"', () => {
+test('signal loss while responding is held as uncertain, then given up as unknown; never an ending', () => {
   const h = harness(); h.load(CONV_A);
   h.observe(sig({ stop: true }));
   h.dispatch({ type: 'signals-lost', epoch: h.state.epoch });
-  assert.equal(h.state.generation.state, GEN.UNKNOWN);
-  assert.equal(h.state.generation.reason, 'signal-lost');
+  assert.equal(h.state.generation.state, GEN.RESPONDING);
+  assert.equal(h.state.generation.evidence, EVIDENCE.INFERRED);
+  assert.equal(h.state.generation.reason, 'signals-unusable');
   assert.equal(h.state.draft.state, DRAFT.UNKNOWN);
+  for (let i = 1; i < Math.min(UNUSABLE_LIMIT, 100); i += 1) h.dispatch({ type: 'signals-lost', epoch: h.state.epoch });
+  assert.equal(h.state.generation.state, GEN.UNKNOWN);
+  assert.equal(h.state.generation.reason, 'uncertain-timeout');
+  assert.equal(h.state.attention.pending, false);
 });
 
 // ---- draft ---------------------------------------------------------------------------------------
@@ -235,6 +250,8 @@ test('a response that ends while the view is hidden raises attention; viewing cl
   h.dispatch({ type: 'visibility', visible: true });
   h.observe(sig({ stop: true }));
   h.dispatch({ type: 'visibility', visible: false });
+  settle(h, sig({ stop: false, turnActions: true }), END_CONFIRMATIONS - 1);
+  assert.equal(h.state.attention.pending, false, 'an unconfirmed end raises no attention');
   h.observe(sig({ stop: false, turnActions: true }));
   assert.deepEqual(h.state.attention, { pending: true, reason: 'response-ended-in-background' });
   h.dispatch({ type: 'visibility', visible: true });
@@ -243,14 +260,15 @@ test('a response that ends while the view is hidden raises attention; viewing cl
   assert.equal(h.state.attention.pending, false);
   // ended while visible: no attention
   h.observe(sig({ stop: true }));
-  h.observe(sig({ stop: false, turnActions: true }));
+  settle(h, sig({ stop: false, turnActions: true }));
   assert.equal(h.state.attention.pending, false);
 });
 
 test('an unclassified end in the background also raises attention; a lost signal does not', () => {
   const h = harness(); h.load(CONV_A);
   h.observe(sig({ stop: true }));
-  h.observe(sig({ stop: false }));
+  settle(h, sig({ stop: false }));
+  assert.equal(h.state.generation.reason, 'ended-unclassified');
   assert.equal(h.state.attention.pending, true);
   const g = harness(); g.load(CONV_A);
   g.observe(sig({ stop: true }));
@@ -273,7 +291,7 @@ test('lifecycle advice preserves by default and is evictable only when every dim
   assert.deepEqual(lifecycleAdvice(h.state).preserve, ['draft-unknown']);
   h.observe(sig({ stop: true }));
   assert.ok(lifecycleAdvice(h.state).preserve.includes('responding'));
-  h.observe(sig({ stop: false, turnActions: true }));
+  settle(h, sig({ stop: false, turnActions: true }));
   assert.ok(lifecycleAdvice(h.state).preserve.includes('unviewed-response'), 'a finished but unseen response is preserved');
   h.dispatch({ type: 'viewed' });
   assert.equal(lifecycleAdvice(h.state).evictable, true, 'completed alone is not a reason to keep, nor a license to destroy');
@@ -350,7 +368,7 @@ test('normalizeSignals accepts only booleans from the untrusted page', () => {
   assert.equal(normalizeSignals(null), null);
   assert.equal(normalizeSignals('x'), null);
   assert.deepEqual(normalizeSignals({ composer: 'yes', stop: 1, turnActions: true, error: false, draft: {}, extra: 'ignored' }),
-    { composer: null, stop: null, turnActions: true, error: false, interrupted: null, draft: null });
+    { composer: null, stop: null, stopWide: null, busy: null, turnActions: true, error: false, interrupted: null, draft: null });
   assert.ok(Object.keys(CANDIDATES).length >= 5);
 });
 
@@ -414,9 +432,11 @@ test('observer: a throwing or malformed probe becomes signal-lost, not a state',
   c.reply = () => sig({ stop: true }); await t.fire();
   assert.equal(o.getState().generation.state, GEN.RESPONDING);
   c.reply = () => new Error('frame detached'); await t.fire();
-  assert.equal(o.getState().generation.reason, 'signal-lost');
+  assert.equal(o.getState().generation.state, GEN.RESPONDING, 'a probe that did not answer is not an ending');
+  assert.equal(o.getState().generation.reason, 'signals-unusable');
   c.reply = () => 'garbage'; await t.fire();
-  assert.equal(o.getState().generation.reason, 'signal-lost');
+  assert.equal(o.getState().generation.reason, 'signals-unusable');
+  assert.equal(o.getState().attention.pending, false);
   assert.equal(o.getStats().signalsLost, 2);
   o.stop();
 });
@@ -467,7 +487,8 @@ test('observer: reload, failure, crash and background/foreground transitions', a
   const o = createStateObserver({ contents: c, onChange: (s) => attention.push(s.attention.pending), ...t });
   loadPage(c, CONV_A); o.setVisible(true); c.reply = () => sig({ stop: true }); await t.fire();
   o.setVisible(false);                                        // user switched to the terminal
-  c.reply = () => sig({ stop: false, turnActions: true }); await t.fire();
+  c.reply = () => sig({ stop: false, turnActions: true });
+  for (let i = 0; i < END_CONFIRMATIONS; i += 1) await t.fire();
   assert.equal(o.getState().generation.state, GEN.COMPLETED);
   assert.equal(o.getState().attention.pending, true);
   o.setVisible(true); o.markViewed();

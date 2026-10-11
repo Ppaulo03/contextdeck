@@ -115,8 +115,10 @@ test('sanitizers rebuild results from scratch: oversize, wrong types and extra f
   assert.equal(clean.composer.via, null);
   assert.equal(clean.editable[0].visible, false);
   assert.equal(sanitizeStructure(null), null);
-  assert.deepEqual(sanitizeProbe({ via: 'candidate', controls: [{ label: 'a', attrs: ['b'], leak: 1 }], form: ['data-x=1', 5], secret: 'x' }), { via: 'candidate', controls: [{ type: '', testid: '', label: 'a', attrs: ['b'] }], form: ['data-x=1', ''] });
-  assert.deepEqual(sanitizeProbe({ via: 'other' }), { via: null, controls: [], form: [] });
+  assert.deepEqual(sanitizeProbe({ via: 'candidate', controls: [{ label: 'a', attrs: ['b'], leak: 1 }], form: ['data-x=1', 5], secret: 'x' }), { via: 'candidate', controls: [{ type: '', testid: '', label: 'a', attrs: ['b'] }], form: ['data-x=1', ''], wide: null, busyCount: 0 });
+  assert.deepEqual(sanitizeProbe({ via: 'other' }), { via: null, controls: [], form: [], wide: null, busyCount: 0 });
+  assert.deepEqual(sanitizeProbe({ wide: { by: 'x', label: 'y'.repeat(500), testid: 5, leak: 1 }, busyCount: 1e9 }).wide, { by: null, label: 'y'.repeat(40), testid: '' });
+  assert.equal(sanitizeProbe({ busyCount: 1e9 }).busyCount, 1e6);
 });
 
 // ---- observer instrumentation and diagnostics orchestration ----------------------------------------------

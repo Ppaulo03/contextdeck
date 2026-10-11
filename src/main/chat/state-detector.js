@@ -26,6 +26,19 @@ const EDITABLE = 'textarea, [contenteditable="true"], [contenteditable=""], [rol
 const SUBMIT_IN_FORM = 'button[type="submit"], [data-composer-submit], [data-testid="send-button"], [data-testid="stop-button"]';
 const STOP_LABEL = '^(stop|parar|interromper|detener|arr[eê]ter|stopp)';
 const STOP_VALUE = '^(stop|stopping|streaming|generating|responding)$';
+// Signals beyond the composer's form (M01-I3B-2R). While a document / canvas / tool is being produced the stop control can
+// live outside the composer's form (or the form can be replaced), so reading only the form reports "no stop" while the
+// response goes on. Two extra, passive signals, each reported separately with its own reliability:
+//   stopWide  a visible control anywhere on the page whose accessible label starts like a stop label (or whose test id says
+//             stop), outside the controls already read; labels about voice/sharing/recording are excluded.
+//   busy      a visible element flagged aria-busy / streaming.
+// Neither can START a response (only the strong signal does); they only keep a response that was observed from being declared
+// over (see state-model.js).
+const WIDE_CONTROLS = 'button, [role="button"]';
+const WIDE_LIMIT = 600;
+const STOP_NOISE = '(voice|voz|voix|share|sharing|compartilh|partag|record|gravar|gravando|dictat|ditad|screen|tela|audio|\u00e1udio|call|chamada|camera|c\u00e2mera)';
+const BUSY_SELECTOR = '[aria-busy="true"], [data-streaming="true"], [data-is-streaming="true"]';
+const BUSY_LIMIT = 200;
 const WORLD_ID = 1001;
 const SHADOW_SCAN_LIMIT = 5000;
 
@@ -82,15 +95,36 @@ const probeSource = ({ diagnostic = false } = {}) => `(() => {
   const { composer, via } = findComposer();
   const buttons = controls(composer);
   const stop = any(C.stop) || buttons.some(stopLike);
+  // A stop-like control OUTSIDE the ones read above (only looked for when the strong signal is absent).
+  let wideHit = null;
+  if (!stop) {
+    const known = new Set(buttons);
+    const noise = new RegExp(${JSON.stringify(STOP_NOISE)}, 'i');
+    let seen = 0;
+    for (const b of document.querySelectorAll(${JSON.stringify(WIDE_CONTROLS)})) {
+      if (++seen > ${WIDE_LIMIT}) break;
+      if (known.has(b)) continue;
+      const label = b.getAttribute('aria-label') || '';
+      const testid = b.getAttribute('data-testid') || '';
+      const byLabel = new RegExp(${JSON.stringify(STOP_LABEL)}, 'i').test(label) && !noise.test(label);
+      const byTestId = /stop/i.test(testid) && !noise.test(testid);
+      if ((byLabel || byTestId) && visible(b)) { wideHit = { label, testid, by: byLabel ? 'label' : 'testid' }; break; }
+    }
+  }
+  const busyList = [...document.querySelectorAll(${JSON.stringify(BUSY_SELECTOR)})].slice(0, ${BUSY_LIMIT}).filter(visible);
   const out = {
     composer: composer ? true : (document.body ? false : null),
     stop,
+    stopWide: wideHit !== null,
+    busy: busyList.length > 0,
     turnActions: any(C.turnActions),
     error: [...document.querySelectorAll(C.error[0])].some(visible),
     interrupted: null,
     draft: composer ? ((composer.value !== undefined ? composer.value : composer.textContent) || '').trim().length > 0 : null
   };
   ${diagnostic ? `out.via = via;
+  out.wide = wideHit ? { by: wideHit.by, label: wideHit.label.length <= 40 ? wideHit.label : '', testid: wideHit.testid.length <= 40 ? wideHit.testid : '' } : null;
+  out.busyCount = busyList.length;
   const sig = (b) => {
     const named = b.type === 'submit' || b.hasAttribute('data-testid') || [...b.attributes].some((a) => /^data-composer/.test(a.name));
     const label = b.getAttribute('aria-label') || '';
@@ -139,7 +173,7 @@ const structureSource = () => `(() => {
   };
 })()`;
 
-const SIGNAL_KEYS = ['composer', 'stop', 'turnActions', 'error', 'interrupted', 'draft'];
+const SIGNAL_KEYS = ['composer', 'stop', 'stopWide', 'busy', 'turnActions', 'error', 'interrupted', 'draft'];
 const tri = (v) => (v === true ? true : v === false ? false : null);
 const VIA = new Set(['candidate', 'structural', 'lone', 'shadow']);
 
@@ -166,7 +200,8 @@ function sanitizeControls(list) {
 
 function sanitizeProbe(raw) {
   if (!raw || typeof raw !== 'object') return null;
-  return { via: VIA.has(raw.via) ? raw.via : null, controls: sanitizeControls(raw.controls), form: safeList(raw.form, 30, (a) => safeText(a, 70)) };
+  const wide = raw.wide && typeof raw.wide === 'object' ? { by: raw.wide.by === 'label' || raw.wide.by === 'testid' ? raw.wide.by : null, label: safeText(raw.wide.label), testid: safeText(raw.wide.testid) } : null;
+  return { via: VIA.has(raw.via) ? raw.via : null, controls: sanitizeControls(raw.controls), form: safeList(raw.form, 30, (a) => safeText(a, 70)), wide, busyCount: safeInt(raw.busyCount) };
 }
 
 function sanitizeStructure(raw) {

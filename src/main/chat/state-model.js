@@ -39,6 +39,18 @@ const draft = (state, evidence) => ({ state, evidence });
 const GEN_UNKNOWN = (reason) => gen(GEN.UNKNOWN, EVIDENCE.UNKNOWN, reason);
 const DRAFT_UNKNOWN = draft(DRAFT.UNKNOWN, EVIDENCE.UNKNOWN);
 
+// How a response that WAS observed ends (M01-I3B-2R). One missing signal is not an ending: ChatGPT moves the stop control
+// around (inside the composer, elsewhere, absent for a moment while a document or a tool is being produced). An end needs
+// END_CONFIRMATIONS consecutive observations that all say "composer ready, no stop control anywhere, nothing busy"; any
+// sign of activity in between starts the count again; observations that say nothing (composer gone, probe lost) neither
+// confirm nor contradict and also restart it. If nothing usable arrives for UNUSABLE_LIMIT observations the response is no
+// longer claimed (unknown, no attention): uncertainty never becomes an ending by waiting. A weak `busy` flag alone may hold
+// a response only for BUSY_ONLY_LIMIT observations (a stuck aria-busy must not keep a spinner forever).
+const END_CONFIRMATIONS = 3;
+const UNUSABLE_LIMIT = 20;
+const BUSY_ONLY_LIMIT = 30;
+const NO_STREAK = Object.freeze({ confirm: 0, unusable: 0, weak: 0 });
+
 function createState() {
   return {
     epoch: 0,
@@ -48,32 +60,50 @@ function createState() {
     draft: DRAFT_UNKNOWN,
     visible: false,
     attention: { pending: false },
+    endProbe: NO_STREAK,
     lastSeq: 0
   };
 }
 
 const isEnded = (g) => g.state === GEN.COMPLETED || g.state === GEN.INTERRUPTED || g.state === GEN.ERROR || g.reason === 'ended-unclassified';
 
-// signals: { composer, stop, turnActions, error, interrupted } each true | false | null (null = not determinable)
-function classifyGeneration(prev, s) {
-  if (s.stop === true) return gen(GEN.RESPONDING, EVIDENCE.OBSERVED, 'stop-control');
+// An observation that says nothing about the response (composer gone, signals not determinable, probe lost) while one is
+// believed to be in progress: keep believing it, flagged as uncertain, and give up (unknown, no attention) only after a
+// long run of them.
+function holdUncertain(probe) {
+  const unusable = probe.unusable + 1;
+  if (unusable >= UNUSABLE_LIMIT) return { generation: GEN_UNKNOWN('uncertain-timeout'), probe: NO_STREAK };
+  return { generation: { ...gen(GEN.RESPONDING, EVIDENCE.INFERRED, 'signals-unusable'), streak: unusable }, probe: { confirm: 0, unusable, weak: probe.weak } };
+}
+
+// signals: { composer, stop, stopWide, busy, turnActions, error, interrupted } each true | false | null (null = not determinable)
+//   stop      the stop control in its known places (the composer's form, known test ids): STRONG, the only thing that STARTS a response
+//   stopWide  a stop-labelled control elsewhere on the page (e.g. beside a document being written): holds a response, never starts one
+//   busy      a visible element flagged busy/streaming: weak, holds a response for a bounded time
+function classifyGeneration(prev, s, probe) {
+  if (s.stop === true) return { generation: gen(GEN.RESPONDING, EVIDENCE.OBSERVED, 'stop-control'), probe: NO_STREAK };
   if (prev.state === GEN.RESPONDING) {
-    // The stop control vanishing is NOT evidence of completion: it also happens on cancel, error and navigation.
-    if (s.error === true) return gen(GEN.ERROR, EVIDENCE.INFERRED, 'error-signal-after-response');
-    if (s.interrupted === true) return gen(GEN.INTERRUPTED, EVIDENCE.INFERRED, 'interrupt-notice');
+    if (s.stopWide === true) return { generation: gen(GEN.RESPONDING, EVIDENCE.INFERRED, 'stop-control-elsewhere'), probe: NO_STREAK };
+    if (s.busy === true && probe.weak < BUSY_ONLY_LIMIT) return { generation: gen(GEN.RESPONDING, EVIDENCE.INFERRED, 'busy-signal'), probe: { confirm: 0, unusable: 0, weak: probe.weak + 1 } };
     if (s.stop === false && s.composer === true) {
-      return s.turnActions === true
-        ? gen(GEN.COMPLETED, EVIDENCE.INFERRED, 'stop-gone+turn-actions')
-        : GEN_UNKNOWN('ended-unclassified');
+      const confirm = probe.confirm + 1;
+      if (confirm < END_CONFIRMATIONS) return { generation: { ...gen(GEN.RESPONDING, EVIDENCE.INFERRED, 'end-unconfirmed'), streak: confirm }, probe: { confirm, unusable: 0, weak: probe.weak } };
+      // Sustained: the stop control is NOT evidence of completion by itself; only a signal of its own can say more.
+      if (s.error === true) return { generation: gen(GEN.ERROR, EVIDENCE.INFERRED, 'error-signal-after-response'), probe: NO_STREAK };
+      if (s.interrupted === true) return { generation: gen(GEN.INTERRUPTED, EVIDENCE.INFERRED, 'interrupt-notice'), probe: NO_STREAK };
+      return {
+        generation: s.turnActions === true ? gen(GEN.COMPLETED, EVIDENCE.INFERRED, 'stop-gone+turn-actions') : GEN_UNKNOWN('ended-unclassified'),
+        probe: NO_STREAK
+      };
     }
-    return GEN_UNKNOWN('signals-incomplete');
+    return holdUncertain(probe);
   }
-  if (s.stop === null || s.composer === null) return GEN_UNKNOWN('signals-incomplete');
+  if (s.stop === null || s.composer === null) return { generation: GEN_UNKNOWN('signals-incomplete'), probe: NO_STREAK };
   if (s.stop === false && s.composer === true) {
-    if (isEnded(prev)) return prev;                              // sticky until responding again or the identity changes
-    return s.error === true ? gen(GEN.ERROR, EVIDENCE.INFERRED, 'error-signal') : gen(GEN.IDLE, EVIDENCE.INFERRED, 'composer-ready-no-stop');
+    if (isEnded(prev)) return { generation: prev, probe: NO_STREAK };      // sticky until responding again or the identity changes
+    return { generation: s.error === true ? gen(GEN.ERROR, EVIDENCE.INFERRED, 'error-signal') : gen(GEN.IDLE, EVIDENCE.INFERRED, 'composer-ready-no-stop'), probe: NO_STREAK };
   }
-  return GEN_UNKNOWN('composer-missing');
+  return { generation: GEN_UNKNOWN('composer-missing'), probe: NO_STREAK };
 }
 
 function classifyDraft(s) {
@@ -92,7 +122,7 @@ function withChanges(state, changes) {
 
 // Resets what was learned about the previous conversation: nothing is carried across identities.
 function resetObservation(state, changes) {
-  return { ...state, generation: GEN_UNKNOWN('identity-changed'), draft: DRAFT_UNKNOWN, attention: { pending: false }, ...changes };
+  return { ...state, generation: GEN_UNKNOWN('identity-changed'), draft: DRAFT_UNKNOWN, attention: { pending: false }, endProbe: NO_STREAK, ...changes };
 }
 
 function reduce(state, event) {
@@ -125,14 +155,19 @@ function reduce(state, event) {
     case 'signals': {
       if (state.page !== PAGE.READY || event.epoch !== state.epoch || !(event.seq > state.lastSeq)) return state;
       const s = event.signals;
-      const generation = classifyGeneration(state.generation, s);
+      const { generation, probe } = classifyGeneration(state.generation, s, state.endProbe);
       const wasResponding = state.generation.state === GEN.RESPONDING;
       const ended = wasResponding && generation.state !== GEN.RESPONDING && isEnded(generation);
       const attention = ended && !state.visible ? { pending: true, reason: 'response-ended-in-background' } : state.attention;
-      return { ...withChanges(state, { generation, draft: classifyDraft(s), attention }), lastSeq: event.seq };
+      return { ...withChanges(state, { generation, draft: classifyDraft(s), attention, endProbe: probe }), lastSeq: event.seq };
     }
     case 'signals-lost': {
       if (state.page !== PAGE.READY || event.epoch !== state.epoch) return state;
+      if (state.generation.state === GEN.RESPONDING) {
+        // A probe that did not answer is not an ending: keep the response, flagged uncertain (see holdUncertain).
+        const held = holdUncertain(state.endProbe);
+        return withChanges(state, { generation: held.generation, draft: DRAFT_UNKNOWN, endProbe: held.probe });
+      }
       return withChanges(state, { generation: GEN_UNKNOWN('signal-lost'), draft: DRAFT_UNKNOWN });
     }
     case 'visibility':
@@ -161,4 +196,4 @@ function lifecycleAdvice(state) {
   return { evictable: preserve.length === 0, preserve };
 }
 
-module.exports = { PAGE, GEN, DRAFT, EVIDENCE, createState, reduce, parseConversationIdentity, lifecycleAdvice };
+module.exports = { PAGE, GEN, DRAFT, EVIDENCE, createState, reduce, parseConversationIdentity, lifecycleAdvice, END_CONFIRMATIONS, UNUSABLE_LIMIT, BUSY_ONLY_LIMIT };

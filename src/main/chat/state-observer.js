@@ -92,7 +92,7 @@ function createStateObserver({ contents, onChange, intervals = DEFAULT_INTERVALS
       stats.lastLatencyMs = Number(process.hrtime.bigint() - started) / 1e6;
       const signals = normalizeSignals(raw);
       const extra = diagnostic ? sanitizeProbe(raw) : null;
-      onProbe?.({ latencyMs: stats.lastLatencyMs, signals, via: extra && extra.via, controls: extra && extra.controls, form: extra && extra.form });
+      onProbe?.({ latencyMs: stats.lastLatencyMs, signals, via: extra && extra.via, controls: extra && extra.controls, form: extra && extra.form, wide: extra && extra.wide, busyCount: extra && extra.busyCount });
       // Results that the model will discard are counted, so a silent loss shows up in the diagnostics.
       if (epoch !== state.epoch) stats.dropped.stale += 1;
       else if (!(mySeq > state.lastSeq)) stats.dropped.order += 1;

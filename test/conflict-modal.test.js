@@ -192,3 +192,56 @@ test('the strip does not duplicate the modal: only a pending association is offe
   assert.match(strip, /model\.banner\.kind === 'pending'/);
   assert.equal(bannerOf({ conflict: { viewId: 'v1', boundTo: { id: 'w2', label: 'app', openable: true }, current: { id: 'w1', label: 'api' }, transferable: false } }).actions.map((a) => a.action).join(), 'go,back');
 });
+
+// ---- "Ir para <workspace>": the origin workspace also gets its "Voltar" --------------------------------------------------------------------------
+test('Ir para: the origin page goes back first and waits, THEN the other workspace opens the conversation (never taking the page with it)', async () => {
+  const { createDirectOpen } = require('../src/main/activity/direct-open');
+  const w = createStatusWorld({ workspaces: [ws('w1', 'api'), ws('w2', 'app')] });
+  try {
+    w.select('w1'); const [c1] = bindMany(w, [1]);
+    w.select('w2'); const [d] = bindMany(w, [4]);
+    w.select('w1');
+    w.navigator.setMode('chat');
+    const adoption = createContextAdoption({ session: w.session, navigator: w.navigator, bindings: w.bindings, selection: w.selection, wait: () => new Promise((r) => setImmediate(r)) });
+    const id = w.navigator.selectBinding({ bindingId: c1.bindingId, workspaceKey: WK('w1') }).viewId;
+    const view = w.fake.views.find((v) => v.id === id);
+    view.finishLoad(c1.url);
+    // The user opened, in w1's page, the conversation that belongs to w2 (which already has its own page for it).
+    const own = w.navigator.selectBinding({ bindingId: d.bindingId, workspaceKey: WK('w2') });
+    void own;
+    view.navigate(d.url);
+    const directOpen = createDirectOpen({ session: w.session, selection: w.selection, navigator: { resolveActivityTarget: (a) => w.navigator.resolveActivityTarget(a), selectBinding: (a) => w.navigator.selectBinding(a), selectTemporary: (a) => w.navigator.selectTemporary(a) }, showChatTab: () => {}, getMode: () => 'chat' });
+    const left = await adoption.leave({ viewId: id });
+    assert.equal(left.ok, true);
+    assert.equal(w.manager.get(id).identity.key, c1.conversationKey, 'the origin page is back on its own conversation');
+    const opened = await directOpen.open({ workspaceId: 'w2', bindingId: d.bindingId });
+    assert.equal(opened.ok, true, JSON.stringify(opened));
+    assert.equal(w.sel.selected.workspaceId, 'w2');
+    assert.equal(w.manager.get(id).scope, WK('w1'), 'the origin page stayed in its workspace');
+    assert.equal(w.manager.get(id).identity.key, c1.conversationKey);
+    assert.equal(w.manager.duplicates().length, 0, 'no page left showing the conflicting conversation in w1');
+    w.select('w1');
+    assert.equal(w.navigator.getState().conflict, null, 'coming back: nothing conflicting is there');
+    assert.equal(w.manager.getVisibleId(), id, 'and the tab is its old conversation');
+  } finally { w.cleanup0(); }
+});
+
+test('Ir para: if the page does not leave the conversation, nothing else happens', async () => {
+  const w = createStatusWorld({ workspaces: [ws('w1', 'api'), ws('w2', 'app')] });
+  try {
+    w.select('w1'); const [c1] = bindMany(w, [1]);
+    w.select('w2'); const [d] = bindMany(w, [4]);
+    w.select('w1');
+    w.navigator.setMode('chat');
+    const adoption = createContextAdoption({ session: w.session, navigator: w.navigator, bindings: w.bindings, selection: w.selection, wait: () => new Promise((r) => setImmediate(r)), leaveTimeoutMs: 30 });
+    const id = w.navigator.selectBinding({ bindingId: c1.bindingId, workspaceKey: WK('w1') }).viewId;
+    const view = w.fake.views.find((v) => v.id === id);
+    view.finishLoad(c1.url);
+    view.navigate(d.url);
+    view.goBack = () => true;                                       // the browser accepts the request but never navigates
+    const r = await adoption.leave({ viewId: id });
+    assert.equal(r.error.code, 'back_failed');
+    assert.equal(w.sel.selected.workspaceId, 'w1');
+    assert.deepEqual(w.selectCalls, []);
+  } finally { w.cleanup0(); }
+});

@@ -19,7 +19,7 @@
 // A conversation bound to another workspace is never moved: it is a conflict, offered to the user as go / transfer / back.
 // A refused adoption (workspace suspect or unavailable, limit...) keeps the page in its workspace as a pending association
 // with a note and a direct action to retry; nothing is destroyed.
-function createContextAdoption({ session, navigator, bindings, selection }) {
+function createContextAdoption({ session, navigator, bindings, selection, wait = (ms) => new Promise((r) => setTimeout(r, ms)), leaveTimeoutMs = 2500 }) {
   const pendingNotes = new Map();      // viewId -> { code, text }
   // Conversations the user explicitly unbound while a page still shows them. Without this the next evaluation would bind them
   // again (the page is on screen, in the workspace). Forgotten as soon as no page shows the conversation any more, so opening
@@ -116,10 +116,30 @@ function createContextAdoption({ session, navigator, bindings, selection }) {
   }
 
   const back = ({ viewId } = {}) => navigator.backFromConflict(viewId);
+  // "Ir para <workspace>", first half: the page that opened the other workspace's conversation does the local "Voltar" - it
+  // returns to what this workspace had (its own history, or the previous page) - so that, when the user comes back, the conflicting
+  // conversation is not still sitting here. Going back in history is asynchronous: the next step (opening the conversation in its
+  // workspace) must not start until the page has really left it, or that step would take this very page with it. Bounded wait;
+  // if the page does not leave, nothing else happens and the modal stays for another choice.
+  async function leave({ viewId } = {}) {
+    const info = navigator.viewInfo(viewId);
+    if (!info || info.page === 'destroyed') return fail('view_not_found', 'Conversa nao encontrada.');
+    const before = info.identity.key;
+    const r = navigator.backFromConflict(viewId);
+    if (!r.ok) return r;
+    if (r.how !== 'history') return { ok: true };
+    for (let waited = 0; waited <= leaveTimeoutMs; waited += 25) {          // bounded by count, not by the clock
+      const now = navigator.viewInfo(viewId);
+      if (!now || now.identity.key !== before) return { ok: true };
+      await wait(25);
+    }
+    return fail('back_failed', 'A pagina nao voltou para a conversa anterior. Tente de novo.');
+  }
+
   // The user removed the binding of this conversation: leave it unbound while a page shows it.
   const decline = (key) => { if (typeof key === 'string') declined.add(key); };
 
-  return { resolve, retry, transfer, back, decline, noteOf: (viewId) => (pendingNotes.get(viewId) || {}).text || '', pending: () => [...pendingNotes.keys()] };
+  return { resolve, retry, transfer, back, leave, decline, noteOf: (viewId) => (pendingNotes.get(viewId) || {}).text || '', pending: () => [...pendingNotes.keys()] };
 }
 
 module.exports = { createContextAdoption };

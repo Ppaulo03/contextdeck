@@ -72,8 +72,8 @@ function barModel(state, armedBindingId = null) {
     };
   });
   const temporaries = state.temporaries.map((t) => ({
-    id: t.viewId, status: statusItems(t.activity), aria: statusItems(t.activity).map((s) => s.label).join(', '), text: t.label, active: t.active, loading: t.loading, failed: t.failed, warn: t.warning,
-    title: [t.failed ? 'Falha ao carregar.' : (RELATION_NOTE[t.relation] || RELATION_NOTE.temporary), ...statusItems(t.activity).map((s) => s.title)].join(' ')
+    id: t.viewId, status: statusItems(t.activity), aria: statusItems(t.activity).map((s) => s.label).join(', '), text: t.label, active: t.active, loading: t.loading, failed: t.failed, warn: t.warning || Boolean(t.note),
+    title: [t.failed ? 'Falha ao carregar.' : (RELATION_NOTE[t.relation] || RELATION_NOTE.temporary), t.note || '', ...statusItems(t.activity).map((s) => s.title)].filter(Boolean).join(' ')
   }));
   return {
     ready: true,

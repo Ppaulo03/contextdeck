@@ -31,6 +31,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
   const choice = new Map();          // workspace key -> id of a temporary view the user picked there
   // An unbound conversation (scope null) the user opened on purpose while a workspace is selected. It stays on screen
   // only for as long as that same workspace stays selected; any other choice, or a change of workspace, ends it.
+  let notes = null;                  // optional (viewId) -> text: why a temporary page was not bound (set by the creation service)
   let unboundChoice = null;
   let unboundSel = null;
 
@@ -267,6 +268,21 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     return { ok: true, viewId: id };
   }
 
+  // A temporary page whose association could not be trusted leaves its workspace and becomes an unbound conversation: it
+  // appears in "Sem workspace" (always listed), keeps its view, draft and activity, and stays on screen if it was being
+  // looked at. Pages that belong to a binding (suspect, orphan, unverified) are never released: they keep their workspace.
+  function releaseToUnbound(viewId) {
+    const v = typeof viewId === 'string' ? manager.get(viewId) : null;
+    if (!v || v.page === 'destroyed') return fail('view_not_found', 'Conversa nao encontrada.');
+    if (v.scope === null) return { ok: true, viewId: v.id, already: true };
+    if (v.expectedKey) return fail('bound_view', 'Esta pagina pertence a um vinculo.');
+    // Marked BEFORE the scope changes: the change itself triggers a reconcile that would otherwise hide the page.
+    if (manager.getVisibleId() === v.id) { unboundChoice = v.id; unboundSel = selectedWorkspace().id; }
+    manager.setScope(v.id, null);
+    reconcile();
+    return { ok: true, viewId: v.id };
+  }
+
   // What binding an unbound conversation needs: its address (from the view's own identity, never from the renderer).
   // The write itself is done by activity/unbound.js through the I3A operation; this module never writes bindings.
   function unboundTarget(viewId) {
@@ -432,6 +448,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
       return {
         viewId: v.id, label, relation: v.relation, active: v.id === visibleId, loading: v.page === 'loading', failed: v.page === 'error',
         activity: activityOf(v),
+        note: notes ? notes(v.id) || '' : '',
         warning: v.relation === REL.DIVERGED || v.relation === REL.LEFT || Boolean(elsewhere) || duplicated.has(v.id), bound: Boolean(other)
       };
     });
@@ -490,7 +507,8 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
 
   return {
     reconcile, getWorkspaceActivity, getGlobalActivity, resolveActivityTarget, setMode, selectBinding, newConversation, selectTemporary, openUnscoped, getState,
-    getUnbound, openUnbound, newUnbound, unboundTarget,
+    getUnbound, openUnbound, newUnbound, unboundTarget, releaseToUnbound,
+    setNoteProvider: (fn) => { notes = typeof fn === 'function' ? fn : null; },
     // Read-only view of one page for the creation service: scope, identity (from the URL only), epoch and lifecycle.
     viewInfo: (viewId) => (typeof viewId === 'string' ? manager.get(viewId) : null),
     getVisibleUrl: () => { const id = manager.getVisibleId(); const h = id && manager.isAttached() ? manager.handleOf(id) : null; return h && !h.isDestroyed() ? h.getUrl() : ''; },

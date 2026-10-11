@@ -129,7 +129,8 @@ async function bootstrap() {
     chats: { session: settings.herdrSession, bindings, selection, onAttention: (event) => notices.push(event) }
   });
 
-  creation = projectsOn ? createProjectCreation({ session: settings.herdrSession, navigator: { newConversation: (a) => win.getNavigator().newConversation(a), selectTemporary: (a) => win.getNavigator().selectTemporary(a), viewInfo: (v) => win.getNavigator().viewInfo(v), reconcile: () => win.getNavigator().reconcile() }, bindings, projects, selection }) : null;
+  creation = projectsOn ? createProjectCreation({ session: settings.herdrSession, navigator: { newConversation: (a) => win.getNavigator().newConversation(a), selectTemporary: (a) => win.getNavigator().selectTemporary(a), viewInfo: (v) => win.getNavigator().viewInfo(v), reconcile: () => win.getNavigator().reconcile(), releaseToUnbound: (v) => win.getNavigator().releaseToUnbound(v) }, bindings, projects, selection }) : null;
+  if (creation) win.getNavigator().setNoteProvider((viewId) => creation.noteFor(viewId));
   navPusher = startChatNavPusher({ getState: () => win.getNavigator()?.getState(), send: (channel, data) => win.send(channel, data) });
   registerIpc({ electron, win, herdr, observer, selection, activity, activityIpc: { getPayload: getActivityPayload, directOpen, notices, unbound }, bindings, projects, newConversation: creation ? (a) => creation.start(a) : null, notifyChats: () => { chatsPusher.notify(); win.getNavigator()?.reconcile(); }, settings, uiState, persist, userDataDir });
   app.on('second-instance', () => win.focus());

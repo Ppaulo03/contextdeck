@@ -23,7 +23,8 @@ function setup({ enabled = true, selected } = {}) {
   w.navigator.setMode('chat');
   const store = createBindingsStore({ file: path.join(w.root, 'project-bindings.json'), model: projectModel });
   w.projects = createProjectBindings({ store, session: w.session, bindings: w.bindings, observer: w.observer, selection: w.selection });
-  w.creation = createProjectCreation({ session: w.session, navigator: w.navigator, bindings: w.bindings, projects: w.projects, selection: w.selection, enabled });
+  w.creation = createProjectCreation({ session: w.session, navigator: w.navigator, bindings: w.bindings, projects: w.projects, selection: w.selection, enabled, evidence: (id) => w.evidence === true });
+  w.evidence = false;       // no verified sign of a first send exists in production: tests that need one turn it on explicitly
   w.linkProject = (c, ws_ = 'w1', extra = {}) => w.projects.link({ target: w.target(ws_), url: pageUrl(c), selectedAtOpen: w.sel.selected.workspaceId, targetChosen: true, ...extra });
   w.view = (id) => w.fake.views.find((v) => v.id === id);
   w.click = (ws_ = 'w1') => w.creation.start({ workspaceKey: WK(ws_) });
@@ -59,7 +60,8 @@ test('with a Project: a NEW page opens on the Project page, scoped to the worksp
   assert.equal(w.selectCalls.length, 0, 'no workspace.focus');
 }));
 
-test('the first message gives the page an id inside the Project: the conversation is bound to the ORIGIN workspace, same view', () => run(async (w) => {
+test('WITH independent evidence of a first send, the conversation is bound to the ORIGIN workspace, same view', () => run(async (w) => {
+  w.evidence = true;
   w.linkProject(1);
   const r = w.click();
   const v = w.view(r.viewId);
@@ -90,6 +92,7 @@ test('a double click shows the same waiting page: no second view, no second inte
 }));
 
 test('simultaneous creations in two workspaces keep two independent intents and bind each to its own workspace', () => run(async (w) => {
+  w.evidence = true;
   w.linkProject(1);
   w.select('w2');
   w.linkProject(2, 'w2');
@@ -118,12 +121,13 @@ test('workspace changed before the id appears: the conversation is NOT bound to 
   w.creation.resolve();
   assert.equal(w.bindings.lookup(chatUrl(7)), null);
   assert.equal(w.creation.getOutcome(r.viewId).code, 'context-changed');
-  assert.equal(w.manager.get(r.viewId).scope, WK('w1'), 'the page stays a temporary conversation of its workspace: recoverable');
+  assert.equal(w.manager.get(r.viewId).scope, null, 'released to "Sem workspace": reachable from anywhere, same view');
+  assert.equal(w.navigator.getUnbound().some((u) => u.viewId === r.viewId), true);
   assert.equal(w.selectCalls.length, 0, 'and Herdr was not touched to compensate');
   w.select('w1');
   w.creation.resolve();
   assert.equal(w.bindings.lookup(chatUrl(7)), null, 'coming back does not revive the intent');
-  assert.ok(w.navigator.getState().temporaries.some((t) => t.viewId === r.viewId), 'listed so it can be bound by hand');
+  assert.equal(w.fake.views.length, 1, 'no second view');
 }));
 
 test('the Project of the workspace changed while waiting: the intent is dropped', () => run(async (w) => {
@@ -172,6 +176,7 @@ test('an id that is already bound elsewhere is never taken: the intent ends, the
 }));
 
 test('a destination that is only an estimate (selection followed Herdr) is not bound automatically; the page stays recoverable', () => run(async (w) => {
+  w.evidence = true;
   w.linkProject(1);
   w.select('w1', 'herdr');
   const r = w.click();

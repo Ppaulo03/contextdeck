@@ -19,7 +19,11 @@ const { parseChatUrl } = require('../chat/conversation-identity');
 //
 // The intent is transient state of this module (never persisted: after a restart the view is gone anyway). It does not
 // write bindings through the navigator; it uses the chat bindings service like every other writer.
-function createProjectCreation({ session, navigator, bindings, projects, selection, enabled = true }) {
+//
+// `evidence(viewId) -> boolean` is the hook for such a sign. None is wired in production (nothing has been verified), so today
+// every Project conversation ends as 'unconfirmed-origin': the page stays where it is, flagged, and the user binds it
+// explicitly with "Vincular conversa atual".
+function createProjectCreation({ session, navigator, bindings, projects, selection, enabled = true, evidence = null }) {
   const intents = new Map();           // viewId -> intent
   const outcomes = new Map();          // viewId -> { code, at }  (what happened to the last intent of that view)
   let resolving = false;
@@ -27,7 +31,18 @@ function createProjectCreation({ session, navigator, bindings, projects, selecti
 
   const wsIdOf = (workspaceKey) => (typeof workspaceKey === 'string' && workspaceKey.startsWith(`${session}/`) ? workspaceKey.slice(session.length + 1) : null);
   const selectedId = () => { const s = selection.getState(); return s.selected && !s.pending ? s.selected.workspaceId : null; };
-  const finish = (viewId, code) => { intents.delete(viewId); outcomes.set(viewId, { code, at: seq++ }); if (outcomes.size > 50) outcomes.delete(outcomes.keys().next().value); };
+  // Outcomes after which the page can no longer be presented as the workspace's: it is released to "Sem workspace" (same view,
+  // draft and activity) so it stays reachable. The others keep it in the workspace it was started for, flagged with a note.
+  const RELEASE = new Set(['context-changed', 'project-changed', 'outside-project', 'navigated-away', 'already-bound']);
+  const NOTES = {
+    'unconfirmed-origin': 'Conversa do Project deste workspace, mas nada comprova que foi criada agora (pode ser uma conversa antiga). Para vincula-la, use Gerenciar > Vincular conversa atual.'
+  };
+  const finish = (viewId, code) => {
+    intents.delete(viewId);
+    outcomes.set(viewId, { code, at: seq++ });
+    if (outcomes.size > 50) outcomes.delete(outcomes.keys().next().value);
+    if (RELEASE.has(code)) navigator.releaseToUnbound(viewId);
+  };
 
   // The click on "Nova conversa". Without a usable Project the behaviour is exactly the one of before.
   function start({ workspaceKey } = {}) {
@@ -70,6 +85,11 @@ function createProjectCreation({ session, navigator, bindings, projects, selecti
     if (!inProject.ok || inProject.source !== 'project-conversation' || inProject.projectId !== intent.projectId) return 'outside-project';
     const existing = bindings.lookup(id.url);
     if (existing) return 'already-bound';
+    // Identifying the Project is NOT proving that this conversation was created now. Observed routes (docs/validation/m01-i3b-3.md):
+    // a conversation created from the Project page and an old conversation picked in the sidebar have the same URL shape, and the
+    // Project page itself has the same URL before and after "new chat". Without an independent, passive, verified sign of a first
+    // send, the association is left to the user.
+    if (!(evidence && evidence(intent.viewId) === true)) return 'unconfirmed-origin';
     const result = bindings.bind({
       target: { session, workspaceId: intent.workspaceId },
       url: parseChatUrl(id.url).url,
@@ -99,6 +119,8 @@ function createProjectCreation({ session, navigator, bindings, projects, selecti
   return {
     start, resolve,
     getOutcome: (viewId) => outcomes.get(viewId) || null,
+    // Why a page that stayed in its workspace was not bound (shown on its tab).
+    noteFor: (viewId) => { const o = outcomes.get(viewId); return o ? (NOTES[o.code] || (o.code.startsWith('refused:') ? 'Nao foi vinculada automaticamente (' + o.code.slice(8) + '). Use Gerenciar > Vincular conversa atual.' : '')) : ''; },
     pending: () => [...intents.values()].map((i) => ({ viewId: i.viewId, workspaceId: i.workspaceId, projectId: i.projectId })),
     // The user (or a closed view) ends the intent without a result.
     cancel: (viewId) => { if (intents.has(viewId)) finish(viewId, 'cancelled'); }

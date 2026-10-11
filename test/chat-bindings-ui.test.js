@@ -172,7 +172,7 @@ test('bind current: sends the destination shown, what was selected at open, and 
   assert.equal(t.byKey('role'), undefined, 'no category selector');
   assert.equal(t.byKey('confirm'), undefined, 'no confirmation checkbox');
   await t.click(t.button('Vincular conversa atual'));
-  assert.deepEqual(t.calls.bind, [{ source: 'current', target: { session: 'contextdeck', workspaceId: 'w1' }, selectedAtOpen: 'w1', targetChosen: false, label: 'Arquitetura base' }]);
+  assert.deepEqual(t.calls.bind, [{ source: 'current', target: { session: 'contextdeck', workspaceId: 'w1' }, selectedAtOpen: 'w1', targetChosen: true, label: 'Arquitetura base' }]);
   assert.match(t.message.textContent, /Conversa vinculada/);
   assert.equal(t.byKey('label').value, '', 'the form is cleared after success');
 });
@@ -197,18 +197,16 @@ test('bind by URL: needs text, sends source "url" and the typed address; main de
   assert.ok(t.message.classList.contains('is-error'));
 });
 
-test('an estimated destination is not proposed: the user picks a workspace (no checkbox) and then binds', async () => {
+test('the destination is the workspace we are in, by default, even when the selection only follows Herdr; one click binds', async () => {
   const t = mountPanel(chatsState({ selected: { workspaceId: 'w1', origin: 'herdr' } }));
   await t.open();
-  assert.match(t.text(), /O workspace atual \(w1 · api\) vem do foco do Herdr e não foi confirmado como destino/);
-  assert.notEqual(t.byKey('target').value, 'w1', 'nothing preselected');
-  assert.equal(t.button('Vincular conversa atual').disabled, true);
+  assert.equal(t.byKey('target').value, 'w1', 'preselected');
+  assert.doesNotMatch(t.text(), /não foi confirmado como destino/, 'no estimate warning');
   assert.equal(t.byKey('confirm'), undefined);
-  await t.choose('target', 'w1');
-  assert.doesNotMatch(t.text(), /não foi confirmado como destino/);
   assert.equal(t.button('Vincular conversa atual').disabled, false);
   await t.click(t.button('Vincular conversa atual'));
   assert.equal(t.calls.bind.length, 1, 'one click, no confirmation loop');
+  assert.equal(t.calls.bind[0].target.workspaceId, 'w1');
   assert.equal(t.calls.bind[0].targetChosen, true);
   assert.equal('confirmTarget' in t.calls.bind[0], false);
 });
@@ -235,9 +233,8 @@ test('the selected workspace changes while the panel is open: a warning blocks w
   assert.equal(t.calls.bind.length, 0);
   await t.click(t.button('Usar o selecionado agora'));
   assert.doesNotMatch(t.text(), /mudou desde que/);
-  assert.notEqual(t.byKey('target').value, 'w2', 'the new selection is an estimate: not proposed');
-  assert.equal(t.button('Vincular conversa atual').disabled, true, 'pick the destination first');
-  await t.choose('target', 'w2');
+  assert.equal(t.byKey('target').value, 'w2', 'the current workspace is proposed again');
+  assert.equal(t.button('Vincular conversa atual').disabled, false);
   await t.click(t.button('Vincular conversa atual'));
   assert.deepEqual([t.calls.bind[0].target.workspaceId, t.calls.bind[0].selectedAtOpen], ['w2', 'w2']);
 });
@@ -258,7 +255,7 @@ test('conflict: shows where the conversation lives and offers an explicit reassi
   assert.match(t.text(), /já está vinculada a w2 · app como "Plano"/);
   assert.equal(t.calls.reassign.length, 0);
   await t.click(t.button('Reassociar para w1 · api'));
-  assert.deepEqual(t.calls.reassign, [{ bindingId: other.bindingId, target: { session: 'contextdeck', workspaceId: 'w1' }, selectedAtOpen: 'w1', targetChosen: false, confirmReassign: true }]);
+  assert.deepEqual(t.calls.reassign, [{ bindingId: other.bindingId, target: { session: 'contextdeck', workspaceId: 'w1' }, selectedAtOpen: 'w1', targetChosen: true, confirmReassign: true }]);
   assert.match(t.message.textContent, /reassociada/);
 });
 
@@ -417,7 +414,7 @@ test('Project section: link the current Project; nothing but the destination and
   await t.open();
   assert.match(t.text(), /Nenhum Project vinculado a este workspace/);
   await t.click(t.button('Vincular Project atual'));
-  assert.deepEqual(t.calls.projectsLink, [{ source: 'current', target: { session: 'contextdeck', workspaceId: 'w1' }, selectedAtOpen: 'w1', targetChosen: false }]);
+  assert.deepEqual(t.calls.projectsLink, [{ source: 'current', target: { session: 'contextdeck', workspaceId: 'w1' }, selectedAtOpen: 'w1', targetChosen: true }]);
   assert.match(t.message.textContent, /Project vinculado/);
 });
 

@@ -1,6 +1,6 @@
 'use strict';
 
-const { parseProjectUrl, labelFromSlug } = require('../chat/project-identity');
+const { parseProjectUrl, labelFromSlug, fallbackLabel } = require('../chat/project-identity');
 const { err, normalizeLabel, validWorkspaceIdentity, sameWorkspace } = require('../chat-bindings/model');
 const { LIMITS } = require('./model');
 
@@ -34,6 +34,7 @@ function createProjectBindings({ store, session, bindings, observer, selection, 
       ...record,
       workspaceIdentity: { ...record.workspaceIdentity },
       status: bindings.judge(record.workspaceIdentity, record.workspace),
+      label: record.label || fallbackLabel(record.projectId),
       workspaceLabel: live ? live.label : record.workspace.label
     };
   }
@@ -49,10 +50,13 @@ function createProjectBindings({ store, session, bindings, observer, selection, 
     return result || { ok: true };
   }
 
+  // Re-linking the same Project without a new name keeps the name it already has.
+  const mineLabel = (target, projectId) => { const r = store.get().records.find((x) => same(x, target) && x.projectId === projectId); return r ? r.label : ''; };
+
   function link({ target, url, label, selectedAtOpen, confirmTarget, targetChosen, replace, move } = {}) {
     const parsed = parseProjectUrl(url);
     if (!parsed.ok) return err(parsed.reason.replace(/-/g, '_'), parsed.message);
-    const l = normalizeLabel(label === undefined || label === '' ? labelFromSlug(parsed.slug) : label);
+    const l = normalizeLabel(label === undefined || label === '' ? (labelFromSlug(parsed.slug) || (mineLabel(target, parsed.projectId)) || fallbackLabel(parsed.projectId)) : label);
     if (!l.ok) return l;
     const checked = bindings.verifyTarget(target, { selectedAtOpen, confirmTarget, targetChosen });
     if (!checked.ok) return checked;
@@ -105,7 +109,7 @@ function createProjectBindings({ store, session, bindings, observer, selection, 
     const p = url ? parseProjectUrl(url) : null;
     if (!p || !p.ok) return null;
     const holder = store.get().records.find((r) => r.projectId === p.projectId);
-    return { projectId: p.projectId, url: p.url, label: labelFromSlug(p.slug), source: p.source, linkedTo: holder ? { ...holder.workspaceIdentity } : null };
+    return { projectId: p.projectId, url: p.url, label: labelFromSlug(p.slug) || fallbackLabel(p.projectId), source: p.source, linkedTo: holder ? { ...holder.workspaceIdentity } : null };
   };
 
   const getState = ({ url = null } = {}) => ({ store: store.info(), records: all(), current: describeCurrent(url) });

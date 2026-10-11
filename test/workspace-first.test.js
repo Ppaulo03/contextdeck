@@ -195,7 +195,7 @@ test('a suspect workspace refuses the association: the page stays in A with a no
   v.navigate(chatUrl(7));
   assert.equal(w.bound(7), null);
   const s = w.navigator.getState();
-  assert.match(s.pending, /nao foi verificada/);
+  assert.match(s.pending.text, /nao foi verificada/);
   assert.deepEqual(barModel(s).banner.actions.map((a) => a.action), ['retry']);
   assert.equal(w.manager.get(v.id).scope, WK('w1'), 'still reachable in its workspace');
   assert.equal(v.loads.length, 1);
@@ -211,7 +211,7 @@ test('Herdr disconnected: the association waits (verifiable destination required
   w.disconnect();
   v.navigate(chatUrl(7));
   assert.equal(w.bound(7), null);
-  assert.match(w.navigator.getState().pending, /Sem conexao/);
+  assert.match(w.navigator.getState().pending.text, /Sem conexao/);
   w.connect();
   w.adoption.resolve();
   assert.equal(w.bound(7).workspaceIdentity.workspaceId, 'w1', 'the pending creation still belongs to the workspace of the click');
@@ -366,7 +366,7 @@ test('banner model: transfer needs its own second click, pending offers one dire
   const armed = barModel({ ...base, conflict }, null, true).banner.actions.find((a) => a.action === 'transfer');
   assert.deepEqual([armed.armed, armed.label], [true, 'Confirmar transferência']);
   assert.equal(barModel({ ...base, conflict }).banner.actions.find((a) => a.action === 'transfer').label, 'Transferir vínculo…');
-  assert.deepEqual(barModel({ ...base, pending: 'Conversa ainda nao vinculada: x' }).banner.actions.map((a) => a.action), ['retry']);
+  assert.deepEqual(barModel({ ...base, pending: { kind: 'pending', code: 'x', text: 'Conversa ainda nao vinculada: x' } }).banner.actions.map((a) => a.action), ['retry']);
 });
 
 // ---- unbinding the conversation that is open --------------------------------------------------------------------------------------------------
@@ -562,4 +562,104 @@ test('transfer from a NEW conversation page (even in an empty workspace) leaves 
   assert.equal(showing(w, w.B[0].conversationKey).length, 2, 'the old page is kept, outside any workspace');
   assert.equal(w.manager.get(own.id).scope, null);
   assert.equal(w.navigator.getUnbound().length, 1);
+}));
+
+// ---- Projects: offer to link the Project of the page, confirmation for chats outside the linked Project ------------------------------------------------------
+function withProjectAdoption(w, { link = false } = {}) {
+  const store = createBindingsStore({ file: path.join(w.root, 'project-bindings.json'), model: projectModel });
+  w.projects = createProjectBindings({ store, session: w.session, bindings: w.bindings, observer: w.observer, selection: w.selection });
+  w.adoption = createContextAdoption({ session: w.session, navigator: w.navigator, bindings: w.bindings, selection: w.selection, projects: w.projects });
+  w.navigator.setNoteProvider((id) => w.adoption.noteOf(id));
+  w.creation = createProjectCreation({ session: w.session, navigator: w.navigator, projects: w.projects });
+  if (link) assert.equal(w.projects.link({ target: w.target('w1'), url: PROJECT_HOME, selectedAtOpen: 'w1', targetChosen: true }).ok, true);
+}
+const OTHER = 'g-p-ffffffffffffffffffffffffffffffff';
+
+test('a Project page on screen in a workspace without a Project: the app asks whether to link it (nothing is read from the page)', () => run(async (w) => {
+  withProjectAdoption(w);
+  const v = w.newChat();
+  v.finishLoad(PROJECT_HOME);
+  const p = w.navigator.getState().pending;
+  assert.deepEqual([p.kind, p.code], ['offer', 'project_offer']);
+  assert.match(p.text, /Você está no Project "Project 6ac650"\. Vincular este Project ao workspace api \(w1\)\?/);
+  assert.deepEqual(barModel(w.navigator.getState()).banner.actions.map((a) => a.action), ['link-project', 'skip']);
+  assert.equal(w.projects.all().length, 0, 'asking links nothing');
+  const r = w.adoption.linkProject({ viewId: v.id });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(w.projects.forWorkspace(w.target('w1')).projectId, 'g-p-6ac6503eb7e881919958af060b1297a5');
+  assert.equal(w.navigator.getState().pending, null, 'answered');
+}));
+
+test('the Project label is never "sem nome": the slug when the address has one, else a short form of the id; a typed name wins and is kept', () => run(async (w) => {
+  withProjectAdoption(w);
+  const link = (url, extra = {}) => w.projects.link({ target: w.target('w1'), url, selectedAtOpen: 'w1', targetChosen: true, ...extra });
+  assert.equal(link(PROJECT_HOME).record.label, 'Project 6ac650');
+  assert.equal(link(inProject(7), { label: '' }).record.label, 'system framework');
+  assert.equal(link(PROJECT_HOME, { label: 'Bicho' }).record.label, 'Bicho');
+  assert.equal(link(PROJECT_HOME).record.label, 'Bicho', 're-linking without a name keeps it');
+}));
+
+test('"Agora não" dismisses the offer for that Project (this session); no offer when the workspace has a Project', () => run(async (w) => {
+  withProjectAdoption(w);
+  const v = w.newChat();
+  v.finishLoad(PROJECT_HOME);
+  assert.equal(w.adoption.skip({ viewId: v.id }).ok, true);
+  assert.equal(w.navigator.getState().pending, null);
+  v.navigate(`https://chatgpt.com/g/${OTHER}/project`);
+  assert.equal(w.navigator.getState().pending.kind, 'offer', 'another Project is a new question');
+  v.navigate(PROJECT_HOME);
+  assert.equal(w.navigator.getState().pending, null, 'the dismissed one stays quiet');
+  assert.equal(w.projects.link({ target: w.target('w1'), url: PROJECT_HOME, selectedAtOpen: 'w1', targetChosen: true }).ok, true);
+  v.navigate(`https://chatgpt.com/g/${OTHER}/project`);
+  assert.equal(w.navigator.getState().pending, null, 'a workspace that has a Project is not offered another one');
+}));
+
+test('no offer for a Project that belongs to another workspace', () => run(async (w) => {
+  withProjectAdoption(w);
+  w.select('w2');
+  assert.equal(w.projects.link({ target: w.target('w2'), url: PROJECT_HOME, selectedAtOpen: 'w2', targetChosen: true }).ok, true);
+  w.select('w1');
+  const v = w.newChat();
+  v.finishLoad(PROJECT_HOME);
+  assert.equal(w.navigator.getState().pending, null);
+}));
+
+test('workspace with a Project: a chat OUTSIDE it (general, or another Project) asks for confirmation before binding; inside it nothing is asked', () => run(async (w) => {
+  withProjectAdoption(w, { link: true });
+  const general = w.newChat();
+  general.navigate(chatUrl(7));
+  assert.equal(w.bound(7), null, 'not bound yet');
+  const p = w.navigator.getState().pending;
+  assert.deepEqual([p.kind, p.code], ['confirm', 'outside_project']);
+  assert.match(p.text, /vinculado ao Project "Project 6ac650", mas esta conversa está fora dele\. Vincular a conversa a este workspace mesmo assim\?/);
+  assert.deepEqual(barModel(w.navigator.getState()).banner.actions.map((a) => a.label), ['Vincular mesmo assim', 'Deixar sem vínculo']);
+  assert.equal(w.adoption.retry({ viewId: general.id }).ok, true, 'confirmed');
+  assert.equal(w.bound(7).workspaceIdentity.workspaceId, 'w1');
+  const other = w.newChat();
+  other.navigate(`https://chatgpt.com/g/${OTHER}-x/c/${chatUrl(8).slice(-36)}`);
+  assert.match(w.navigator.getState().pending.text, /\(em outro Project\)/);
+  assert.equal(w.bindings.all().length, 3, 'still only the earlier bindings plus the confirmed one');
+  const inside = w.newChat();
+  inside.navigate(inProject(9));
+  assert.equal(w.bound(9, inProject(9)).workspaceIdentity.workspaceId, 'w1', 'inside the linked Project: bound without asking');
+}));
+
+test('"Deixar sem vínculo": the chat stays where it is, unbound, and is not asked again while the page shows it', () => run(async (w) => {
+  withProjectAdoption(w, { link: true });
+  const v = w.newChat();
+  v.navigate(chatUrl(7));
+  assert.equal(w.adoption.skip({ viewId: v.id }).ok, true);
+  w.adoption.resolve();
+  w.navigator.reconcile();
+  assert.equal(w.navigator.getState().pending, null);
+  assert.equal(w.bound(7), null);
+  assert.equal(w.manager.get(v.id).scope, WK('w1'));
+  assert.equal(w.fake.views.length, 1);
+}));
+
+test('a workspace without a Project never asks the outside-Project question', () => run(async (w) => {
+  withProjectAdoption(w);
+  const v = w.newChat();
+  v.navigate(chatUrl(7));
+  assert.equal(w.bound(7).workspaceIdentity.workspaceId, 'w1');
 }));

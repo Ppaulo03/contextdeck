@@ -53,5 +53,8 @@ function parseProjectUrl(input) {
 
 // A label proposed from the slug, only as a default the user can edit (never an identity).
 const labelFromSlug = (slug) => (slug ? slug.replace(/-+/g, ' ').trim() : '');
+// The Project home has no slug (observed), and the name is never read from the page: without a name typed by the user the label is
+// a short form of the id, so it is never shown as "sem nome".
+const fallbackLabel = (projectId) => `Project ${String(projectId).replace(/^g-p-/, '').slice(0, 6)}`;
 
-module.exports = { parseProjectUrl, labelFromSlug, ID_RE };
+module.exports = { parseProjectUrl, labelFromSlug, fallbackLabel, ID_RE };

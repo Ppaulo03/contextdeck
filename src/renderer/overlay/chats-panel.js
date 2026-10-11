@@ -25,12 +25,13 @@ export function createChatsPanel({ api, closeOverlay }) {
   let state = null;
   let targetId = null;
   let selectedAtOpen = null;
-  let chosen = false;            // the destination was picked in this panel (or the selection is the user's own)
+  const chosen = true;           // the destination (the current workspace by default, or the one picked here) is on screen when the button is pressed
   let editing = null;
   let unbinding = null;
   let conflict = null;
   let projectIssue = null;       // a refused Project link waiting for an explicit decision
   let projectUrl = '';
+  let projectLabel = '';         // the name the user gives the Project (the page's name is never read)
   let unlinking = false;
   let busy = false;
   let draft = { label: '', url: '' };
@@ -40,11 +41,8 @@ export function createChatsPanel({ api, closeOverlay }) {
   const isStale = () => Boolean(state) && selectedId() !== selectedAtOpen;
   const target = () => ({ session: state.session, workspaceId: targetId });
   // An estimated selection is not proposed as the destination: the user chooses one (no checkbox, no second click).
-  const defaultTarget = () => {
-    const id = selectedId();
-    const m = panelModel(state, id);
-    return m.estimated ? null : id;
-  };
+  // The destination is the workspace we are in, always: pressing the button with it on screen is the choice.
+  const defaultTarget = () => selectedId();
 
   function say(text, isError = false) {
     message.textContent = text || '';
@@ -127,12 +125,21 @@ export function createChatsPanel({ api, closeOverlay }) {
   // ---- Project of the workspace (experimental: only when main says projectsEnabled) ------------------------------------------
   async function linkProject(source, extra = {}) {
     const args = { source, ...common(), ...extra };
+    if (projectLabel.trim()) args.label = projectLabel.trim();
     if (source === 'url') args.url = projectUrl;
     const result = await run(() => api.projectsLink(args));
     if (!result) return;
-    if (result.ok) { projectIssue = null; projectUrl = ''; say(result.renamed ? 'Project atualizado (nome alterado no ChatGPT).' : 'Project vinculado.'); }
+    if (result.ok) { projectIssue = null; projectUrl = ''; projectLabel = ''; say(result.renamed ? 'Project atualizado (nome alterado no ChatGPT).' : 'Project vinculado.'); }
     else if (result.error && ['project_already_linked', 'project_conflict', 'workspace_suspect'].includes(result.error.code)) { projectIssue = { code: result.error.code, message: result.error.message, source }; say(''); }
     else say(result.error && result.error.message ? result.error.message : 'Não foi possível vincular o Project.', true);
+    render();
+  }
+
+  // Renaming is re-linking the SAME Project with another label (same id: the record is updated, nothing else changes).
+  async function renameProject(record) {
+    const result = await run(() => api.projectsLink({ source: 'url', url: record.url, label: projectLabel.trim(), target: target(), selectedAtOpen, targetChosen: true }));
+    if (!result) return;
+    if (result.ok) { projectLabel = ''; say('Nome atualizado.'); } else say((result.error && result.error.message) || 'Não foi possível salvar o nome.', true);
     render();
   }
 
@@ -157,6 +164,9 @@ export function createChatsPanel({ api, closeOverlay }) {
       else row.append(button('Remover vínculo', () => { unlinking = true; render(); }, { danger: true, key: 'project-unlink' }));
       sec.append(row);
     } else sec.append(el('p', 'chats-note', 'Nenhum Project vinculado a este workspace.'));
+    sec.append(el('div', 'chats-row', ''));
+    sec.children[sec.children.length - 1].append(input('project-label', projectLabel, record ? 'Novo nome do Project (opcional)' : 'Nome do Project (opcional)', 80, (v) => { projectLabel = v; }));
+    if (record) sec.children[sec.children.length - 1].append(button('Salvar nome', () => void renameProject(record), { disabled: !writable || !projectLabel.trim(), key: 'project-rename', title: 'Só muda o nome mostrado aqui' }));
     const cur = p && p.current;
     sec.append(el('p', 'chats-note', cur ? 'Página atual: Project "' + (cur.label || cur.projectId) + '"' + (cur.linkedTo ? ' (já vinculado a ' + cur.linkedTo.workspaceId + ')' : '') + '.' : 'Abra um Project no ChatGPT e volte aqui para vinculá-lo.'));
     const row = el('div', 'chats-row');
@@ -210,7 +220,7 @@ export function createChatsPanel({ api, closeOverlay }) {
 ${row.url}`;   // the row is ellipsised; the tooltip has the rest
     main.append(detailNode);
     item.append(main);
-    if (orphan) item.append(button('Reassociar aqui', () => void reassign(row.bindingId, m), { disabled: !m.canWrite || isStale() || !m.targetId || (m.needsConfirm && !chosen), title: 'Move este vínculo para o destino escolhido acima' }));
+    if (orphan) item.append(button('Reassociar aqui', () => void reassign(row.bindingId, m), { disabled: !m.canWrite || isStale() || !m.targetId || false, title: 'Move este vínculo para o destino escolhido acima' }));
     else item.append(button('Editar', () => { editing = row.bindingId; render(); }));
     if (unbinding === row.bindingId) {
       item.append(button('Confirmar', () => void unbind(row.bindingId), { danger: true, title: 'Remove só o vínculo; a conversa no ChatGPT não é excluída' }), button('Não', () => { unbinding = null; render(); }));
@@ -226,12 +236,12 @@ ${row.url}`;   // the row is ellipsised; the tooltip has the rest
     body.textContent = '';
     if (!m.ready) { body.append(el('p', 'chats-note', m.message)); return; }
     const stale = isStale();
-    const writable = m.canWrite && !stale && Boolean(m.targetId) && !busy && (!m.needsConfirm || chosen);
+    const writable = m.canWrite && !stale && Boolean(m.targetId) && !busy;
 
     const dest = section('Destino');
     if (stale) {
       const banner = el('div', 'chats-banner');
-      banner.append(el('span', '', 'O workspace selecionado mudou desde que este painel foi aberto. Nada foi gravado; revise o destino. '), button('Usar o selecionado agora', () => { selectedAtOpen = selectedId(); targetId = defaultTarget(); chosen = false; conflict = null; render(); }, { key: 'review' }));
+      banner.append(el('span', '', 'O workspace selecionado mudou desde que este painel foi aberto. Nada foi gravado; revise o destino. '), button('Usar o selecionado agora', () => { selectedAtOpen = selectedId(); targetId = defaultTarget(); conflict = null; render(); }, { key: 'review' }));
       dest.append(banner);
     }
     const pick = createDropdown({
@@ -239,14 +249,13 @@ ${row.url}`;   // the row is ellipsised; the tooltip has the rest
       label: 'Workspace de destino',
       items: m.options.map((o) => ({ value: o.id, text: o.text })),
       value: m.targetId || undefined,
-      onChange: (value) => { targetId = value; chosen = true; conflict = null; render(); }
+      onChange: (value) => { targetId = value; conflict = null; render(); }
     });
     const pickRow = el('div', 'chats-row');
     pickRow.append(pick.root);
     dest.append(pickRow);
-    if (m.estimated && !chosen) dest.append(el('p', 'chats-note is-warning', m.estimateText));
-    else if (m.targetNote) dest.append(el('p', 'chats-note', `Destino ${m.targetText} (${m.targetNote}).`));
-    if (m.blocked && !(m.estimated && !chosen)) dest.append(el('p', 'chats-note is-warning', m.blocked));
+    if (m.targetNote) dest.append(el('p', 'chats-note', `Destino ${m.targetText} (${m.targetNote}).`));
+    if (m.blocked) dest.append(el('p', 'chats-note is-warning', m.blocked));
     if (m.storeNotice) dest.append(el('p', 'chats-note is-warning', m.storeNotice));
     body.append(dest);
 
@@ -295,7 +304,7 @@ ${row.url}`;   // the row is ellipsised; the tooltip has the rest
   return {
     async open(opened) {
       anchor = opened;
-      busy = false; editing = null; unbinding = null; conflict = null; chosen = false; projectIssue = null; projectUrl = ''; unlinking = false;
+      busy = false; editing = null; unbinding = null; conflict = null; projectIssue = null; projectUrl = ''; projectLabel = ''; unlinking = false;
       draft = { label: '', url: '' };
       say('');
       state = await api.chatsState();

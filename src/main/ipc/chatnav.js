@@ -46,7 +46,7 @@ function registerChatNavIpc({ ipcMain, trusted, trustedOverlay = () => false, wi
   // transfer the binding here, go back). The arguments are the page and the action; main decides everything else.
   ipcMain.handle('chatnav:resolve', guarded((navigator, args) => {
     if (!resolve) return { ok: false, error: { code: 'not_ready', message: 'O ChatGPT ainda nao esta pronto.' } };
-    if (typeof args.viewId !== 'string' || !VIEW_RE.test(args.viewId) || !['retry', 'go', 'transfer', 'back'].includes(args.action)) return invalid();
+    if (typeof args.viewId !== 'string' || !VIEW_RE.test(args.viewId) || !['retry', 'go', 'transfer', 'back', 'skip', 'link-project'].includes(args.action)) return invalid();
     return resolve({ viewId: args.viewId, action: args.action });
   }));
 

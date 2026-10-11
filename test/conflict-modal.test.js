@@ -189,7 +189,7 @@ test('Voltar from a tab that navigated away (sidebar click inside the same page)
 
 test('the strip does not duplicate the modal: only a pending association is offered there', () => {
   const strip = fs.readFileSync('src/renderer/components/chat-strip.js', 'utf8');
-  assert.match(strip, /model\.banner\.kind === 'pending'/);
+  assert.match(strip, /model\.banner\.kind !== 'conflict'/);
   assert.equal(bannerOf({ conflict: { viewId: 'v1', boundTo: { id: 'w2', label: 'app', openable: true }, current: { id: 'w1', label: 'api' }, transferable: false } }).actions.map((a) => a.action).join(), 'go,back');
 });
 

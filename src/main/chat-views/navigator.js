@@ -473,6 +473,9 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
 
   // The page on screen shows a conversation that is bound to ANOTHER workspace than the one the page lives in. Nothing is
   // changed by detecting it: the UI offers going there, an explicit transfer, or going back.
+  // A note is text (a failure) or { kind, code, text } (a question for the user); the page on screen shows at most one.
+  const normalizeNote = (n) => (!n ? null : (typeof n === 'string' ? { kind: 'pending', code: 'pending', text: n } : n));
+
   function conflictOf(visible, all, sel) {
     if (!visible || !visible.scope || visible.identity.state !== 'durable' || !manager.isAttached()) return null;
     const b = all.find((x) => x.conversationKey === visible.identity.key);
@@ -528,7 +531,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
       return {
         viewId: v.id, label, relation: v.relation, active: v.id === visibleId, loading: v.page === 'loading', failed: v.page === 'error',
         activity: activityOf(v),
-        note: notes ? notes(v.id) || '' : '',
+        note: notes ? ((normalizeNote(notes(v.id)) || {}).text || '') : '',
         warning: v.relation === REL.DIVERGED || v.relation === REL.LEFT || Boolean(elsewhere) || duplicated.has(v.id), bound: Boolean(other)
       };
     });
@@ -543,7 +546,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
       tabs, temporaries, empty,
       activeViewId: visible ? visible.id : null,
       conflict: conflictOf(visible, all, sel),
-      pending: visible && notes && visible.scope ? (notes(visible.id) || null) : null,
+      pending: visible && notes && visible.scope ? normalizeNote(notes(visible.id)) : null,
       visibleRelation: visible ? visible.relation : null,
       duplicates: manager.duplicates().length
     };
@@ -589,6 +592,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
   return {
     reconcile, getWorkspaceActivity, getGlobalActivity, resolveActivityTarget, setMode, selectBinding, newConversation, selectTemporary, openUnscoped, getState,
     getUnbound, openUnbound, releaseConversation, contextViews, confirmAdopted, moveToBinding, backFromConflict, pagesShowing, releasePage, focusExisting,
+    urlOf: (viewId) => { const h = typeof viewId === 'string' ? manager.handleOf(viewId) : null; return h && !h.isDestroyed() ? h.getUrl() : ''; },
     canGoBack: (viewId) => manager.canGoBack(viewId),
     goBackPage: (viewId) => manager.goBack(viewId),
     setNoteProvider: (fn) => { notes = typeof fn === 'function' ? fn : null; },

@@ -60,7 +60,7 @@ export function initChatStrip({ dock, feedback, openChatsPanel }) {
     all.forEach((item, index) => tabsRoot.append(tab(item, () => void choose(item), index, activeIndex)));
     if (!all.length && model.ready && model.workspaceKey && !model.banner) tabsRoot.append(el('span', 'chatbar-none', 'Sem conversas vinculadas'));
     // A conflict is a modal (overlay), not a strip item; only a pending association is offered here.
-    if (model.banner && model.banner.kind === 'pending') tabsRoot.append(bannerNode(model.banner));
+    if (model.banner && model.banner.kind !== 'conflict') tabsRoot.append(bannerNode(model.banner));
     newButton.disabled = !model.ready || (Boolean(model.workspaceKey) && !model.canCreate);
     setAttr(newButton, 'aria-label', model.createLabel);
     newButton.title = model.workspaceKey ? 'Nova conversa temporária neste workspace (não é vinculada automaticamente)' : 'Abrir o ChatGPT sem vínculo';

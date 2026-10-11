@@ -19,8 +19,11 @@
 // A conversation bound to another workspace is never moved: it is a conflict, offered to the user as go / transfer / back.
 // A refused adoption (workspace suspect or unavailable, limit...) keeps the page in its workspace as a pending association
 // with a note and a direct action to retry; nothing is destroyed.
-function createContextAdoption({ session, navigator, bindings, selection, wait = (ms) => new Promise((r) => setTimeout(r, ms)), leaveTimeoutMs = 2500 }) {
-  const pendingNotes = new Map();      // viewId -> { code, text }
+const { parseProjectUrl } = require('../chat/project-identity');
+
+function createContextAdoption({ session, navigator, bindings, selection, projects = null, wait = (ms) => new Promise((r) => setTimeout(r, ms)), leaveTimeoutMs = 2500 }) {
+  const pendingNotes = new Map();      // viewId -> { kind: 'pending' | 'confirm', code, text }
+  const dismissedOffers = new Set();   // `${workspaceId}|${projectId}`: "Agora nao" on the offer to link a Project (this session only)
   // Conversations the user explicitly unbound while a page still shows them. Without this the next evaluation would bind them
   // again (the page is on screen, in the workspace). Forgotten as soon as no page shows the conversation any more, so opening
   // it again later, in a workspace, is a new act.
@@ -59,10 +62,20 @@ function createContextAdoption({ session, navigator, bindings, selection, wait =
     }
     if (declined.has(v.identity.key) && !force) return 'declined';
     if (!(v.pending || v.visible || force)) return 'passive';
+    // A workspace with a Project: a conversation that is outside it (a general chat, or another Project) is bound only after the
+    // user confirms ("Vincular mesmo assim"). Inside the Project nothing is asked.
+    const rec = projects && !force ? projects.forWorkspace({ session, workspaceId: v.workspaceId }) : null;
+    if (rec && rec.status === 'linked') {
+      const p = parseProjectUrl(v.identity.url);
+      if (!(p.ok && p.projectId === rec.projectId)) {
+        pendingNotes.set(v.viewId, { kind: 'confirm', code: 'outside_project', text: `Este workspace está vinculado ao Project "${rec.label}", mas esta conversa está fora dele${p.ok ? ' (em outro Project)' : ''}. Vincular a conversa a este workspace mesmo assim?` });
+        return 'pending:outside_project';
+      }
+    }
     const r = bindings.adopt({ target: { session, workspaceId: v.workspaceId }, url: v.identity.url });
     if (!r.ok) {
       if (r.error.code === 'conflict') { pendingNotes.delete(v.viewId); return 'conflict'; }
-      pendingNotes.set(v.viewId, { code: r.error.code, text: noteFor(r.error.code) });
+      pendingNotes.set(v.viewId, { kind: 'pending', code: r.error.code, text: noteFor(r.error.code) });
       return `pending:${r.error.code}`;
     }
     pendingNotes.delete(v.viewId);
@@ -89,6 +102,7 @@ function createContextAdoption({ session, navigator, bindings, selection, wait =
     } finally { resolving = false; }
   }
 
+  const wsLabel = (id) => { const o = (selection.getState().options || []).find((x) => x.id === id); return o && o.label ? `${o.label} (${id})` : id; };
   const find = (viewId) => navigator.contextViews().find((v) => v.viewId === viewId) || null;
   const fail = (code, message) => ({ ok: false, error: { code, message } });
 
@@ -147,6 +161,45 @@ function createContextAdoption({ session, navigator, bindings, selection, wait =
     return false;
   }
 
+  // ---- offer to link the Project of the page on screen ----------------------------------------------------------------------
+  // A page of a Project (its home, or a conversation inside it) is on screen in a workspace that has no Project: ask whether to
+  // link it. Nothing is read from the page; only its address. Not asked again after "Agora nao" (this session), nor for a Project
+  // that already belongs to another workspace.
+  function offerFor(viewId) {
+    if (!projects) return null;
+    const v = find(viewId);
+    if (!v || !v.visible) return null;
+    if (projects.forWorkspace({ session, workspaceId: v.workspaceId })) return null;
+    const url = navigator.urlOf(viewId);
+    const cur = url ? projects.describeCurrent(url) : null;
+    if (!cur || cur.linkedTo || dismissedOffers.has(`${v.workspaceId}|${cur.projectId}`)) return null;
+    return { viewId, workspaceId: v.workspaceId, projectId: cur.projectId, url, label: cur.label };
+  }
+
+  function linkProject({ viewId } = {}) {
+    const offer = offerFor(viewId);
+    if (!offer) return fail('no_offer', 'Nao ha Project para vincular nesta pagina.');
+    const sel = selection.getState();
+    const current = sel.selected ? sel.selected.workspaceId : null;
+    if (current !== offer.workspaceId) return fail('context_changed', 'O workspace selecionado mudou. Revise a escolha.');
+    // The button is the explicit choice (destination on screen); set here, never taken from the renderer.
+    return projects.link({ target: { session, workspaceId: offer.workspaceId }, url: offer.url, selectedAtOpen: current, targetChosen: true });
+  }
+
+  // "Agora nao" / "Deixar sem vinculo": the user declines what the banner asked.
+  function skip({ viewId } = {}) {
+    const offer = offerFor(viewId);
+    const note = pendingNotes.get(viewId);
+    if (note && note.kind === 'confirm') {
+      const v = find(viewId);
+      if (v && v.identity.state === 'durable') decline(v.identity.key);
+      pendingNotes.delete(viewId);
+      return { ok: true };
+    }
+    if (offer) { dismissedOffers.add(`${offer.workspaceId}|${offer.projectId}`); return { ok: true }; }
+    return fail('nothing_to_skip', 'Nada a dispensar.');
+  }
+
   const back = ({ viewId } = {}) => navigator.backFromConflict(viewId);
   // "Ir para <workspace>", first half: the page that opened the other workspace's conversation does the local "Voltar" - it
   // returns to what this workspace had (its own history, or the previous page) - so that, when the user comes back, the conflicting
@@ -171,7 +224,14 @@ function createContextAdoption({ session, navigator, bindings, selection, wait =
   // The user removed the binding of this conversation: leave it unbound while a page shows it.
   const decline = (key) => { if (typeof key === 'string') declined.add(key); };
 
-  return { resolve, retry, transfer, back, leave, decline, noteOf: (viewId) => (pendingNotes.get(viewId) || {}).text || '', pending: () => [...pendingNotes.keys()] };
+  return { resolve, retry, transfer, back, leave, decline, linkProject, skip,
+    // What the page on screen needs from the user, if anything: a pending/confirm note of its own, else the offer to link its Project.
+    noteOf: (viewId) => {
+      const n = pendingNotes.get(viewId);
+      if (n) return n;
+      const offer = offerFor(viewId);
+      return offer ? { kind: 'offer', code: 'project_offer', text: `Você está no Project "${offer.label}". Vincular este Project ao workspace ${wsLabel(offer.workspaceId)}?` } : null;
+    }, pending: () => [...pendingNotes.keys()] };
 }
 
 module.exports = { createContextAdoption };

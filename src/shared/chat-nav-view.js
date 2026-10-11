@@ -57,7 +57,13 @@ function bannerOf(state, armedTransfer) {
     actions.push({ action: 'back', label: 'Voltar', title: 'Volta ao que você via neste workspace; a conversa fica no workspace dela' });
     return { kind: 'conflict', viewId: c.viewId, text: `Esta conversa pertence ao workspace ${wsText(c.boundTo)}. Você está em ${wsText(c.current)}.`, actions };
   }
-  if (state.pending) return { kind: 'pending', viewId: state.activeViewId, text: state.pending, actions: [{ action: 'retry', label: 'Tentar vincular', title: 'Tenta associar esta conversa ao workspace' }] };
+  const p = state.pending;
+  if (p) {
+    const text = typeof p === 'string' ? p : p.text;
+    if (p.kind === 'offer') return { kind: 'offer', viewId: state.activeViewId, text, actions: [{ action: 'link-project', label: 'Vincular Project', title: 'Vincula este Project ao workspace: novas conversas dele começam aqui' }, { action: 'skip', label: 'Agora não', title: 'Não perguntar de novo para este Project nesta sessão' }] };
+    if (p.kind === 'confirm') return { kind: 'confirm', viewId: state.activeViewId, text, actions: [{ action: 'retry', label: 'Vincular mesmo assim', title: 'Vincula esta conversa ao workspace, mesmo fora do Project dele' }, { action: 'skip', label: 'Deixar sem vínculo', title: 'A conversa continua aqui, sem vínculo' }] };
+    return { kind: 'pending', viewId: state.activeViewId, text, actions: [{ action: 'retry', label: 'Tentar vincular', title: 'Tenta associar esta conversa ao workspace' }] };
+  }
   return null;
 }
 

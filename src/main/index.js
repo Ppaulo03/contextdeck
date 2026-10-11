@@ -5,7 +5,10 @@ const path = require('node:path');
 const electron = require('electron');
 const { loadSettings } = require('./persistence/settings');
 const { loadUiState, saveUiState } = require('./persistence/ui-state');
-const { USER_DATA_DIRNAME, UI_STATE_FILE, CHAT_BINDINGS_FILE } = require('./persistence/identity');
+const { USER_DATA_DIRNAME, UI_STATE_FILE, CHAT_BINDINGS_FILE, PROJECT_BINDINGS_FILE } = require('./persistence/identity');
+const projectModel = require('./project-bindings/model');
+const { createProjectBindings } = require('./project-bindings/service');
+const { createProjectCreation } = require('./project-bindings/creation');
 const { createBindingsStore } = require('./chat-bindings/store');
 const { createChatBindings } = require('./chat-bindings/service');
 const { startChatsPusher } = require('./ipc/chats');
@@ -63,6 +66,13 @@ async function bootstrap() {
     observer,
     selection
   });
+  // Project links (M01-I3B-3) are EXPERIMENTAL and off by default: the Project URL shape has not been validated on a real
+  // account (docs/validation/m01-i3b-3.md). Off means no file is read or written and "Nova conversa" is unchanged.
+  const projectsOn = process.env.CONTEXTDECK_PROJECTS === '1';
+  const projects = projectsOn
+    ? createProjectBindings({ store: createBindingsStore({ file: path.join(userDataDir, PROJECT_BINDINGS_FILE), model: projectModel }), session: settings.herdrSession, bindings, observer, selection })
+    : null;
+  let creation = null;
   let navPusher = { notify() {}, stop() {} };
   // Conversation activity per workspace (derived from the loaded views, never persisted) rides on the Herdr state the
   // selector already receives; it is re-sent only when it actually changed.
@@ -92,6 +102,7 @@ async function bootstrap() {
     observer,
     selection,
     getUrl: () => win.getChatUrl(),
+    extra: (url) => ({ projectsEnabled: projectsOn, projects: projects ? projects.getState({ url }) : null }),
     send: (channel, data) => { win.send(channel, data); win.sendToOverlay('overlay:chats-push', data); }
   });
   const shutdown = () => { herdr.stop(); stopPusher(); chatsPusher.stop(); navPusher.stop(); activityPusher.stop(); notices.stop(); selection.stop(); observer.stop(); };
@@ -105,6 +116,7 @@ async function bootstrap() {
     onClosed: shutdown,
     onChatNavigated: () => chatsPusher.notify(),
     onNavChange: () => {
+      creation?.resolve();
       navPusher.notify();
       chatsPusher.notify();
       const text = JSON.stringify(activity());
@@ -117,8 +129,9 @@ async function bootstrap() {
     chats: { session: settings.herdrSession, bindings, selection, onAttention: (event) => notices.push(event) }
   });
 
+  creation = projectsOn ? createProjectCreation({ session: settings.herdrSession, navigator: { newConversation: (a) => win.getNavigator().newConversation(a), selectTemporary: (a) => win.getNavigator().selectTemporary(a), viewInfo: (v) => win.getNavigator().viewInfo(v), reconcile: () => win.getNavigator().reconcile() }, bindings, projects, selection }) : null;
   navPusher = startChatNavPusher({ getState: () => win.getNavigator()?.getState(), send: (channel, data) => win.send(channel, data) });
-  registerIpc({ electron, win, herdr, observer, selection, activity, activityIpc: { getPayload: getActivityPayload, directOpen, notices, unbound }, bindings, notifyChats: () => { chatsPusher.notify(); win.getNavigator()?.reconcile(); }, settings, uiState, persist, userDataDir });
+  registerIpc({ electron, win, herdr, observer, selection, activity, activityIpc: { getPayload: getActivityPayload, directOpen, notices, unbound }, bindings, projects, newConversation: creation ? (a) => creation.start(a) : null, notifyChats: () => { chatsPusher.notify(); win.getNavigator()?.reconcile(); }, settings, uiState, persist, userDataDir });
   app.on('second-instance', () => win.focus());
   app.on('before-quit', shutdown);
   await win.create();

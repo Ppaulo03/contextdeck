@@ -29,6 +29,9 @@ export function createChatsPanel({ api, closeOverlay }) {
   let editing = null;
   let unbinding = null;
   let conflict = null;
+  let projectIssue = null;       // a refused Project link waiting for an explicit decision
+  let projectUrl = '';
+  let unlinking = false;
   let busy = false;
   let draft = { label: '', url: '' };
   let anchor = null;
@@ -119,6 +122,58 @@ export function createChatsPanel({ api, closeOverlay }) {
     if (result.ok) { conflict = null; say('Conversa reassociada.'); }
     else say(result.error && result.error.message ? result.error.message : 'Não foi possível reassociar.', true);
     render();
+  }
+
+  // ---- Project of the workspace (experimental: only when main says projectsEnabled) ------------------------------------------
+  async function linkProject(source, extra = {}) {
+    const args = { source, ...common(), ...extra };
+    if (source === 'url') args.url = projectUrl;
+    const result = await run(() => api.projectsLink(args));
+    if (!result) return;
+    if (result.ok) { projectIssue = null; projectUrl = ''; say(result.renamed ? 'Project atualizado (nome alterado no ChatGPT).' : 'Project vinculado.'); }
+    else if (result.error && ['project_already_linked', 'project_conflict', 'workspace_suspect'].includes(result.error.code)) { projectIssue = { code: result.error.code, message: result.error.message, source }; say(''); }
+    else say(result.error && result.error.message ? result.error.message : 'Não foi possível vincular o Project.', true);
+    render();
+  }
+
+  async function unlinkProject() {
+    unlinking = false;
+    const result = await run(() => api.projectsUnlink({ target: target() }));
+    if (!result) return;
+    say(result.ok ? 'Vínculo do Project removido. Nada mais foi alterado.' : (result.error && result.error.message) || 'Não foi possível remover.', !result.ok);
+    render();
+  }
+
+  function projectSection(m, writable) {
+    const p = state.projects;
+    const sec = section('Project ChatGPT (experimental)');
+    const record = p ? p.records.find((r) => r.workspaceIdentity.session === state.session && r.workspaceIdentity.workspaceId === m.targetId) : null;
+    if (p && p.store && p.store.notice) sec.append(el('p', 'chats-note is-warning', p.store.notice.message));
+    if (record) {
+      const status = record.status === 'linked' ? '' : (record.status === 'suspect' ? ' · identidade do workspace não verificada' : ' · ' + record.status);
+      sec.append(el('p', 'chats-note', 'Project: ' + (record.label || '(sem nome)') + status + '. Novas conversas deste workspace começam nele; as existentes não foram movidas.'));
+      const row = el('div', 'chats-row');
+      if (unlinking) row.append(button('Confirmar', () => void unlinkProject(), { danger: true, title: 'Remove só o vínculo; o Project no ChatGPT não é alterado' }), button('Não', () => { unlinking = false; render(); }));
+      else row.append(button('Remover vínculo', () => { unlinking = true; render(); }, { danger: true, key: 'project-unlink' }));
+      sec.append(row);
+    } else sec.append(el('p', 'chats-note', 'Nenhum Project vinculado a este workspace.'));
+    const cur = p && p.current;
+    sec.append(el('p', 'chats-note', cur ? 'Página atual: Project "' + (cur.label || cur.projectId) + '"' + (cur.linkedTo ? ' (já vinculado a ' + cur.linkedTo.workspaceId + ')' : '') + '.' : 'Abra um Project no ChatGPT e volte aqui para vinculá-lo.'));
+    const row = el('div', 'chats-row');
+    row.append(button(record ? 'Trocar pelo Project atual' : 'Vincular Project atual', () => void linkProject('current'), { disabled: !writable || !cur, key: 'project-link-current' }));
+    sec.append(row);
+    const byUrl = el('div', 'chats-row');
+    byUrl.append(input('project-url', projectUrl, 'https://chatgpt.com/g/g-p-…/project', 2048, (v) => { projectUrl = v; }), button('Vincular por URL', () => void linkProject('url'), { disabled: !writable || !projectUrl.trim(), key: 'project-link-url' }));
+    sec.append(byUrl);
+    if (projectIssue) {
+      const box = el('div', 'chats-banner');
+      box.append(el('span', '', projectIssue.message + ' '));
+      const flag = projectIssue.code === 'project_conflict' ? { move: true } : { replace: true };
+      const text = projectIssue.code === 'project_conflict' ? 'Mover para este workspace' : 'Substituir';
+      box.append(button(text, () => { const src = projectIssue.source; projectIssue = null; void linkProject(src, flag); }, { key: 'project-decide', disabled: !writable }), button('Cancelar', () => { projectIssue = null; render(); }));
+      sec.append(box);
+    }
+    return sec;
   }
 
   async function saveEdit(bindingId, values) {
@@ -212,6 +267,7 @@ ${row.url}`;   // the row is ellipsised; the tooltip has the rest
     byUrl.append(input('url', draft.url, 'https://chatgpt.com/c/…', 2048, (v) => { draft.url = v; }), button('Vincular por URL', () => void bind('url', m), { disabled: !writable || !draft.url.trim(), key: 'bind-url' }));
     bindSection.append(byUrl);
     body.append(bindSection);
+    if (state.projectsEnabled) body.append(projectSection(m, writable));
 
     if (conflict && conflict.binding) {
       const box = section('Conflito');
@@ -239,7 +295,7 @@ ${row.url}`;   // the row is ellipsised; the tooltip has the rest
   return {
     async open(opened) {
       anchor = opened;
-      busy = false; editing = null; unbinding = null; conflict = null; chosen = false;
+      busy = false; editing = null; unbinding = null; conflict = null; chosen = false; projectIssue = null; projectUrl = ''; unlinking = false;
       draft = { label: '', url: '' };
       say('');
       state = await api.chatsState();

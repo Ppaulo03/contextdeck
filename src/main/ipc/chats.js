@@ -21,7 +21,9 @@ function pickTarget(value) {
 // string | null are the only valid answers; a missing/odd value stays undefined so the service refuses it.
 const pickSelected = (v) => (v === null || typeof v === 'string' ? v : undefined);
 
-function registerChatsIpc({ ipcMain, trusted, win, bindings, notify }) {
+// Project links (M01-I3B-3, experimental, off unless CONTEXTDECK_PROJECTS=1): `projects` is null when off.
+// "Link the current Project" never trusts the renderer for the address: main reads it from the ChatGPT view, like for chats.
+function registerChatsIpc({ ipcMain, trusted, win, bindings, notify, projects = null }) {
   const guard = (fn) => (event, args) => {
     if (!trusted(event)) return denied;
     if (!isPlainObject(args)) return invalid();
@@ -30,7 +32,11 @@ function registerChatsIpc({ ipcMain, trusted, win, bindings, notify }) {
     return result;
   };
 
-  ipcMain.handle('chats:state', (event) => (trusted(event) ? bindings.getState({ url: win.getChatUrl() }) : null));
+  ipcMain.handle('chats:state', (event) => {
+    if (!trusted(event)) return null;
+    const url = win.getChatUrl();
+    return { ...bindings.getState({ url }), projectsEnabled: Boolean(projects), projects: projects ? projects.getState({ url }) : null };
+  });
 
   ipcMain.handle('chats:bind', guard((args) => {
     let url;
@@ -47,6 +53,33 @@ function registerChatsIpc({ ipcMain, trusted, win, bindings, notify }) {
       confirmTarget: args.confirmTarget === true,
       targetChosen: args.targetChosen === true
     });
+  }));
+
+  const off = { ok: false, error: { code: 'projects_disabled', message: 'A integracao com Projects do ChatGPT esta desativada.' } };
+
+  ipcMain.handle('projects:link', guard((args) => {
+    if (!projects) return off;
+    let url;
+    if (args.source === 'current') url = win.getChatUrl();
+    else if (args.source === 'url' && typeof args.url === 'string') url = args.url;
+    else return invalid();
+    if (args.label !== undefined && typeof args.label !== 'string') return invalid();
+    return projects.link({
+      target: pickTarget(args.target),
+      url,
+      label: optionalString(args.label),
+      selectedAtOpen: pickSelected(args.selectedAtOpen),
+      confirmTarget: args.confirmTarget === true,
+      targetChosen: args.targetChosen === true,
+      replace: args.replace === true,
+      move: args.move === true
+    });
+  }));
+
+  ipcMain.handle('projects:unlink', guard((args) => {
+    if (!projects) return off;
+    const target = pickTarget(args.target);
+    return target ? projects.unlink({ workspaceIdentity: target }) : invalid();
   }));
 
   ipcMain.handle('chats:update', guard((args) => {
@@ -72,7 +105,7 @@ function registerChatsIpc({ ipcMain, trusted, win, bindings, notify }) {
 
 // Pushes the compact state to the UI (and the overlay while the panel is open) when it changes, at most once
 // per `intervalMs` (leading + trailing) and only if the content differs from what was sent last.
-function startChatsPusher({ bindings, getUrl, observer, selection, send, intervalMs = 150, scheduler = { setTimeout, clearTimeout }, now = () => Date.now() }) {
+function startChatsPusher({ bindings, getUrl, extra = () => ({}), observer, selection, send, intervalMs = 150, scheduler = { setTimeout, clearTimeout }, now = () => Date.now() }) {
   let last = -Infinity;
   let lastText = '';
   let timer;
@@ -81,7 +114,8 @@ function startChatsPusher({ bindings, getUrl, observer, selection, send, interva
     timer = undefined;
     if (stopped) return;
     last = now();
-    const state = bindings.getState({ url: getUrl() });
+    const url = getUrl();
+    const state = { ...bindings.getState({ url }), ...extra(url) };
     const text = JSON.stringify(state);
     if (text === lastText) return;
     lastText = text;

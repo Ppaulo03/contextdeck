@@ -235,13 +235,13 @@ const HANDLE_CHANNELS = [
   'dock:reload-chat', 'dock:switch', 'git:delete-zip', 'git:diff', 'git:pick-repo', 'git:refs', 'git:set-refs',
   'herdr:refresh', 'herdr:select-workspace', 'herdr:set-sync-mode', 'herdr:state',
   'overlay:choose', 'overlay:close', 'overlay:open-chats-panel', 'overlay:open-workspace-menu', 'overlay:state',
-  'chats:bind', 'chats:reassign', 'chats:state', 'chats:unbind', 'chats:update',
+  'chats:bind', 'chats:reassign', 'chats:state', 'chats:unbind', 'chats:update', 'projects:link', 'projects:unlink',
   'chatnav:new', 'chatnav:open-unscoped', 'chatnav:select', 'chatnav:select-temporary', 'chatnav:state',
   'activity:dismiss', 'activity:open', 'activity:state', 'overlay:open-activity-center', 'activity:open-unbound', 'activity:bind-unbound', 'activity:new-unbound',
   'git:show', 'git:status', 'git:zip', 'pty:start'
 ].sort();
 // Chat bindings (M01-I3A): callable from the UI window AND from the overlay panel, never from the remote page.
-const CHATS_CHANNELS = ['chats:bind', 'chats:reassign', 'chats:state', 'chats:unbind', 'chats:update'];
+const CHATS_CHANNELS = ['chats:bind', 'chats:reassign', 'chats:state', 'chats:unbind', 'chats:update', 'projects:link', 'projects:unlink'];
 // What the local UI window may invoke vs what only the menu overlay may invoke (least privilege).
 const OVERLAY_ONLY = ['overlay:choose', 'overlay:close', 'overlay:state', 'activity:open', 'activity:dismiss', 'activity:open-unbound', 'activity:bind-unbound', 'activity:new-unbound'];
 // Global activity (M01-I3B-2H): the state is readable by the UI window and by the overlay; opening and dismissing only by the overlay.
@@ -566,7 +566,7 @@ test('M01-I3B-1: the navigation channels are UI-window-only and never reach the 
   const overlayPreload = read('src', 'preload', 'overlay.js');
   assert.doesNotMatch(overlayPreload, /chatnav/);
   const ipc = read('src', 'main', 'ipc', 'index.js');
-  assert.match(ipc, /registerChatNavIpc\(\{ ipcMain, trusted, win \}\)/, 'trusted = the UI window only (not the overlay)');
+  assert.match(ipc, /registerChatNavIpc\(\{ ipcMain, trusted, win, newConversation \}\)/, 'trusted = the UI window only (not the overlay)');
   assert.doesNotMatch(read('src', 'main', 'chat-view.js'), /ipcMain|ipcRenderer|preload\s*:/);
 });
 

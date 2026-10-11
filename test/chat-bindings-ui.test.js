@@ -96,7 +96,7 @@ function mountPanel(initial = chatsState(), { results = {} } = {}) {
   document.getElementById('notices').hidden = true;
   let current = initial;
   let openCb; let pushCb;
-  const calls = { bind: [], update: [], unbind: [], reassign: [], close: 0 };
+  const calls = { bind: [], update: [], unbind: [], reassign: [], projectsLink: [], projectsUnlink: [], close: 0 };
   const reply = (name, args) => (typeof results[name] === 'function' ? results[name](args) : (results[name] || { ok: true }));
   const window = {
     innerWidth: 1200,
@@ -108,7 +108,9 @@ function mountPanel(initial = chatsState(), { results = {} } = {}) {
       chatsBind: async (a) => { calls.bind.push(a); return reply('bind', a); },
       chatsUpdate: async (a) => { calls.update.push(a); return reply('update', a); },
       chatsUnbind: async (a) => { calls.unbind.push(a); return reply('unbind', a); },
-      chatsReassign: async (a) => { calls.reassign.push(a); return reply('reassign', a); }
+      chatsReassign: async (a) => { calls.reassign.push(a); return reply('reassign', a); },
+      projectsLink: async (a) => { calls.projectsLink.push(a); return reply('projectsLink', a); },
+      projectsUnlink: async (a) => { calls.projectsUnlink.push(a); return reply('projectsUnlink', a); }
     }
   };
   load(path.join(SRC, 'overlay', 'overlay.js'), { document, window });
@@ -396,4 +398,41 @@ test('markup: the indicator is a button in the top bar, chat-only, and the panel
   const overlayHtml = fs.readFileSync(path.join(SRC, 'overlay', 'overlay.html'), 'utf8');
   for (const id of ['chats', 'chats-title', 'chats-body', 'chats-message', 'chats-close']) assert.match(overlayHtml, new RegExp(`id="${id}"`));
   assert.match(overlayHtml, /id="chats"[^>]*role="dialog"[^>]*aria-modal="true"/);
+});
+
+// ---- Project section (M01-I3B-3, experimental) ------------------------------------------------------------------------------------
+
+const PID = `g-p-${'a'.repeat(32)}`;
+const projectState = (extra = {}, records = []) => chatsState({ projectsEnabled: true, projects: { store: { status: 'ok', writable: true, notice: null }, records, current: { projectId: PID, url: `https://chatgpt.com/g/${PID}-x/project`, label: 'x', source: 'project-page', linkedTo: null } }, ...extra });
+
+test('Project section: hidden unless main enables it', async () => {
+  const t = mountPanel(chatsState());
+  await t.open();
+  assert.doesNotMatch(t.text(), /Project ChatGPT/);
+  assert.equal(t.button('Vincular Project atual'), undefined);
+});
+
+test('Project section: link the current Project; nothing but the destination and choices is sent (no address)', async () => {
+  const t = mountPanel(projectState());
+  await t.open();
+  assert.match(t.text(), /Nenhum Project vinculado a este workspace/);
+  await t.click(t.button('Vincular Project atual'));
+  assert.deepEqual(t.calls.projectsLink, [{ source: 'current', target: { session: 'contextdeck', workspaceId: 'w1' }, selectedAtOpen: 'w1', targetChosen: false }]);
+  assert.match(t.message.textContent, /Project vinculado/);
+});
+
+test('Project section: a refused replacement waits for an explicit decision, then sends replace; unlink takes two clicks', async () => {
+  const rec = { workspaceIdentity: { session: 'contextdeck', workspaceId: 'w1' }, projectId: `g-p-${'b'.repeat(32)}`, label: 'antigo', status: 'linked' };
+  const t = mountPanel(projectState({}, [rec]), { results: { projectsLink: { ok: false, error: { code: 'project_already_linked', message: 'Este workspace ja tem outro Project vinculado. Substitua-o explicitamente.' } } } });
+  await t.open();
+  assert.match(t.text(), /Project: antigo/);
+  await t.click(t.button('Trocar pelo Project atual'));
+  assert.match(t.text(), /Substitua-o explicitamente/);
+  assert.equal(t.calls.projectsLink.length, 1, 'no automatic retry');
+  await t.click(t.button('Substituir'));
+  assert.equal(t.calls.projectsLink[1].replace, true);
+  await t.click(t.button('Remover vínculo'));
+  assert.equal(t.calls.projectsUnlink.length, 0);
+  await t.click(t.button('Confirmar'));
+  assert.deepEqual(t.calls.projectsUnlink, [{ target: { session: 'contextdeck', workspaceId: 'w1' } }]);
 });

@@ -161,13 +161,15 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
 
   // A new, unbound conversation under the selected workspace. The application's initial (never shown) page is
   // handed over without navigating it; otherwise a fresh page is created. Nothing is bound.
-  function newConversation({ workspaceKey } = {}) {
+  // `entryUrl` (only ever supplied by main from a validated Project binding, never by the renderer) is the page the new
+  // conversation starts on; with it the initial page is not reused (an existing page is never navigated).
+  function newConversation({ workspaceKey, entryUrl } = {}) {
     const g = guard(workspaceKey);
     if (!g.ok) return g;
-    const pristine = manager.list().find((v) => v.scope === null && v.pristine && v.relation === REL.TEMPORARY);
+    const pristine = entryUrl ? null : manager.list().find((v) => v.scope === null && v.pristine && v.relation === REL.TEMPORARY);
     let id;
     if (pristine) { manager.setScope(pristine.id, g.wk); id = pristine.id; }
-    else id = manager.create({ url: homeUrl, scope: g.wk });
+    else id = manager.create({ url: entryUrl || homeUrl, scope: g.wk });
     if (!id) return fail('open_failed', 'Nao foi possivel abrir uma nova conversa.');
     choice.set(g.wk, id);
     unboundChoice = null;
@@ -489,6 +491,8 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
   return {
     reconcile, getWorkspaceActivity, getGlobalActivity, resolveActivityTarget, setMode, selectBinding, newConversation, selectTemporary, openUnscoped, getState,
     getUnbound, openUnbound, newUnbound, unboundTarget,
+    // Read-only view of one page for the creation service: scope, identity (from the URL only), epoch and lifecycle.
+    viewInfo: (viewId) => (typeof viewId === 'string' ? manager.get(viewId) : null),
     getVisibleUrl: () => { const id = manager.getVisibleId(); const h = id && manager.isAttached() ? manager.handleOf(id) : null; return h && !h.isDestroyed() ? h.getUrl() : ''; },
     onChange(l) { listeners.add(l); return () => listeners.delete(l); },
     runtime: provider,

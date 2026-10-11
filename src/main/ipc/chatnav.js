@@ -13,7 +13,9 @@ const BINDING_RE = /^b_[0-9a-f]{16}$/;
 const VIEW_RE = /^v[0-9]{1,6}$/;
 const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 
-function registerChatNavIpc({ ipcMain, trusted, win }) {
+// `newConversation` (optional) replaces the navigator call of chatnav:new: main uses it to start the conversation in the
+// workspace's Project. Its only input is still the workspace key.
+function registerChatNavIpc({ ipcMain, trusted, win, newConversation = null }) {
   const nav = () => win.getNavigator();
   const guarded = (fn) => (event, args) => {
     if (!trusted(event)) return denied;
@@ -37,7 +39,7 @@ function registerChatNavIpc({ ipcMain, trusted, win }) {
 
   ipcMain.handle('chatnav:new', guarded((navigator, args) => {
     if (typeof args.workspaceKey !== 'string' || !KEY_RE.test(args.workspaceKey)) return invalid();
-    return navigator.newConversation({ workspaceKey: args.workspaceKey });
+    return newConversation ? newConversation({ workspaceKey: args.workspaceKey }) : navigator.newConversation({ workspaceKey: args.workspaceKey });
   }));
 
   ipcMain.handle('chatnav:open-unscoped', (event) => {

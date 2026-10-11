@@ -5,11 +5,13 @@
 // The picker list lives inside the footer (not in a floating popover) because the ChatGPT view
 // is a native view that would hide any DOM overlay; the footer reports its height to main, so
 // opening the list simply makes the footer taller instead of covering the page.
+import { $, el } from './dom.js';
+
 const BADGES = { head: 'HEAD', commit: 'commit', local: 'local', remote: 'remota', tag: 'tag', manual: 'manual' };
 const MAX_RENDERED = 150;
 
-export function initGitPanel({ dock, setNotice }) {
-  const $ = (id) => document.getElementById(id);
+export function initGitPanel({ dock, feedback }) {
+  const setNotice = (message, level) => feedback.notice(message, level);
   const footer = $('footer');
   const repoLabel = $('git-repo');
   const pickButton = $('git-pick');
@@ -52,7 +54,7 @@ export function initGitPanel({ dock, setNotice }) {
       const sel = selected[which];
       button.textContent = describe(sel, which);
       button.disabled = busy || !data;
-      button.classList.toggle('invalid', Boolean(data) && !sel);
+      button.classList.toggle('is-invalid', Boolean(data) && !sel);
       button.title = sel ? `${BADGES[sel.kind] || ''} ${sel.value}\n${sel.short} ${sel.subject || ''}`.trim() : (messages[which] || '');
     }
     const rev = selected.revision;
@@ -65,14 +67,14 @@ export function initGitPanel({ dock, setNotice }) {
 
   function disarm() {
     clearTimeout(armTimer);
-    deleteButton.classList.remove('armed');
+    deleteButton.classList.remove('is-armed');
     deleteButton.textContent = 'Excluir ZIP';
   }
 
   function render() {
     repoLabel.textContent = status.configured ? `Git: ${status.name}${status.suggested ? ' (sugerido)' : ''}` : 'Git: nao configurado';
     repoLabel.title = status.configured ? status.root : (status.error || '');
-    repoLabel.classList.toggle('unset', !status.configured);
+    repoLabel.classList.toggle('is-unset', !status.configured);
     const ready = status.configured && Boolean(data);
     diffButton.disabled = busy || !ready || !selected.base;
     showButton.disabled = busy || !ready || !selected.revision;
@@ -122,7 +124,7 @@ export function initGitPanel({ dock, setNotice }) {
     let result;
     try { result = await task(); } catch (error) { result = { ok: false, error: error?.message || String(error) }; }
     busy = false;
-    if (!result?.cancelled) setNotice(result?.ok ? result.message : `Erro: ${result?.error || 'falha desconhecida'}`);
+    if (!result?.cancelled) setNotice(result?.ok ? result.message : `Erro: ${result?.error || 'falha desconhecida'}`, result?.ok ? 'info' : 'error');
     await refresh();
   }
 
@@ -176,9 +178,9 @@ export function initGitPanel({ dock, setNotice }) {
     list.textContent = '';
     const current = selected[open.which];
     open.entries.forEach((entry, index) => {
-      const li = document.createElement('li');
+      const li = el('li');
       if (entry.group || entry.note) {
-        li.className = entry.group ? 'group' : 'empty';
+        li.className = entry.group ? 'menu-group' : 'menu-empty';
         li.setAttribute('role', 'presentation');
         li.textContent = entry.group || entry.note;
       } else {
@@ -187,22 +189,13 @@ export function initGitPanel({ dock, setNotice }) {
         li.setAttribute('role', 'option');
         const isCurrent = current && current.value === option.value;
         li.setAttribute('aria-selected', String(Boolean(isCurrent)));
-        li.className = `${isCurrent ? 'selected ' : ''}${index === open.active ? 'active' : ''}`.trim();
-        const badge = document.createElement('span');
-        badge.className = `badge ${option.kind}`;
-        badge.textContent = BADGES[option.kind];
-        const label = document.createElement('span');
-        label.className = 'olabel';
-        label.textContent = option.label;
-        const detail = document.createElement('span');
-        detail.className = 'odetail';
-        detail.textContent = option.detail || '';
-        li.append(badge, label, detail);
+        li.className = `menu-item${isCurrent ? ' is-selected' : ''}${index === open.active ? ' is-active' : ''}`;
+        li.append(el('span', `badge ${option.kind}`, BADGES[option.kind]), el('span', 'menu-label', option.label), el('span', 'menu-detail', option.detail || ''));
         li.addEventListener('mousedown', (event) => { event.preventDefault(); void choose(index); });
       }
       list.appendChild(li);
     });
-    const activeEl = list.querySelector('li.active');
+    const activeEl = list.querySelector('li.is-active');
     search.setAttribute('aria-activedescendant', activeEl ? activeEl.id : '');
     if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
   }
@@ -293,8 +286,8 @@ export function initGitPanel({ dock, setNotice }) {
   // Two-step confirmation instead of a dialog; only the ZIP generated last by this app can be removed.
   deleteButton.addEventListener('click', () => {
     if (!status.zip) return;
-    if (!deleteButton.classList.contains('armed')) {
-      deleteButton.classList.add('armed');
+    if (!deleteButton.classList.contains('is-armed')) {
+      deleteButton.classList.add('is-armed');
       deleteButton.textContent = 'Confirmar exclusao?';
       setNotice(`Excluir ${status.zip.name}? Mantenha o arquivo ate concluir a colagem/anexo. Clique de novo para confirmar.`);
       armTimer = setTimeout(disarm, 6000);
@@ -311,7 +304,13 @@ export function initGitPanel({ dock, setNotice }) {
     void refresh();
   });
 
-  new ResizeObserver(() => void dock.reportLayout({ footerHeight: footer.offsetHeight })).observe(footer);
+  let reportedHeight = -1;
+  new ResizeObserver(() => {
+    const height = footer.offsetHeight;
+    if (height === reportedHeight) return;
+    reportedHeight = height;
+    void dock.reportLayout({ footerHeight: height });
+  }).observe(footer);
 
   void (async () => {
     await refresh();

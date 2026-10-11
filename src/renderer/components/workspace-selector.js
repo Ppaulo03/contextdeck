@@ -1,84 +1,61 @@
-// Workspace selector in the top bar (M01-I2). It renders the state computed in the main process and
-// reports the user's choices; it never decides anything about Herdr itself.
+// Workspace selector in the top bar: a combobox-style trigger plus the Auto/Manual toggle. It renders
+// the view-model computed from the state pushed by the main process and reports the user's choices.
 //
-// Rule: updating the dropdown from state must not send workspace.focus. Setting `select.value` from
-// code does not fire a `change` event, and the handler additionally ignores changes made while
-// the UI is applying state, so only a real user choice reaches `herdrSelectWorkspace`.
-export function initWorkspaceSelector({ dock, setNotice }) {
-  const select = document.getElementById('ws-select');
-  const modeButton = document.getElementById('ws-mode');
-  const busy = document.getElementById('ws-busy');
-  let state = null;
-  let applying = false;
-  let signature = '';
+// The list itself is a menu overlay (a separate local view above the ChatGPT view), so it opens over
+// both tabs. This component never decides anything about Herdr and never sends workspace.focus: the
+// overlay does, only from the user's explicit choice, through the validated selection channel.
+import { $, setAttr, setText } from './dom.js';
+import { triggerModel } from '../../shared/workspace-view.js';
 
-  const label = (o) => `${o.id} · ${o.label || '(sem nome)'}`;
+export function initWorkspaceSelector({ dock, store, feedback }) {
+  const trigger = $('ws-trigger');
+  const label = $('ws-trigger-text');
+  const modeButton = $('ws-mode');
+  let shown = null;        // what the trigger displayed last: kept while a switch is pending
+  let model = triggerModel(null, null);
 
-  function placeholderText(sel) {
-    if (!sel || sel.connection !== 'connected') return sel && sel.connection === 'connecting' ? 'Conectando ao Herdr…' : 'Herdr desconectado';
-    if (sel.unavailableId) return `${sel.unavailableId} indisponível — escolha outro`;
-    return 'Selecione um workspace';
-  }
-
-  function render() {
-    const sel = state && state.selection;
-    const options = sel ? sel.options : [];
-    const connected = Boolean(sel && sel.connection === 'connected');
-    const sig = JSON.stringify([connected, sel && sel.connection, options.map((o) => [o.id, o.label]), sel && sel.unavailableId]);
-    applying = true;
-    if (sig !== signature) {
-      signature = sig;
-      select.textContent = '';
-      const placeholder = document.createElement('option');
-      placeholder.value = '';
-      placeholder.disabled = true;
-      placeholder.textContent = placeholderText(sel);
-      select.append(placeholder);
-      // The id is always shown, so workspaces with the same name stay distinguishable.
-      for (const o of options) {
-        const option = document.createElement('option');
-        option.value = o.id;
-        option.textContent = label(o);
-        select.append(option);
-      }
-    }
-    const wanted = sel && sel.selected ? sel.selected.workspaceId : '';
-    if (select.value !== wanted) select.value = wanted;
-    applying = false;
-
-    const pending = Boolean(sel && sel.pending);
-    select.disabled = !(sel && sel.canSelect);
-    select.setAttribute('aria-busy', String(pending));
-    busy.hidden = !pending;
-    const auto = !sel || sel.mode === 'auto';
-    modeButton.textContent = auto ? 'Auto' : 'Manual';
-    modeButton.setAttribute('aria-pressed', String(auto));
-    modeButton.disabled = !sel;
-    const observed = sel && sel.observedId ? `Foco atual do Herdr: ${sel.observedId}. ` : '';
+  function render(state) {
+    model = triggerModel(state, shown);
+    shown = model.shown;
+    setText(label, model.text);
+    label.classList.toggle('is-placeholder', model.tone === 'placeholder');
+    label.classList.toggle('is-dim', model.tone === 'dim');
+    label.classList.toggle('is-warning', model.tone === 'warning');
+    setAttr(trigger, 'aria-busy', model.busy);
+    setAttr(trigger, 'aria-disabled', model.disabled);
+    if (trigger.title !== model.title) trigger.title = model.title;
+    const auto = model.mode === 'auto';
+    setText(modeButton, auto ? 'Auto' : 'Manual');
+    setAttr(modeButton, 'aria-pressed', auto);
+    modeButton.disabled = model.modeDisabled;
     modeButton.title = auto
       ? 'Automático: acompanha o último foco do Herdr (estimativa: com mais de um cliente conectado pode divergir). Clique para alternar para manual.'
       : 'Manual: mudanças de foco no Herdr não alteram esta escolha. Clique para acompanhar o foco do Herdr.';
-    select.title = `${observed}${sel && sel.selected ? `Selecionado via ${{ dock: 'ContextDeck', herdr: 'foco do Herdr', recovery: 'recuperação' }[sel.selected.origin] || sel.selected.origin}.` : ''}`.trim();
   }
 
-  select.addEventListener('change', async () => {
-    if (applying || !state || !select.value) return;
-    const workspaceId = select.value;
-    const result = await dock.herdrSelectWorkspace({ session: state.session, workspaceId });
-    if (!result || !result.ok) {
-      if (!result || !result.stale) setNotice(`Workspace: ${result && result.error ? result.error.message : 'falha ao trocar'}`);
-      render(); // put the dropdown back in line with the real state
-    }
-  });
+  async function openMenu() {
+    if (model.disabled) return;
+    const box = trigger.getBoundingClientRect();
+    const result = await dock.openWorkspaceMenu({ x: box.left, y: box.top, width: box.width, height: box.height });
+    if (result && result.ok) setAttr(trigger, 'aria-expanded', true);
+    else feedback.error('Não foi possível abrir o menu de workspaces.');
+  }
 
+  trigger.addEventListener('click', () => void openMenu());
+  trigger.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); void openMenu(); }
+  });
   modeButton.addEventListener('click', async () => {
+    const state = store.get();
     if (!state || !state.selection) return;
-    const next = state.selection.mode === 'auto' ? 'manual' : 'auto';
-    const result = await dock.herdrSetSyncMode({ mode: next });
-    if (!result || !result.ok) setNotice('Não foi possível alterar o modo de sincronização.');
+    const result = await dock.herdrSetSyncMode({ mode: state.selection.mode === 'auto' ? 'manual' : 'auto' });
+    if (!result || !result.ok) feedback.error('Não foi possível alterar o modo de sincronização.');
   });
 
-  dock.onHerdrState((next) => { state = next; render(); });
-  void dock.herdrState().then((initial) => { if (initial) { state = initial; render(); } });
-  render();
+  // The menu closes by itself on Esc, click outside, resize or tab switch: put focus back on the trigger.
+  const offClosed = dock.onOverlayClosed(() => { setAttr(trigger, 'aria-expanded', false); trigger.focus(); });
+  const offStore = store.subscribe(render);
+  render(store.get());
+
+  return { dispose() { offClosed(); offStore(); } };
 }

@@ -1,0 +1,85 @@
+/* Design tokens: the only place where raw colors, sizes, radii, layers and timings are defined.
+   Components consume these variables; they never introduce new literal values. */
+:root {
+  color-scheme: dark;
+
+  /* Surfaces (darkest = terminal, then app background, bars, raised panels, form controls) */
+  --bg-terminal: #0b0f16;
+  --bg-app: #10141d;
+  --bg-bar: #161c28;
+  --bg-raised: #121826;
+  --bg-control: #0d121b;
+  --bg-hover: #263247;
+  --bg-button: #243044;
+  --bg-button-hover: #31435f;
+
+  /* Borders */
+  --border: #2a3342;
+  --border-strong: #3b485e;
+  --border-hover: #5a6c8a;
+
+  /* Text */
+  --text: #dce5f5;
+  --text-muted: #9ba8bc;
+  --text-on-accent: #ffffff;
+
+  /* Accent (selection / focus) */
+  --accent: #7ca8ff;
+  --accent-bg: #253854;
+  --accent-border: #3c5981;
+
+  /* Status colors, each with a border tone and a faint background for banners */
+  --success: #9ece6a;      --success-border: #4d6b36;
+  --warning: #e0af68;      --warning-border: #6b5530;   --warning-bg: #1b1810;   --warning-soft: #e4c28c;
+  --danger: #f7768e;       --danger-border: #7a3b47;    --danger-soft: #e9a3ab;
+  --danger-bg: #6b2b33;    --danger-border-strong: #b4505c;
+  --info: #7dcfff;
+  --violet: #bb9af7;
+
+  /* Typography */
+  --font-ui: system-ui, "Segoe UI", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --leading: 1.4;
+
+  /* Spacing scale */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-pill: 999px;
+
+  /* Control heights and bar sizes */
+  --control-h: 30px;
+  --control-h-sm: 26px;
+  --topbar-h: 52px;
+  --tab-h: 41px;
+
+  /* Layers (renderer DOM only; native views are ordered by the main process) */
+  --z-panel: 5;
+  --z-menu: 10;
+
+  /* Elevation and motion */
+  --shadow-popover: 0 8px 28px rgba(0, 0, 0, 0.55);
+  --duration-fast: 120ms;
+  --duration-spin: 900ms;
+  --opacity-disabled: 0.45;
+
+  /* Terminal palette (consumed by xterm in terminal-view.js through getComputedStyle) */
+  --term-bg: var(--bg-terminal);
+  --term-fg: #dce5f5;
+  --term-cursor: #b6c6e5;
+  --term-selection: #456793;
+  --term-blue: #7aa2f7;
+  --term-white: #c0caf5;
+}

@@ -1,6 +1,8 @@
 // Diagnostic panel for the Herdr workspace integration (M01-I1). Read-only: it only displays what
 // the main process discovered. It lives over the terminal area (not the footer) because the
 // ChatGPT view would hide it, so it is only reachable in terminal mode.
+import { $, el, setAttr } from './dom.js';
+
 const ACTIVE_TEXT = {
   known: 'Identificado com evidencia confiavel.',
   ambiguous: 'Ambiguo: a API do Herdr nao informa o foco por cliente. O candidato e apenas o ultimo foco da sessao (de qualquer cliente).',
@@ -14,19 +16,13 @@ const REASON_TEXT = {
 };
 const CONNECTION_TEXT = { stopped: 'parado', connecting: 'conectando', connected: 'conectado', disconnected: 'desconectado' };
 
-export function initHerdrPanel({ dock }) {
-  const button = document.getElementById('herdr-diag');
-  const panel = document.getElementById('herdr-panel');
-  const body = document.getElementById('herdr-panel-body');
+export function initHerdrPanel({ dock, store }) {
+  const button = $('herdr-diag');
+  const panel = $('herdr-panel');
+  const body = $('herdr-panel-body');
   let state = null;
 
   const time = (ms) => (ms ? new Date(ms).toLocaleTimeString() : '-');
-  const el = (tag, className, text) => {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text !== undefined) node.textContent = text;
-    return node;
-  };
   const row = (label, value, title) => {
     const r = el('div', 'diag-row');
     r.append(el('span', 'diag-label', label), el('span', 'diag-value', value));
@@ -79,15 +75,14 @@ export function initHerdrPanel({ dock }) {
     body.append(el('p', 'diag-note', '● = ultimo foco da sessao; nao e o workspace visivel neste cliente.'));
   }
 
-  const show = async () => { panel.hidden = false; button.setAttribute('aria-expanded', 'true'); state = (await dock.herdrState()) || state; render(); panel.focus(); };
-  const hide = () => { panel.hidden = true; button.setAttribute('aria-expanded', 'false'); };
+  const show = () => { panel.hidden = false; setAttr(button, 'aria-expanded', true); state = store.get(); render(); panel.focus(); };
+  const hide = () => { panel.hidden = true; setAttr(button, 'aria-expanded', false); };
 
-  button.addEventListener('click', () => (panel.hidden ? void show() : hide()));
-  document.getElementById('herdr-panel-close').addEventListener('click', hide);
-  document.getElementById('herdr-panel-refresh').addEventListener('click', async () => { state = (await dock.herdrRefresh()) || state; render(); });
+  button.addEventListener('click', () => (panel.hidden ? show() : hide()));
+  $('herdr-panel-close').addEventListener('click', hide);
+  $('herdr-panel-refresh').addEventListener('click', async () => { store.apply(await dock.herdrRefresh()); });
   panel.addEventListener('keydown', (event) => { if (event.key === 'Escape') { event.stopPropagation(); hide(); button.focus(); } });
-  dock.onHerdrState((next) => { state = next; if (!panel.hidden) render(); });
-  void dock.herdrState().then((initial) => { if (initial) state = initial; });
+  store.subscribe((next) => { state = next; if (!panel.hidden) render(); });
 
   return { hide };
 }

@@ -5,67 +5,68 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; frame-src 'none'">
   <title>ContextDeck</title>
-  <link rel="stylesheet" href="./terminal.bundle.css">
+  <link rel="stylesheet" href="./app.bundle.css">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <div id="app" data-mode="terminal">
     <header class="topbar">
-      <div class="product">ContextDeck <span class="version">M00</span></div>
+      <div class="brand">ContextDeck <span class="tag">M00</span></div>
       <div class="tabs" role="tablist" aria-label="Views">
         <button id="tab-terminal" class="tab active" role="tab" aria-selected="true" type="button">Herdr</button>
         <button id="tab-chat" class="tab" role="tab" aria-selected="false" type="button">ChatGPT</button>
       </div>
-      <div class="ws-picker">
-        <label for="ws-select" class="ws-label">Workspace</label>
-        <select id="ws-select" aria-label="Workspace do Herdr" disabled><option value="" disabled selected>Herdr desconectado</option></select>
-        <button id="ws-mode" class="ws-mode" type="button" aria-pressed="true" disabled>Auto</button>
-        <span id="ws-busy" class="ws-busy" role="status" aria-label="Trocando de workspace" hidden>…</span>
+      <div class="ws">
+        <span id="ws-label" class="ws-label">Workspace</span>
+        <button id="ws-trigger" class="control select" type="button" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-disabled="true" aria-labelledby="ws-label ws-trigger-text">
+          <span id="ws-trigger-text" class="select-text is-placeholder">Herdr desconectado</span>
+          <span class="select-caret" aria-hidden="true"></span>
+        </button>
+        <button id="ws-mode" class="toggle" type="button" aria-pressed="true" disabled>Auto</button>
       </div>
       <div class="view-actions">
-        <div class="actions terminal-actions">
-          <button id="reconnect-terminal" class="action" type="button">Reconectar Herdr</button>
-          <button id="herdr-diag" class="action" type="button" aria-expanded="false" aria-controls="herdr-panel" title="Diagn&oacute;stico (somente leitura) dos workspaces do Herdr">Workspaces</button>
+        <div class="actions terminal-only">
+          <button id="reconnect-terminal" class="btn" type="button">Reconectar Herdr</button>
+          <button id="herdr-diag" class="btn" type="button" aria-expanded="false" aria-controls="herdr-panel" title="Diagn&oacute;stico (somente leitura) dos workspaces do Herdr">Workspaces</button>
         </div>
-        <div class="actions chat-actions">
-          <button id="chat-home" class="action" type="button">In&iacute;cio GPT</button>
-          <button id="reload-chat" class="action" type="button">Recarregar</button>
-          <button id="external-chat" class="action" type="button">Abrir no navegador</button>
+        <div class="actions chat-only">
+          <button id="chat-home" class="btn" type="button">In&iacute;cio GPT</button>
+          <button id="reload-chat" class="btn" type="button">Recarregar</button>
+          <button id="external-chat" class="btn" type="button">Abrir no navegador</button>
         </div>
       </div>
       <div class="unlinked" title="Neste marco (M00), o ChatGPT ainda nao esta vinculado a um projeto">Chat sem projeto</div>
-      <div class="session-label" title="Sessao isolada do Herdr"><span class="session-dot"></span><span id="session-name">Conectando...</span></div>
+      <div class="session-chip" title="Sessao isolada do Herdr"><span class="session-dot"></span><span id="session-name">Conectando...</span></div>
     </header>
     <main class="content">
       <div id="terminal-root" aria-label="Terminal Herdr"></div>
       <section id="herdr-panel" class="diag-panel" tabindex="-1" aria-label="Diagn&oacute;stico dos workspaces do Herdr" hidden>
-        <header class="diag-title"><strong>Workspaces do Herdr</strong><span class="diag-ro">somente leitura</span><span class="spacer"></span><button id="herdr-panel-refresh" class="action" type="button">Atualizar</button><button id="herdr-panel-close" class="action" type="button" aria-label="Fechar">&times;</button></header>
+        <header class="diag-title"><strong>Workspaces do Herdr</strong><span class="diag-ro">somente leitura</span><span class="spacer"></span><button id="herdr-panel-refresh" class="btn" type="button">Atualizar</button><button id="herdr-panel-close" class="btn" type="button" aria-label="Fechar">&times;</button></header>
         <div id="herdr-panel-body"></div>
       </section>
     </main>
     <footer class="footer" id="footer">
-      <div class="git-row">
+      <div class="footer-row">
         <div class="git-repo" id="git-repo" title="">Git: &hellip;</div>
-        <button id="git-pick" class="action" type="button" title="Escolher a pasta do reposit&oacute;rio">Repo&hellip;</button>
-        <button id="git-refresh" class="action icon" type="button" title="Atualizar refer&ecirc;ncias (n&atilde;o faz fetch)" aria-label="Atualizar refer&ecirc;ncias">&#8635;</button>
-        <div class="picker"><span class="plabel">Base diff</span><button id="base-btn" class="pbtn" type="button" aria-haspopup="listbox" aria-expanded="false"></button></div>
-        <div class="picker"><span class="plabel">Revis&atilde;o</span><button id="rev-btn" class="pbtn" type="button" aria-haspopup="listbox" aria-expanded="false"></button><span id="rev-resolved" class="resolved"></span></div>
-        <div class="actions git-actions">
-          <button id="git-diff" class="action" type="button" title="git diff &lt;base&gt; (somente arquivos rastreados)">Copiar Diff</button>
-          <button id="git-show" class="action" type="button" title="git show &lt;revis&atilde;o&gt;">Copiar Git Show</button>
-          <button id="git-zip" class="action" type="button" title="git archive &lt;revis&atilde;o&gt; &rarr; ZIP copiado como arquivo">Gerar + Copiar ZIP</button>
-          <button id="git-zip-delete" class="action danger" type="button" disabled>Excluir ZIP</button>
+        <button id="git-pick" class="btn" type="button" title="Escolher a pasta do reposit&oacute;rio">Repo&hellip;</button>
+        <button id="git-refresh" class="btn btn-icon" type="button" title="Atualizar refer&ecirc;ncias (n&atilde;o faz fetch)" aria-label="Atualizar refer&ecirc;ncias">&#8635;</button>
+        <div class="field"><span>Base diff</span><button id="base-btn" class="control select select-fit" type="button" aria-haspopup="listbox" aria-expanded="false"></button></div>
+        <div class="field"><span>Revis&atilde;o</span><button id="rev-btn" class="control select select-fit" type="button" aria-haspopup="listbox" aria-expanded="false"></button><span id="rev-resolved" class="resolved"></span></div>
+        <div class="actions">
+          <button id="git-diff" class="btn" type="button" title="git diff &lt;base&gt; (somente arquivos rastreados)">Copiar Diff</button>
+          <button id="git-show" class="btn" type="button" title="git show &lt;revis&atilde;o&gt;">Copiar Git Show</button>
+          <button id="git-zip" class="btn" type="button" title="git archive &lt;revis&atilde;o&gt; &rarr; ZIP copiado como arquivo">Gerar + Copiar ZIP</button>
+          <button id="git-zip-delete" class="btn btn-danger" type="button" disabled>Excluir ZIP</button>
         </div>
       </div>
       <div class="picker-panel" id="picker-panel" hidden>
-        <input id="picker-search" type="text" role="combobox" aria-controls="picker-list" aria-expanded="true" aria-autocomplete="list" placeholder="Buscar branch, tag ou commit; ou digite HEAD~2 / SHA e Enter" maxlength="200" spellcheck="false" autocomplete="off">
-        <ul id="picker-list" role="listbox"></ul>
+        <input id="picker-search" class="control" type="text" role="combobox" aria-controls="picker-list" aria-expanded="true" aria-autocomplete="list" placeholder="Buscar branch, tag ou commit; ou digite HEAD~2 / SHA e Enter" maxlength="200" spellcheck="false" autocomplete="off">
+        <ul id="picker-list" class="menu" role="listbox"></ul>
       </div>
       <div class="hint" id="git-hint" role="alert" hidden></div>
-      <div class="notification" id="notification" role="status">Ctrl+Tab para alternar</div>
+      <div class="status" id="status" role="status" data-level="info">Ctrl+Tab para alternar</div>
     </footer>
   </div>
-  <script src="./terminal.bundle.js"></script>
+  <script src="./app.bundle.js"></script>
 </body>
 </html>
-

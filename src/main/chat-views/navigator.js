@@ -57,7 +57,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
         // A conversation bound later (or by navigating to a bound one) leaves the exceptional unscoped list with its view intact.
         // (unless another page already is that conversation's tab: then this one stays out, never a second tab)
         if (b && v.scope === null) { if (!views.some((x) => x.id !== v.id && x.expectedKey === v.identity.key)) { manager.setScope(v.id, wsKeyOf(b)); manager.setExpected(v.id, v.identity.key); } }
-        else if (b && v.scope !== null && wsKeyOf(b) === v.scope) manager.setExpected(v.id, v.identity.key);
+        else if (b && v.scope !== null && wsKeyOf(b) === v.scope && !manager.list().some((x) => x.id !== v.id && x.expectedKey === v.identity.key)) manager.setExpected(v.id, v.identity.key);
       }
     }
   }
@@ -230,6 +230,20 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     manager.setExpected(v.id, v.identity.key);
     const c = contextual.get(v.id);
     if (c) c.pending = false;
+    return true;
+  }
+
+  // The user opened, inside page `viewId`, a conversation that already has its tab (`otherId`) here: show that tab and send this
+  // page back to what it showed (its own history); a page with nothing to go back to leaves the workspace (kept, unscoped).
+  function focusExisting(viewId, otherId) {
+    const v = typeof viewId === 'string' ? manager.get(viewId) : null;
+    const other = typeof otherId === 'string' ? manager.get(otherId) : null;
+    if (!v || !other || v.page === 'destroyed' || other.page === 'destroyed' || !other.scope) return false;
+    choice.set(other.scope, other.id);
+    manager.show(other.id);
+    if (!(manager.canGoBack(v.id) && manager.goBack(v.id))) releasePage(v.id);
+    reconcile();
+    activity?.visit(other.id);
     return true;
   }
 
@@ -574,7 +588,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
 
   return {
     reconcile, getWorkspaceActivity, getGlobalActivity, resolveActivityTarget, setMode, selectBinding, newConversation, selectTemporary, openUnscoped, getState,
-    getUnbound, openUnbound, releaseConversation, contextViews, confirmAdopted, moveToBinding, backFromConflict, pagesShowing, releasePage,
+    getUnbound, openUnbound, releaseConversation, contextViews, confirmAdopted, moveToBinding, backFromConflict, pagesShowing, releasePage, focusExisting,
     canGoBack: (viewId) => manager.canGoBack(viewId),
     goBackPage: (viewId) => manager.goBack(viewId),
     setNoteProvider: (fn) => { notes = typeof fn === 'function' ? fn : null; },

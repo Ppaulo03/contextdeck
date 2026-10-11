@@ -622,7 +622,7 @@ test('M01-I3B-2H: attention is acknowledged only by visits; notices and the cent
   assert.doesNotMatch(noticeAndIpc, /markViewed|visitVisible|\.visit\(|acknowledg/);
   // Visits come from: the navigator's explicit actions, the window (focus / chat tab by the user / typing in a page).
   const nav = read('src', 'main', 'chat-views', 'navigator.js').replace(/^\s*\/\/.*$/gm, '');
-  assert.equal([...nav.matchAll(/activity\?\.visit\(/g)].length, 5, 'selectBinding, newConversation, selectTemporary, openUnscoped, openUnbound');
+  assert.equal([...nav.matchAll(/activity\?\.visit\(/g)].length, 6, 'selectBinding, newConversation, selectTemporary, openUnscoped, openUnbound, focusExisting (the user opened an already-open conversation: show its tab)');
   const index = read('src', 'main', 'index.js').replace(/^\s*\/\/.*$/gm, '');
   assert.doesNotMatch(index, /visit|markViewed/, 'the notice/pusher wiring never acknowledges attention');
 });

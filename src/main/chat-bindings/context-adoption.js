@@ -25,6 +25,7 @@ function createContextAdoption({ session, navigator, bindings, selection, wait =
   // again (the page is on screen, in the workspace). Forgotten as soon as no page shows the conversation any more, so opening
   // it again later, in a workspace, is a new act.
   const declined = new Set();
+  const redirecting = new Set();        // pages already sent back to their own tab's conversation (going back is asynchronous: once)
   let resolving = false;
 
   const TEXT = {
@@ -42,7 +43,16 @@ function createContextAdoption({ session, navigator, bindings, selection, wait =
     if (existing) {
       pendingNotes.delete(v.viewId);
       if (existing.workspaceIdentity.session === session && existing.workspaceIdentity.workspaceId === v.workspaceId) {
-        if (v.expectedKey !== v.identity.key) navigator.confirmAdopted(v.viewId);
+        if (v.expectedKey === v.identity.key) return 'linked';
+        // Never two pages for one conversation: if it already has its tab in this workspace, the page the user opened it in does not
+        // become a second one - the user is taken to the existing tab and this page goes back to what it showed.
+        const tab = navigator.contextViews().find((x) => x.viewId !== v.viewId && x.scope === v.scope && x.identity.key === v.identity.key && x.expectedKey === v.identity.key);
+        if (tab) {
+          if (!(v.visible || v.pending)) return 'passive';
+          if (!redirecting.has(v.viewId)) { redirecting.add(v.viewId); navigator.focusExisting(v.viewId, tab.viewId); }
+          return 'redirected';
+        }
+        navigator.confirmAdopted(v.viewId);
         return 'linked';
       }
       return 'conflict';                         // shown by the navigator; never moved here
@@ -69,6 +79,7 @@ function createContextAdoption({ session, navigator, bindings, selection, wait =
       const views = navigator.contextViews();
       const shown = new Set(views.filter((x) => x.identity.state === 'durable').map((x) => x.identity.key));
       for (const key of [...declined]) if (!shown.has(key)) declined.delete(key);
+      for (const id of [...redirecting]) { const x = views.find((y) => y.viewId === id); if (!x || x.identity.state !== 'durable' || x.expectedKey === x.identity.key) redirecting.delete(id); }
       for (const v of views) {
         if (v.identity.state !== 'durable') continue;
         const out = evaluate(v);

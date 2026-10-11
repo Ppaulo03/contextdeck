@@ -479,3 +479,66 @@ test('transfer with another page but no history to go back to: the clicked page 
   assert.equal(tabsOf(w, w.B[0].conversationKey).length, 1);
   assert.equal(w.fake.log.some((l) => l[0] === 'destroy'), false);
 }));
+
+// ---- never two pages for one conversation ---------------------------------------------------------------------------------------------------
+test('opening, inside a conversation\'s page, another conversation of the SAME workspace that already has its tab: go to that tab, the page goes back', () => run(async (w) => {
+  const [, c2] = bindMany(w, [2]).length ? [null, w.bindings.lookup(chatUrl(2))] : [];
+  const v1 = w.view(w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') }).viewId);
+  v1.finishLoad(w.A[0].url);
+  const v2 = w.view(w.navigator.selectBinding({ bindingId: c2.bindingId, workspaceKey: WK('w1') }).viewId);
+  v2.finishLoad(c2.url);
+  w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') });      // v1 on screen
+  const before = w.fileBytes();
+  v1.navigate(c2.url);                                              // the user clicked conversation 2 in ChatGPT's sidebar
+  assert.equal(w.manager.getVisibleId(), v2.id, 'its existing tab is shown');
+  assert.equal(w.manager.get(v1.id).identity.key, w.A[0].conversationKey, 'the page went back to its own conversation');
+  assert.equal(showing(w, c2.conversationKey).length, 1, 'no second page for it');
+  assert.equal(w.manager.duplicates().length, 0);
+  assert.equal(w.fileBytes(), before, 'no binding written');
+  assert.equal(w.navigator.getState().temporaries.length, 0);
+  assert.equal(w.fake.views.length, 2);
+}));
+
+test('a new conversation page that is pointed at an already-open conversation of the workspace: that tab is shown, no duplicate', () => run(async (w) => {
+  const v1 = w.view(w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') }).viewId);
+  v1.finishLoad(w.A[0].url);
+  const fresh = w.newChat();
+  fresh.finishLoad(w.HOME);
+  fresh.navigate(w.A[0].url);
+  assert.equal(w.manager.getVisibleId(), v1.id);
+  assert.equal(showing(w, w.A[0].conversationKey).length, 1);
+  assert.equal(w.manager.duplicates().length, 0);
+  assert.equal(w.bindings.all().length, 2);
+}));
+
+test('a page with nothing to go back to leaves the workspace instead of becoming a second tab', () => run(async (w) => {
+  const v1 = w.view(w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') }).viewId);
+  v1.finishLoad(w.A[0].url);
+  const fresh = w.newChat();
+  fresh.navigate(w.A[0].url);                                       // no history behind it
+  assert.equal(w.manager.getVisibleId(), v1.id);
+  assert.equal(w.manager.get(fresh.id).scope, null);
+  assert.equal(w.manager.get(fresh.id).page !== 'destroyed', true);
+  assert.equal(w.navigator.getState().tabs.filter((t) => t.loaded).length, 1);
+}));
+
+test('a conversation of the workspace that has NO page yet is simply shown by the page it was opened in (that page becomes its tab)', () => run(async (w) => {
+  const c2 = (bindMany(w, [2]), w.bindings.lookup(chatUrl(2)));
+  const v1 = w.view(w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') }).viewId);
+  v1.finishLoad(w.A[0].url);
+  v1.navigate(c2.url);
+  assert.equal(w.manager.get(v1.id).expectedKey, c2.conversationKey);
+  assert.equal(showing(w, c2.conversationKey).length, 1);
+  assert.equal(w.fake.views.length, 1);
+}));
+
+test('a hidden page changing route onto an open conversation is left alone (passive)', () => run(async (w) => {
+  const c2 = (bindMany(w, [2]), w.bindings.lookup(chatUrl(2)));
+  const v1 = w.view(w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') }).viewId);
+  v1.finishLoad(w.A[0].url);
+  const v2 = w.view(w.navigator.selectBinding({ bindingId: c2.bindingId, workspaceKey: WK('w1') }).viewId);
+  v2.finishLoad(c2.url);
+  w.navigator.setMode('terminal');
+  v1.navigate(c2.url);
+  assert.equal(w.manager.get(v1.id).identity.key, c2.conversationKey, 'untouched while nobody looks');
+}));

@@ -7,6 +7,8 @@
 //   activity:state    UI window or overlay   { global, notices } (also pushed: `activity:state` to the UI, `overlay:activity-push`)
 //   activity:open     overlay only           the activity center's "Abrir"
 //   activity:dismiss  overlay only           closes a notice card (does NOT acknowledge the attention)
+//   activity:open-unbound / activity:bind-unbound / activity:new-unbound   overlay only   conversations without a workspace
+//                     (M01-I3B-3): open one (never moves Herdr), bind one to a workspace the user picked, start a blank one
 const denied = { ok: false, error: { code: 'untrusted', message: 'Untrusted IPC caller' } };
 const invalid = (message = 'Pedido invalido.') => ({ ok: false, error: { code: 'invalid_request', message } });
 
@@ -16,7 +18,7 @@ const VIEW_RE = /^v[0-9]{1,6}$/;
 const NOTICE_RE = /^n:v[0-9]{1,6}$/;
 const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 
-function registerActivityIpc({ ipcMain, trustedUi, trustedOverlay, getPayload, directOpen, notices }) {
+function registerActivityIpc({ ipcMain, trustedUi, trustedOverlay, getPayload, directOpen, notices, unbound }) {
   ipcMain.handle('activity:state', (event) => (trustedUi(event) || trustedOverlay(event) ? getPayload() : null));
 
   ipcMain.handle('activity:open', async (event, args) => {
@@ -29,6 +31,27 @@ function registerActivityIpc({ ipcMain, trustedUi, trustedOverlay, getPayload, d
     if (byView && !VIEW_RE.test(args.viewId)) return invalid();
     return directOpen.open({ workspaceId: args.workspaceId, ...(byBinding ? { bindingId: args.bindingId } : { viewId: args.viewId }), confirm: args.confirm === true });
   });
+
+  const unboundGuard = (fn) => (event, args) => {
+    if (!trustedOverlay(event)) return denied;
+    if (!unbound) return { ok: false, error: { code: 'not_ready', message: 'O ChatGPT ainda nao esta pronto.' } };
+    return fn(args);
+  };
+
+  ipcMain.handle('activity:open-unbound', unboundGuard((args) => {
+    if (!isPlainObject(args) || typeof args.viewId !== 'string' || !VIEW_RE.test(args.viewId)) return invalid();
+    return unbound.open({ viewId: args.viewId });
+  }));
+
+  ipcMain.handle('activity:new-unbound', unboundGuard(() => unbound.create()));
+
+  ipcMain.handle('activity:bind-unbound', unboundGuard((args) => {
+    if (!isPlainObject(args) || typeof args.viewId !== 'string' || !VIEW_RE.test(args.viewId)) return invalid();
+    if (typeof args.workspaceId !== 'string' || !WORKSPACE_RE.test(args.workspaceId)) return invalid();
+    if (args.label !== undefined && (typeof args.label !== 'string' || args.label.length > 200)) return invalid();
+    if (args.selectedAtOpen !== null && typeof args.selectedAtOpen !== 'string') return invalid();
+    return unbound.bind({ viewId: args.viewId, workspaceId: args.workspaceId, label: args.label, selectedAtOpen: args.selectedAtOpen, confirmTarget: args.confirmTarget === true });
+  }));
 
   ipcMain.handle('activity:dismiss', (event, args) => {
     if (!trustedOverlay(event)) return denied;

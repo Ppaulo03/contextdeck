@@ -45,7 +45,8 @@ function registerChatsIpc({ ipcMain, trusted, win, bindings, notify }) {
       label: optionalString(args.label),
       role: optionalString(args.role),
       selectedAtOpen: pickSelected(args.selectedAtOpen),
-      confirmTarget: args.confirmTarget === true
+      confirmTarget: args.confirmTarget === true,
+      targetChosen: args.targetChosen === true
     });
   }));
 
@@ -64,6 +65,7 @@ function registerChatsIpc({ ipcMain, trusted, win, bindings, notify }) {
       target: pickTarget(args.target),
       selectedAtOpen: pickSelected(args.selectedAtOpen),
       confirmTarget: args.confirmTarget === true,
+      targetChosen: args.targetChosen === true,
       confirmReassign: args.confirmReassign === true
     });
   }));

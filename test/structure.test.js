@@ -237,13 +237,13 @@ const HANDLE_CHANNELS = [
   'overlay:choose', 'overlay:close', 'overlay:open-chats-panel', 'overlay:open-workspace-menu', 'overlay:state',
   'chats:bind', 'chats:reassign', 'chats:state', 'chats:unbind', 'chats:update',
   'chatnav:new', 'chatnav:open-unscoped', 'chatnav:select', 'chatnav:select-temporary', 'chatnav:state',
-  'activity:dismiss', 'activity:open', 'activity:state', 'overlay:open-activity-center',
+  'activity:dismiss', 'activity:open', 'activity:state', 'overlay:open-activity-center', 'activity:open-unbound', 'activity:bind-unbound', 'activity:new-unbound',
   'git:show', 'git:status', 'git:zip', 'pty:start'
 ].sort();
 // Chat bindings (M01-I3A): callable from the UI window AND from the overlay panel, never from the remote page.
 const CHATS_CHANNELS = ['chats:bind', 'chats:reassign', 'chats:state', 'chats:unbind', 'chats:update'];
 // What the local UI window may invoke vs what only the menu overlay may invoke (least privilege).
-const OVERLAY_ONLY = ['overlay:choose', 'overlay:close', 'overlay:state', 'activity:open', 'activity:dismiss'];
+const OVERLAY_ONLY = ['overlay:choose', 'overlay:close', 'overlay:state', 'activity:open', 'activity:dismiss', 'activity:open-unbound', 'activity:bind-unbound', 'activity:new-unbound'];
 // Global activity (M01-I3B-2H): the state is readable by the UI window and by the overlay; opening and dismissing only by the overlay.
 const ACTIVITY_SHARED = ['activity:state'];
 const ON_CHANNELS = ['pty:resize', 'pty:write'];
@@ -622,7 +622,7 @@ test('M01-I3B-2H: attention is acknowledged only by visits; notices and the cent
   assert.doesNotMatch(noticeAndIpc, /markViewed|visitVisible|\.visit\(|acknowledg/);
   // Visits come from: the navigator's explicit actions, the window (focus / chat tab by the user / typing in a page).
   const nav = read('src', 'main', 'chat-views', 'navigator.js').replace(/^\s*\/\/.*$/gm, '');
-  assert.equal([...nav.matchAll(/activity\?\.visit\(/g)].length, 4, 'selectBinding, newConversation, selectTemporary, openUnscoped');
+  assert.equal([...nav.matchAll(/activity\?\.visit\(/g)].length, 6, 'selectBinding, newConversation, selectTemporary, openUnscoped, openUnbound, newUnbound');
   const index = read('src', 'main', 'index.js').replace(/^\s*\/\/.*$/gm, '');
   assert.doesNotMatch(index, /visit|markViewed/, 'the notice/pusher wiring never acknowledges attention');
 });

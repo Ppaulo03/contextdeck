@@ -13,6 +13,7 @@ const { startChatNavPusher } = require('./ipc/chatnav');
 const { startActivityPusher } = require('./ipc/activity');
 const { createNoticeController } = require('./activity/notices');
 const { createDirectOpen } = require('./activity/direct-open');
+const { createUnboundActions } = require('./activity/unbound');
 const { createHerdrClient } = require('./herdr/client');
 const { createWindowController } = require('./window');
 const { registerIpc } = require('./ipc');
@@ -82,6 +83,7 @@ async function bootstrap() {
     showChatTab: () => win.switchMode('chat'),
     getMode: () => win.getMode()
   });
+  const unbound = createUnboundActions({ session: settings.herdrSession, bindings, navigator: { openUnbound: (a) => navigatorOf().openUnbound(a), newUnbound: () => navigatorOf().newUnbound(), unboundTarget: (v) => navigatorOf().unboundTarget(v), reconcile: () => navigatorOf().reconcile() }, showChatTab: () => win.switchMode('chat'), getMode: () => win.getMode() });
   const getActivityPayload = () => (navigatorOf() ? { global: navigatorOf().getGlobalActivity(), notices: notices.getState() } : null);
   const activityPusher = startActivityPusher({ getPayload: getActivityPayload, send: (payload) => { win.send('activity:state', payload); win.sendToOverlay('overlay:activity-push', payload); } });
   notices.onChange((s) => { win.setNotices(s.items.length + s.more); activityPusher.notify(); });
@@ -116,7 +118,7 @@ async function bootstrap() {
   });
 
   navPusher = startChatNavPusher({ getState: () => win.getNavigator()?.getState(), send: (channel, data) => win.send(channel, data) });
-  registerIpc({ electron, win, herdr, observer, selection, activity, activityIpc: { getPayload: getActivityPayload, directOpen, notices }, bindings, notifyChats: () => { chatsPusher.notify(); win.getNavigator()?.reconcile(); }, settings, uiState, persist, userDataDir });
+  registerIpc({ electron, win, herdr, observer, selection, activity, activityIpc: { getPayload: getActivityPayload, directOpen, notices, unbound }, bindings, notifyChats: () => { chatsPusher.notify(); win.getNavigator()?.reconcile(); }, settings, uiState, persist, userDataDir });
   app.on('second-instance', () => win.focus());
   app.on('before-quit', shutdown);
   await win.create();

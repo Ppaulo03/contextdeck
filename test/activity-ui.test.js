@@ -97,7 +97,7 @@ function ipcSetup() {
 
 test('IPC: state for the UI window and the overlay; open and dismiss only for the overlay; strangers get nothing', async () => {
   const { handlers, calls } = ipcSetup();
-  assert.deepEqual([...handlers.keys()].sort(), ['activity:dismiss', 'activity:open', 'activity:state']);
+  assert.deepEqual([...handlers.keys()].sort(), ['activity:bind-unbound', 'activity:dismiss', 'activity:new-unbound', 'activity:open', 'activity:open-unbound', 'activity:state']);
   assert.ok(await handlers.get('activity:state')({ ui: true }));
   assert.ok(await handlers.get('activity:state')({ overlay: true }));
   assert.equal(await handlers.get('activity:state')({}), null);
@@ -248,7 +248,8 @@ function mountOverlay(initial = payload()) {
   return {
     document, calls, get, scrim: get('scrim'), panel: get('activity'), notices: get('notices'), message: get('activity-message'),
     all: () => collect(get('activity-body')), text: () => get('activity-body').textContent,
-    buttons: () => collect(get('activity-body')).filter((n) => n.tag === 'button'),
+    buttons: () => collect(get('activity-body')).filter((n) => n.tag === 'button' && !String(n.dataset.key || '').startsWith('unbound')),
+    allButtons: () => collect(get('activity-body')).filter((n) => n.tag === 'button'),
     openCenter: async () => { await openCb({ x: 900, y: 20, width: 100, height: 26, kind: 'activity' }); },
     openNotices: async () => { await openCb({ kind: 'notice' }); },
     close: async () => { await openCb(null); },
@@ -284,8 +285,8 @@ test('activity center: Esc and a click outside close it; arrows, Home and End mo
   await o.openCenter();
   const b = o.buttons();
   await o.key('ArrowDown'); assert.equal(o.document.activeElement, b[1]);
-  await o.key('End'); assert.equal(o.document.activeElement, b[3]);
-  await o.key('ArrowDown'); assert.equal(o.document.activeElement, b[3], 'does not wrap');
+  await o.key('End'); assert.equal(o.document.activeElement.dataset.key, 'unbound-new', 'the always-present "Sem workspace" action closes the list');
+  await o.key('ArrowDown'); assert.equal(o.document.activeElement.dataset.key, 'unbound-new', 'does not wrap');
   await o.key('Home'); assert.equal(o.document.activeElement, b[0]);
   await o.key('ArrowUp'); assert.equal(o.document.activeElement, b[0]);
   await o.key('Escape');

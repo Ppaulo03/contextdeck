@@ -23,6 +23,9 @@ html, body.overlay { background: transparent; }
 .act-group { display: flex; flex-direction: column; gap: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
 .act-group:first-child { padding-top: 0; border-top: 0; }
 .act-group-title { display: flex; align-items: center; gap: var(--space-3); margin: 0; font-size: var(--text-xs); color: var(--text-muted); }   /* names and ids are shown exactly as they are (homonyms) */
+.act-bind { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: var(--space-2) var(--space-3); border: 1px dashed var(--border); border-radius: var(--radius-md); }
+.act-bind .control { flex: 1; min-width: 120px; height: var(--control-h-sm); }
+.act-unbound .act-item-states:empty { display: none; }
 .act-item { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); }
 .act-item-states { display: inline-flex; flex: none; align-items: center; gap: var(--space-2); min-width: 28px; }
 .act-item-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }

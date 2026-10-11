@@ -79,8 +79,13 @@ function barModel(state, armedBindingId = null) {
   }));
   return {
     ready: true,
-    title: ws ? `ChatGPT · ${workspaceName(ws)}` : 'ChatGPT · sem workspace',
-    workspaceTitle: ws ? `Workspace ${ws.id}${ws.pending ? ' (troca em andamento)' : ''}` : 'Nenhum workspace selecionado',
+    // A conversation opened from "Sem workspace" is shown as such: the selected Herdr workspace is a different thing and
+    // must not look like its owner.
+    title: state.visibleUnbound ? 'ChatGPT · Sem workspace' : (ws ? `ChatGPT · ${workspaceName(ws)}` : 'ChatGPT · sem workspace'),
+    workspaceTitle: state.visibleUnbound
+      ? `Esta conversa não pertence a nenhum workspace.${ws ? ` O workspace selecionado no Herdr é ${ws.id}, independente dela.` : ''}`
+      : (ws ? `Workspace ${ws.id}${ws.pending ? ' (troca em andamento)' : ''}` : 'Nenhum workspace selecionado'),
+    unbound: Boolean(state.visibleUnbound),
     workspaceKey: ws ? ws.key : null,
     tabs,
     temporaries,

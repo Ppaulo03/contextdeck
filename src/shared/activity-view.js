@@ -39,9 +39,39 @@ function indicatorModel(payload) {
 const workspaceTitle = (g) => (g.id === null ? 'Sem workspace' : `${g.label || '(sem nome)'} · ${g.id}`);
 
 // Groups by workspace (name AND id, so homonyms are told apart); each item lists its states with text, not only glyphs.
+// "Sem workspace" (M01-I3B-3): conversations that belong to no workspace, ALWAYS listed (idle ones too), because the section is
+// the only way back to them. They are never attached to the selected workspace by being listed here.
+function unboundModel(g) {
+  const list = Array.isArray(g.unbound) ? g.unbound : [];
+  const items = list.map((u) => {
+    const states = ['responding', 'attention', 'draft'].filter((k) => u[k]).map((kind) => ({ kind, glyph: GLYPH[kind], text: STATE_TEXT[kind] }));
+    const status = u.failed ? 'Falha ao carregar' : u.loading ? 'Carregando' : u.identity === 'durable' ? 'Ociosa' : 'Sem identidade persistente ainda';
+    const stateText = states.length ? states.map((s) => s.text).join(' · ') : status;
+    const label = `${u.label} · ${u.hint}`;
+    return {
+      viewId: u.viewId,
+      label,
+      states,
+      stateText,
+      bindable: u.bindable,
+      bindHint: u.bindable ? '' : 'Envie a primeira mensagem para que a conversa ganhe identidade e possa ser vinculada.',
+      warning: u.duplicate ? 'Outra aba mostra a mesma conversa.' : '',
+      active: Boolean(u.active),
+      aria: `Sem workspace, ${label}: ${stateText}`
+    };
+  });
+  return {
+    title: `Sem workspace (${items.length})`,
+    items,
+    empty: items.length ? '' : 'Nenhuma conversa sem workspace.',
+    workspaces: (Array.isArray(g.workspaces) ? g.workspaces : []).map((w) => ({ id: w.id, text: `${w.id} · ${w.label || '(sem nome)'}` })),
+    selectedId: g.selectedId === undefined ? null : g.selectedId
+  };
+}
+
 function centerModel(payload, armedViewId = null) {
   const g = payload && payload.global;
-  if (!g) return { ready: false, groups: [], empty: 'Sem dados ainda.' };
+  if (!g) return { ready: false, groups: [], empty: 'Sem dados ainda.', unbound: null };
   const groups = g.groups.map((group) => ({
     key: group.key || 'none',
     id: group.id,
@@ -71,6 +101,7 @@ function centerModel(payload, armedViewId = null) {
   return {
     ready: true,
     groups,
+    unbound: unboundModel(g),
     empty: groups.length ? '' : (t.loaded === 0 ? 'Nenhuma conversa carregada. Conversas que você ainda não abriu não são observadas.' : 'Nenhuma atividade nas conversas observadas.')
   };
 }

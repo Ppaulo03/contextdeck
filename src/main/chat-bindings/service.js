@@ -98,7 +98,7 @@ function createChatBindings({ store, session, observer, selection, now = () => D
   }
 
   // The destination of a write must be verifiable and explicitly acknowledged. See the rules at the top.
-  function checkTarget(target, { selectedAtOpen, confirmTarget }) {
+  function checkTarget(target, { selectedAtOpen, confirmTarget, targetChosen }) {
     if (!validWorkspaceIdentity(target)) return err('invalid_target', 'Destino invalido.');
     if (selectedAtOpen !== null && typeof selectedAtOpen !== 'string') return err('invalid_request', 'Pedido incompleto: falta o workspace selecionado ao abrir.');
     if (target.session !== session) return err('session_mismatch', 'O destino pertence a outra sessao do Herdr.');
@@ -110,7 +110,8 @@ function createChatBindings({ store, session, observer, selection, now = () => D
     if (current !== selectedAtOpen) return err('context_changed', 'O workspace selecionado mudou enquanto o formulario estava aberto. Revise o destino.', { selected: current });
     const workspace = snapshot.byId.get(target.workspaceId);
     if (!workspace) return err('workspace_not_found', 'Esse workspace nao existe mais na sessao.');
-    const explicit = snapshot.workspaces.length === 1 || (sel.selected && sel.selected.origin === 'dock' && sel.selected.workspaceId === target.workspaceId);
+    // `targetChosen`: the user picked this very workspace in the form (a deliberate choice, not an estimate).
+    const explicit = targetChosen === true || snapshot.workspaces.length === 1 || (sel.selected && sel.selected.origin === 'dock' && sel.selected.workspaceId === target.workspaceId);
     if (!explicit && confirmTarget !== true) {
       return err('confirmation_required', 'O destino e uma estimativa (acompanha o foco do Herdr). Confirme o workspace de destino.', { target: { ...target } });
     }
@@ -124,12 +125,12 @@ function createChatBindings({ store, session, observer, selection, now = () => D
   const unknownBinding = () => err('binding_not_found', 'Vinculo nao encontrado.');
 
   // ---- operations ----------------------------------------------------------------------------------------------
-  function bind({ target, url, origin, label, role, selectedAtOpen, confirmTarget } = {}) {
+  function bind({ target, url, origin, label, role, selectedAtOpen, confirmTarget, targetChosen } = {}) {
     const identity = parseChatUrl(url);
     if (!identity.ok) return err(slug(identity.reason), identity.message);
     const l = normalizeLabel(label); if (!l.ok) return l;
     const r = normalizeRole(role); if (!r.ok) return r;
-    const checked = checkTarget(target, { selectedAtOpen, confirmTarget });
+    const checked = checkTarget(target, { selectedAtOpen, confirmTarget, targetChosen });
     if (!checked.ok) return checked;
     const data = store.get();
     const existing = data.bindings.find((b) => b.conversationKey === identity.conversationKey);
@@ -187,10 +188,10 @@ function createChatBindings({ store, session, observer, selection, now = () => D
 
   // Explicitly moves a binding to the verified target. Also the way to adopt an orphan, and to re-confirm a
   // `suspect` binding onto the workspace that now carries its id (moving it to itself refreshes the record).
-  function reassign({ bindingId, target, selectedAtOpen, confirmTarget, confirmReassign } = {}) {
+  function reassign({ bindingId, target, selectedAtOpen, confirmTarget, targetChosen, confirmReassign } = {}) {
     if (confirmReassign !== true) return err('confirmation_required', 'A reassociacao precisa de confirmacao explicita.', { reassign: true });
     if (!find(store.get(), bindingId)) return unknownBinding();
-    const checked = checkTarget(target, { selectedAtOpen, confirmTarget });
+    const checked = checkTarget(target, { selectedAtOpen, confirmTarget, targetChosen });
     if (!checked.ok) return checked;
     const before = find(store.get(), bindingId);
     if (!sameWorkspace(before.workspaceIdentity, target) &&

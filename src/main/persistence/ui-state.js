@@ -2,7 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { isSafeRef } = require('./git');
+const { isSafeRef } = require('../git/core');
 
 const MODES = new Set(['terminal', 'chat']);
 const MAX_REPOS = 50;

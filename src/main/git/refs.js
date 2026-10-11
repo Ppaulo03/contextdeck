@@ -1,6 +1,6 @@
 'use strict';
 
-const git = require('./git');
+const git = require('./core');
 
 const COMMIT_COUNT = 30;
 const REF_LIMIT = 500;

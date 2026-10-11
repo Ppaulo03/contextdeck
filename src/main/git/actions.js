@@ -2,7 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const git = require('./git');
+const git = require('./core');
 const { newZipName, deleteManagedZip } = require('./artifacts');
 
 function formatSize(bytes) {

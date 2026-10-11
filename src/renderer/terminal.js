@@ -35,7 +35,7 @@ function setNotice(message) {
 
 function showError(message) {
   setNotice(message);
-  terminal.write(`\r\n\x1b[31m[Project Dock] ${message}\x1b[0m\r\n`);
+  terminal.write(`\r\n\x1b[31m[ContextDeck] ${message}\x1b[0m\r\n`);
 }
 
 function resizeTerminal() {
@@ -48,7 +48,7 @@ function resizeTerminal() {
 async function startTerminal() {
   terminalRunning = false;
   resizeTerminal();
-  terminal.write('\r\n\x1b[36m[Project Dock M00]\x1b[0m Iniciando Herdr...\r\n');
+  terminal.write('\r\n\x1b[36m[ContextDeck]\x1b[0m Iniciando Herdr...\r\n');
   try {
     const result = await dock.startTerminal({ cols: terminal.cols, rows: terminal.rows });
     if (!result?.ok) {
@@ -119,7 +119,7 @@ dock.onFocusTerminal(() => window.requestAnimationFrame(() => terminal.focus()))
 dock.onPtyData((data) => terminal.write(data));
 dock.onPtyExit(({ exitCode }) => {
   terminalRunning = false;
-  terminal.write(`\r\n\x1b[33m[Project Dock] Herdr client encerrado (codigo ${exitCode}). A sessao no servidor pode continuar ativa.\x1b[0m\r\n`);
+  terminal.write(`\r\n\x1b[33m[ContextDeck] Herdr client encerrado (codigo ${exitCode}). A sessao no servidor pode continuar ativa.\x1b[0m\r\n`);
   setNotice('Herdr encerrou. Clique em Reconectar Herdr.');
 });
 dock.onChatStatus((message) => { if (app.dataset.mode === 'chat') setNotice(message); });

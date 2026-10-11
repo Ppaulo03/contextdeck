@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const { resolveExecutable } = require('./settings');
+const { resolveExecutable } = require('../platform/executable');
 
 const MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
 const TIMEOUT_MS = 60_000;

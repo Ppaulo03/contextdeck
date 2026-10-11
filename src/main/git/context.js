@@ -1,8 +1,8 @@
 'use strict';
 
-const git = require('./git');
-const refsLib = require('./git-refs');
-const { repoKey, getRepoPrefs, setRepoPref } = require('./ui-state');
+const git = require('./core');
+const refsLib = require('./refs');
+const { repoKey, getRepoPrefs, setRepoPref } = require('../persistence/ui-state');
 
 // Active-repository logic shared by every Git IPC handler. `state` is the live ui-state object,
 // `persist()` saves it. Every operation re-resolves the repository and every ref here, in the

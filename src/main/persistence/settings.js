@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const SESSION_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+const LOCAL_CONFIG = 'config.json';
+const EXAMPLE_CONFIG = 'config.example.json';
 
 function validateSettings(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -26,31 +28,12 @@ function validateSettings(value) {
   };
 }
 
+// config.json is the local, git-ignored configuration. A fresh checkout has only the versioned
+// config.example.json, which is used as-is until the user copies it to config.json.
 function loadSettings(projectRoot) {
-  const configPath = path.join(projectRoot, 'config.json');
-  const text = fs.readFileSync(configPath, 'utf8');
-  return validateSettings(JSON.parse(text));
+  const local = path.join(projectRoot, LOCAL_CONFIG);
+  const file = fs.existsSync(local) ? local : path.join(projectRoot, EXAMPLE_CONFIG);
+  return validateSettings(JSON.parse(fs.readFileSync(file, 'utf8')));
 }
 
-function isFile(candidate) {
-  try { return fs.statSync(candidate).isFile(); } catch { return false; }
-}
-
-// Resolves the Herdr executable to an absolute path: an explicit path is checked as-is,
-// a bare name is searched in PATH (honouring PATHEXT). Returns undefined when not found.
-function resolveExecutable(name, env = process.env) {
-  const exts = name.includes('.')
-    ? ['']
-    : ['', ...(env.PATHEXT || '.EXE;.CMD;.BAT').split(';').filter(Boolean)];
-  const hasDir = path.isAbsolute(name) || name.includes('/') || name.includes('\\');
-  const dirs = hasDir ? [''] : (env.PATH || env.Path || '').split(path.delimiter).filter(Boolean);
-  for (const dir of dirs) {
-    for (const ext of exts) {
-      const candidate = dir ? path.join(dir, name + ext) : name + ext;
-      if (isFile(candidate)) return path.resolve(candidate);
-    }
-  }
-  return undefined;
-}
-
-module.exports = { loadSettings, validateSettings, resolveExecutable };
+module.exports = { loadSettings, validateSettings, LOCAL_CONFIG, EXAMPLE_CONFIG };

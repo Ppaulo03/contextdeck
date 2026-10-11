@@ -13,4 +13,15 @@ function decideShortcut(input) {
   return input.isAutoRepeat ? 'swallow' : 'toggle';
 }
 
-module.exports = { decideShortcut };
+// Handler for `before-input-event`, installed on both the UI and the ChatGPT web contents so the
+// shortcut works whichever one has focus.
+function createShortcutHandler(toggle) {
+  return (event, input) => {
+    const decision = decideShortcut(input);
+    if (!decision) return;
+    event.preventDefault();
+    if (decision === 'toggle') toggle();
+  };
+}
+
+module.exports = { decideShortcut, createShortcutHandler };

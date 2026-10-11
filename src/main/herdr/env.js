@@ -1,7 +1,7 @@
 'use strict';
 
 // Builds the environment for the Herdr client PTY. Herdr exports HERDR_* variables
-// (HERDR_ENV, HERDR_SOCKET_PATH, HERDR_PANE_ID...) inside its panes. If Project Dock is
+// (HERDR_ENV, HERDR_SOCKET_PATH, HERDR_PANE_ID...) inside its panes. If ContextDeck is
 // launched from one, inheriting them makes Herdr refuse to start ("nested herdr") and
 // could point the client at the *outer* server's socket instead of the configured session.
 function buildPtyEnv(baseEnv) {

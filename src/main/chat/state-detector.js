@@ -36,8 +36,9 @@ const STOP_VALUE = '^(stop|stopping|streaming|generating|responding)$';
 // over (see state-model.js).
 const WIDE_CONTROLS = 'button, [role="button"]';
 const WIDE_LIMIT = 600;
-const STOP_NOISE = '(voice|voz|voix|share|sharing|compartilh|partag|record|gravar|gravando|dictat|ditad|screen|tela|audio|\u00e1udio|call|chamada|camera|c\u00e2mera)';
-const BUSY_SELECTOR = '[aria-busy="true"], [data-streaming="true"], [data-is-streaming="true"]';
+const STOP_NOISE = '(voice|voz|voix|share|sharing|compartilh|partag|record|gravar|gravando|dictat|ditad|screen|tela|audio|\u00e1udio|call|chamada|ouvi|listen|leitura|read|speak|fala|camera|c\u00e2mera)';
+// Live (trace): a class token such as "AdaptiveStreaming-<hash>" exists on the page exactly while an answer is being streamed.
+const BUSY_SELECTOR = '[aria-busy="true"], [data-streaming="true"], [data-is-streaming="true"], [class*="Streaming"], [class*="streaming"]';
 const BUSY_LIMIT = 200;
 const WORLD_ID = 1001;
 const SHADOW_SCAN_LIMIT = 5000;
@@ -94,7 +95,7 @@ const probeSource = ({ diagnostic = false } = {}) => `(() => {
   const any = (list) => first(list) !== null;
   const { composer, via } = findComposer();
   const buttons = controls(composer);
-  const stop = any(C.stop) || buttons.some(stopLike);
+  let stop = any(C.stop) || buttons.some(stopLike);
   // A stop-like control OUTSIDE the ones read above (only looked for when the strong signal is absent).
   let wideHit = null;
   if (!stop) {
@@ -111,9 +112,16 @@ const probeSource = ({ diagnostic = false } = {}) => `(() => {
       if ((byLabel || byTestId) && visible(b)) { wideHit = { label, testid, by: byLabel ? 'label' : 'testid' }; break; }
     }
   }
+  // Seen live (M01-I3B-2R trace): the current page removes the composer form while it answers and shows a visible control
+  // labelled "Parar" OUTSIDE it. A visible control with a stop LABEL anywhere is therefore the stop control (test-id-only matches
+  // stay the weaker stopWide).
+  if (!stop && wideHit !== null && wideHit.by === 'label') stop = true;
   const busyList = [...document.querySelectorAll(${JSON.stringify(BUSY_SELECTOR)})].slice(0, ${BUSY_LIMIT}).filter(visible);
   const out = {
     composer: composer ? true : (document.body ? false : null),
+    // Live (trace): the composer is often an editable <div> with no <form> around it, so it cannot be told apart from the
+    // document editors; any visible editable surface says the page is up and drawn (used only to confirm an ending).
+    surface: document.body ? [...document.querySelectorAll(${JSON.stringify(EDITABLE)})].slice(0, 30).some(visible) : null,
     stop,
     stopWide: wideHit !== null,
     busy: busyList.length > 0,
@@ -173,7 +181,7 @@ const structureSource = () => `(() => {
   };
 })()`;
 
-const SIGNAL_KEYS = ['composer', 'stop', 'stopWide', 'busy', 'turnActions', 'error', 'interrupted', 'draft'];
+const SIGNAL_KEYS = ['composer', 'surface', 'stop', 'stopWide', 'busy', 'turnActions', 'error', 'interrupted', 'draft'];
 const tri = (v) => (v === true ? true : v === false ? false : null);
 const VIA = new Set(['candidate', 'structural', 'lone', 'shadow']);
 
@@ -224,4 +232,4 @@ function sanitizeStructure(raw) {
   };
 }
 
-module.exports = { CANDIDATES, WORLD_ID, probeSource, structureSource, normalizeSignals, sanitizeProbe, sanitizeStructure, SIGNAL_KEYS };
+module.exports = { FIND_COMPOSER, CANDIDATES, WORLD_ID, probeSource, structureSource, normalizeSignals, sanitizeProbe, sanitizeStructure, SIGNAL_KEYS };

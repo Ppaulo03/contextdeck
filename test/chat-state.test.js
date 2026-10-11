@@ -368,7 +368,7 @@ test('normalizeSignals accepts only booleans from the untrusted page', () => {
   assert.equal(normalizeSignals(null), null);
   assert.equal(normalizeSignals('x'), null);
   assert.deepEqual(normalizeSignals({ composer: 'yes', stop: 1, turnActions: true, error: false, draft: {}, extra: 'ignored' }),
-    { composer: null, stop: null, stopWide: null, busy: null, turnActions: true, error: false, interrupted: null, draft: null });
+    { composer: null, surface: null, stop: null, stopWide: null, busy: null, turnActions: true, error: false, interrupted: null, draft: null });
   assert.ok(Object.keys(CANDIDATES).length >= 5);
 });
 

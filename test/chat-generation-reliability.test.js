@@ -33,17 +33,21 @@ const responding = (view = 'visible') => { const h = harness().load(CONV_A); h.d
 
 const el = (attrs = {}, extra = {}) => ({ hidden: false, getClientRects: () => [1], getAttribute: (n) => (n in attrs ? attrs[n] : null), hasAttribute: (n) => n in attrs, attributes: Object.entries(attrs).map(([name, value]) => ({ name, value })), type: '', ...extra });
 const WIDE = 'button, [role="button"]';
+const BUSY_SEL = '[aria-busy="true"], [data-streaming="true"], [data-is-streaming="true"], [class*="Streaming"], [class*="streaming"]';
 function probe(map, options) {
   const document = { body: {}, querySelector: (s) => map[s] || null, querySelectorAll: (s) => (map[s] ? [].concat(map[s]) : []) };
   return vm.runInNewContext(probeSource(options), { document });
 }
 const composerOnly = { 'textarea[data-octane-input]': el({}, { value: '' }) };
 
-test('document page: a stop control outside the composer is reported as stopWide, not as the strong stop signal', () => {
-  const out = probe({ ...composerOnly, [WIDE]: [el({ 'aria-label': 'Parar de gerar' })] });
-  assert.equal(out.stop, false, 'the strong signal only looks where the composer keeps its control');
+test('a visible control labelled like a stop control OUTSIDE the composer is the stop control (seen live: "Parar" beside a form-less composer)', () => {
+  const out = probe({ ...composerOnly, [WIDE]: [el({ 'aria-label': 'Parar' })] });
+  assert.equal(out.stop, true);
   assert.equal(out.stopWide, true);
-  assert.equal(out.composer, true);
+  const live = probe({ [WIDE]: [el({ 'aria-label': 'Parar' })] });          // the live page while answering: no composer form at all
+  assert.deepEqual([live.composer, live.stop], [false, true]);
+  const byId = probe({ ...composerOnly, [WIDE]: [el({ 'data-testid': 'canvas-stop-button' })] });
+  assert.deepEqual([byId.stop, byId.stopWide], [false, true], 'a test-id-only match stays the weaker signal');
 });
 
 test('stopWide ignores voice/share/record controls, hidden controls and unrelated buttons; busy needs a visible flagged element', () => {
@@ -53,7 +57,7 @@ test('stopWide ignores voice/share/record controls, hidden controls and unrelate
   assert.equal(probe({ ...composerOnly, [WIDE]: [el({ 'aria-label': 'Parar de gerar' }, { getClientRects: () => [] })] }).stopWide, false, 'not visible');
   assert.equal(probe({ ...composerOnly, [WIDE]: [el({ 'aria-label': 'Copiar' })] }).stopWide, false);
   assert.equal(probe({ ...composerOnly, [WIDE]: [el({ 'data-testid': 'canvas-stop-button' })] }).stopWide, true, 'by test id');
-  const busySel = '[aria-busy="true"], [data-streaming="true"], [data-is-streaming="true"]';
+  const busySel = BUSY_SEL;
   assert.equal(probe({ ...composerOnly, [busySel]: [el({ 'aria-busy': 'true' })] }).busy, true);
   assert.equal(probe({ ...composerOnly, [busySel]: [el({ 'aria-busy': 'true' }, { getClientRects: () => [] })] }).busy, false);
   assert.equal(probe(composerOnly).busy, false);
@@ -74,7 +78,7 @@ test('the wide scan is skipped when the strong signal is present, and every valu
 });
 
 test('diagnostic probe tells which wide control matched (label shape only) and how many busy elements exist', () => {
-  const out = probe({ ...composerOnly, [WIDE]: [el({ 'aria-label': 'Parar de gerar' })], '[aria-busy="true"], [data-streaming="true"], [data-is-streaming="true"]': [el(), el()] }, { diagnostic: true });
+  const out = probe({ ...composerOnly, [WIDE]: [el({ 'aria-label': 'Parar de gerar' })], [BUSY_SEL]: [el(), el()] }, { diagnostic: true });
   assert.deepEqual(JSON.parse(JSON.stringify(out.wide)), { by: 'label', label: 'Parar de gerar', testid: '' });
   assert.equal(out.busyCount, 2);
 });
@@ -119,14 +123,18 @@ test('a control that vanishes for fewer than N observations and returns never en
   assert.equal(h.state.generation.state, GEN.RESPONDING);
 });
 
-test('an unusable observation between confirmations restarts the count (confirmations must be consecutive)', () => {
+test('observations that say nothing (the composer form flickers) neither confirm nor restart the count; a contrary signal does', () => {
   const h = responding('hidden');
   h.repeat(sig({ stop: false }), END_CONFIRMATIONS - 1);
-  h.observe(sig({ stop: false, composer: null }));
-  h.repeat(sig({ stop: false }), END_CONFIRMATIONS - 1);
+  h.repeat(sig({ stop: false, composer: false }), 5);               // seen live: the form is removed and re-created
   assert.equal(h.state.generation.state, GEN.RESPONDING);
   h.observe(sig({ stop: false }));
-  assert.equal(h.state.generation.state, GEN.UNKNOWN);
+  assert.equal(h.state.generation.state, GEN.UNKNOWN, 'the last confirmation completes the count');
+  const g = responding('hidden');
+  g.repeat(sig({ stop: false }), END_CONFIRMATIONS - 1);
+  g.observe(sig({ stop: true }));                                    // a contrary signal restarts it
+  g.repeat(sig({ stop: false }), END_CONFIRMATIONS - 1);
+  assert.equal(g.state.generation.state, GEN.RESPONDING);
 });
 
 test('short response: stop seen once, then a sustained quiet page ends it after exactly N confirmations', () => {
@@ -312,4 +320,34 @@ test('diagnostic log of an uncertain end records signals, streak counters, reaso
     assert.equal(last.attention, false);
     assert.doesNotMatch(JSON.stringify(lines), /11111111-aaaa/, 'conversation id hashed');
   } finally { o.stop(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ---- the page as seen live (trace of the real account, M01-I3B-2R) --------------------------------------------------------
+
+test('LIVE FORM-LESS PAGE: composer never found, an editable surface is drawn; the response ends after 3 quiet observations, not never', () => {
+  const live = (over) => sig({ composer: false, surface: true, stop: false, stopWide: false, busy: false, ...over });
+  const h = responding('hidden');
+  h.observe(live({ stop: true, stopWide: true }));                 // "Parar" outside any form
+  h.repeat(live({ busy: true }), 4);                               // AdaptiveStreaming-... class present
+  assert.equal(h.state.generation.state, GEN.RESPONDING);
+  h.repeat(live(), END_CONFIRMATIONS - 1);
+  assert.equal(h.state.generation.state, GEN.RESPONDING, 'not on the first quiet observations');
+  assert.equal(h.state.attention.pending, false);
+  h.observe(live());
+  assert.deepEqual([h.state.generation.state, h.state.generation.reason, h.state.attention.pending], [GEN.UNKNOWN, 'ended-unclassified', true]);
+});
+
+test('a page with nothing drawn (no composer, no editable surface) never confirms an ending', () => {
+  const h = responding('hidden');
+  h.repeat(sig({ composer: false, surface: false, stop: false }), UNUSABLE_LIMIT - 1);
+  assert.equal(h.state.generation.state, GEN.RESPONDING);
+  assert.equal(h.state.attention.pending, false);
+});
+
+test('probe: surface is any visible editable element; a streaming class token counts as busy', () => {
+  const EDIT = 'textarea, [contenteditable="true"], [contenteditable=""], [role="textbox"]';
+  assert.equal(probe({ [EDIT]: [el()] }).surface, true);
+  assert.equal(probe({ [EDIT]: [el({}, { getClientRects: () => [] })] }).surface, false);
+  assert.equal(probe({}).surface, false);
+  assert.equal(probe({ [BUSY_SEL]: [el({ class: 'AdaptiveStreaming-abc' })] }).busy, true);
 });

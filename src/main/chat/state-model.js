@@ -73,7 +73,7 @@ const isEnded = (g) => g.state === GEN.COMPLETED || g.state === GEN.INTERRUPTED 
 function holdUncertain(probe) {
   const unusable = probe.unusable + 1;
   if (unusable >= UNUSABLE_LIMIT) return { generation: GEN_UNKNOWN('uncertain-timeout'), probe: NO_STREAK };
-  return { generation: { ...gen(GEN.RESPONDING, EVIDENCE.INFERRED, 'signals-unusable'), streak: unusable }, probe: { confirm: 0, unusable, weak: probe.weak } };
+  return { generation: { ...gen(GEN.RESPONDING, EVIDENCE.INFERRED, 'signals-unusable'), streak: unusable }, probe: { confirm: probe.confirm, unusable, weak: probe.weak } };
 }
 
 // signals: { composer, stop, stopWide, busy, turnActions, error, interrupted } each true | false | null (null = not determinable)
@@ -85,7 +85,7 @@ function classifyGeneration(prev, s, probe) {
   if (prev.state === GEN.RESPONDING) {
     if (s.stopWide === true) return { generation: gen(GEN.RESPONDING, EVIDENCE.INFERRED, 'stop-control-elsewhere'), probe: NO_STREAK };
     if (s.busy === true && probe.weak < BUSY_ONLY_LIMIT) return { generation: gen(GEN.RESPONDING, EVIDENCE.INFERRED, 'busy-signal'), probe: { confirm: 0, unusable: 0, weak: probe.weak + 1 } };
-    if (s.stop === false && s.composer === true) {
+    if (s.stop === false && (s.composer === true || s.surface === true)) {
       const confirm = probe.confirm + 1;
       if (confirm < END_CONFIRMATIONS) return { generation: { ...gen(GEN.RESPONDING, EVIDENCE.INFERRED, 'end-unconfirmed'), streak: confirm }, probe: { confirm, unusable: 0, weak: probe.weak } };
       // Sustained: the stop control is NOT evidence of completion by itself; only a signal of its own can say more.

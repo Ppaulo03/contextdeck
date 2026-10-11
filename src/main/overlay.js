@@ -9,14 +9,18 @@ const { appWebPreferences } = require('./web-preferences');
 // over the local UI's DOM, so a popover (or any z-index) would be hidden in the ChatGPT tab. Native
 // views are ordered by the main process, so adding this one last puts it on top in both tabs.
 //
-// It is created on first use and kept (one extra renderer process, no reload cost on later openings),
+// It is created on first use and kept for IDLE_RELEASE_MS after the menu closes (one extra renderer process;
+// reopening within that time costs nothing, after it ~100 ms),
 // covers the whole content area so a click anywhere outside the menu closes it, and is removed from
 // the window whenever it is not open so it never intercepts input. It has the local preload bridge
 // of the menu only and the same isolation as every other web contents (see web-preferences.js).
+const IDLE_RELEASE_MS = 30000;
+
 function createOverlay({ getWindow, preloadPath, html, onBeforeInput, onHidden }) {
   let view;
   let ready;
   let open = false;
+  let idleTimer;
 
   const liveWindow = () => { const w = getWindow(); return w && !w.isDestroyed() ? w : null; };
   const liveContents = () => (view && !view.webContents.isDestroyed() ? view.webContents : null);
@@ -43,6 +47,7 @@ function createOverlay({ getWindow, preloadPath, html, onBeforeInput, onHidden }
   async function show(anchor) {
     const win = liveWindow();
     if (!win) return false;
+    clearTimeout(idleTimer);
     await ensure();
     if (!liveWindow()) return false;
     fit();
@@ -64,7 +69,19 @@ function createOverlay({ getWindow, preloadPath, html, onBeforeInput, onHidden }
       win.webContents.focus();
     }
     onHidden?.();
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(release, IDLE_RELEASE_MS);
+    idleTimer.unref?.();
     return true;
+  }
+
+  // Frees the extra renderer process (~115 MB measured) when the menu has not been used for a while.
+  function release() {
+    if (open || !view) return;
+    const contents = liveContents();
+    if (contents) contents.close();
+    view = undefined;
+    ready = undefined;
   }
 
   return {
@@ -76,9 +93,8 @@ function createOverlay({ getWindow, preloadPath, html, onBeforeInput, onHidden }
     send: (channel, data) => { const c = liveContents(); if (c) c.send(channel, data); },
     destroy() {
       hide();
-      const contents = liveContents();
-      if (contents) contents.close();
-      view = undefined;
+      clearTimeout(idleTimer);
+      release();
     }
   };
 }

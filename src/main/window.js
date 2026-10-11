@@ -1,8 +1,10 @@
 'use strict';
 
+const path = require('node:path');
 const { BrowserWindow } = require('electron');
 const { saveUiState } = require('./persistence/ui-state');
 const { createChatView } = require('./chat-view');
+const { startChatObservation } = require('./chat');
 const { createOverlay } = require('./overlay');
 const { createShortcutHandler } = require('./shortcuts');
 const { appWebPreferences } = require('./web-preferences');
@@ -17,6 +19,7 @@ const FOOTER_RANGE = [30, 420];
 function createWindowController({ uiState, uiStateFile, preloadPath, overlayPreloadPath, rendererHtml, overlayHtml, onClosed }) {
   let mainWindow;
   let chat;
+  let chatObservation = null;   // experimental, off unless CONTEXTDECK_CHAT_OBSERVER=1 (see chat/index.js)
   let overlay;
   let lastChatBounds = null;
   let activeMode = 'terminal';
@@ -62,6 +65,8 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
       mainWindow.contentView.removeChildView(chat.view);
     }
     activeMode = mode;
+    chatObservation?.setVisible(mode === 'chat');
+    if (mode === 'chat') chatObservation?.markViewed();
     persist();
     send('dock:mode', mode);
     if (mode === 'chat') {
@@ -119,6 +124,8 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
       onClosed?.();
       if (overlay) overlay.destroy();
       overlay = undefined;
+      chatObservation?.stop();
+      chatObservation = null;
       if (chat) chat.destroy();
       chat = undefined;
       mainWindow = undefined;
@@ -126,6 +133,7 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
 
     await mainWindow.loadFile(rendererHtml);
     chat = createChatView({ send, onBeforeInput: handleShortcuts });
+    chatObservation = startChatObservation({ contents: chat.contents, userDataDir: path.dirname(uiStateFile) });
     if (uiState.lastMode === 'chat') switchMode('chat');
     else send('dock:mode', 'terminal');
   }

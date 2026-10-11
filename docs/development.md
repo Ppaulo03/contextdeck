@@ -46,6 +46,10 @@ A throwaway script run with `electron <script>` can `require('src/main/index.js'
 - `sendInputEvent` does **not** trigger `before-input-event`; exercise the shortcut wiring with `webContents.emit('before-input-event', { preventDefault() {} }, { control: true, key: 'Tab', type: 'keyDown', isAutoRepeat: false, … })`. Typing into a focused renderer input works with `sendInputEvent`/`insertText`.
 - Electron's `clipboard.readText()` in the main process did not reflect writes in a harness; verify the clipboard from an external `powershell -STA` process (`[Windows.Forms.Clipboard]::GetText()` / `GetFileDropList()`), and `trim()` the trailing newline.
 
+### Herdr lab sessions
+
+Experiments that create, focus, rename or close workspaces must use a throwaway session (`herdr --session m01i1-lab` or similar), never `default` or the app's session. Techniques that worked (details in [validation/m01-i1.md](validation/m01-i1.md)): `herdr api schema --output <file>` for the contract; `herdr session list --json` for the endpoint; connect to `\\.\pipe\<socket_path>` and exchange JSON lines; point extra clients at a lab config with `HERDR_CONFIG_PATH` (for example direct `next_workspace` keys) instead of touching your Herdr config; read what a client displays by feeding its PTY output to `@xterm/headless` (install it in a temp folder, not in the project) and looking for a marker echoed into each workspace. Clean up with `herdr session stop <name>` and `herdr session delete <name>`, for your own lab sessions only.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

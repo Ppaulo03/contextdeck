@@ -11,7 +11,7 @@ Delivered in three iterations plus a foundation pass; record in [validation/m00.
 - **I3:** Git pickers fed by the repository, per-repository preferences, revalidation in main.
 - **R00:** ContextDeck identity, modular `src/` layout, `dist/` build output, config split, documentation. No functional change.
 
-## M01 — Workspaces (not started)
+## M01 — Workspaces (I1 implemented)
 
 Goal: work on two or three projects at once without mixing contexts. Direction fixed by [ADR 0001](decisions/0001-herdr-workspaces.md): **Herdr owns the workspaces**; ContextDeck stores only the associations, and they are explicit:
 
@@ -20,7 +20,10 @@ Goal: work on two or three projects at once without mixing contexts. Direction f
 - Per-workspace UI state (last tab, selected refs).
 - Visible workspace ↔ conversation labelling so a message is never sent to the wrong project.
 
-Starts with M01-I1 (discovery of Herdr workspaces and the association model); anything beyond that is refined there. Out of scope: automatic prompt transfer, reading conversations, new inference integrations.
+Starts with M01-I1. Out of scope: automatic prompt transfer, reading conversations, new inference integrations.
+
+- **M01-I1 — implemented, awaiting homologation.** Read-only discovery of the workspaces of the configured Herdr session, change tracking, recovery, and a diagnostic panel ([validation/m01-i1.md](validation/m01-i1.md)). Finding: Herdr's API has **no per-client focus**, so the workspace visible in ContextDeck's own client cannot be identified (reported as `ambiguous`; `known` only with a single workspace). Nothing is associated with ChatGPT yet.
+- **M01-I2 / I3 — not started.** Their shape depends on that finding; the recommendation (explicit association instead of following Herdr focus) is in the validation record and needs approval before work starts.
 
 ## M02 — Not defined yet
 

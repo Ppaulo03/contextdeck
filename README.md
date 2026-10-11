@@ -54,6 +54,7 @@ Existing `config.json` files (including the Project Dock M00 session name `proje
 - **Switch views:** click the tabs or press `Ctrl+Tab` (one switch per physical press; holding the keys does not repeat). Both views keep their state; the ChatGPT page is never reloaded and the Herdr client is never restarted by switching.
 - **Clipboard:** `Ctrl+Shift+C` / `Ctrl+Shift+V` in the terminal; normal `Ctrl+C` / `Ctrl+V` in ChatGPT. Pasted newlines may be treated as Enter by the receiving agent: review before pasting.
 - **Closing the app** only closes the Herdr *client*; Herdr's server and your agents keep running.
+- **Workspaces** (terminal view): a read-only diagnostic panel listing the workspaces of the configured Herdr session, the connection state and the last events. It cannot change Herdr, and it cannot tell which workspace *your* client is showing (Herdr's API has no per-client focus); see [docs/validation/m01-i1.md](docs/validation/m01-i1.md).
 
 ### Git tools (footer)
 

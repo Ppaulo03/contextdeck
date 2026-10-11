@@ -32,8 +32,13 @@ Associations are explicit (chosen by the user, shown in the UI) so a message is 
 - **ContextDeck owns projects and launches one Herdr session per project.** Rejected: duplicates Herdr, drifts from what the user does inside Herdr, and conflicts with "do not recreate what Herdr already offers".
 - **Free-form per-conversation notes with no workspace link.** Rejected: reintroduces the context-mixing risk this work exists to remove.
 
-## Open questions (to resolve in M01-I1, not assumed here)
+## Findings (M01-I1, Herdr 0.9.3 — see [validation/m01-i1.md](../validation/m01-i1.md))
 
-- Whether Herdr workspace identifiers (the `w<n>` ids seen in pane environments) are stable across Herdr restarts, or a different key (name, directory) is needed.
-- Which Herdr command or socket call lists workspaces cheaply and reliably from outside a pane, and what it returns on Windows.
-- How to present associations whose workspace no longer exists.
+- Workspace ids (`w<n>`) are opaque, **not reused** and **stable across a Herdr server restart**, so the verbatim id plus the session name is a usable association key (the id is only meaningful inside one session).
+- Workspaces can be listed and observed from outside a pane through the local API (Windows named pipe, `session.snapshot` + event signals); the endpoint comes from `herdr session list --json`.
+- The API has **no per-client focus**: ContextDeck cannot tell which workspace its own client shows when several exist. Associations must therefore never depend on following Herdr's focus.
+
+## Open questions
+
+- How to present associations whose workspace no longer exists (design question for M01-I2).
+- Whether ids stay stable across a server **rebuild** from scratch (deleted session), not only a restart: not tested.

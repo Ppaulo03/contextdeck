@@ -28,11 +28,13 @@ src/main/
   chat-view.js        ChatGPT WebContentsView: partition, permissions, navigation and popup policy.
   web-preferences.js  The only place that defines webPreferences (isolation for every web contents).
   shortcuts.js        Ctrl+Tab decision (pure) and the before-input-event handler.
-  herdr/              client.js (PTY client lifecycle), env.js (strips HERDR_* from the PTY env).
+  herdr/              client.js (PTY client lifecycle), env.js (strips HERDR_* from the PTY env);
+                      api-client.js (read-only named-pipe API client), session-locator.js, workspace-reader.js
+                      (snapshot normalizer + active-workspace identification), workspace-observer.js.
   git/                core.js (safe exec, repo/ref validation, diff/show/archive), refs.js (discovery and
                       selection), context.js (active repo + per-repo prefs), actions.js (copy/zip/delete),
                       artifacts.js (ZIP naming and guarded deletion).
-  ipc/                index.js + dock.js, terminal.js, clipboard.js, git.js (channel registration by domain).
+  ipc/                index.js + dock.js, terminal.js, clipboard.js, git.js, herdr.js (channel registration by domain).
   persistence/        settings.js (config), ui-state.js (preferences), identity.js (persistent identifiers).
   platform/           executable.js (PATH/PATHEXT lookup), file-clipboard.js (CF_HDROP via PowerShell STA).
 src/preload/index.js  contextBridge API (`window.dock`).
@@ -56,7 +58,8 @@ Every handler first checks `event.sender` is the local UI window; strangers get 
 | `clipboard:read`, `clipboard:write` | invoke | Text clipboard for the terminal (≤ 1 MiB). |
 | `git:status`, `git:refs`, `git:pick-repo`, `git:set-refs` | invoke | Repository state, discovered refs + validated selection, folder picker, store refs. |
 | `git:diff`, `git:show`, `git:zip`, `git:delete-zip` | invoke | The four actions. `delete-zip` takes **no path**. |
-| main → renderer | events | `dock:mode`, `dock:focus-terminal`, `pty:data`, `pty:exit`, `chat:status`, `chat:host`, `chat:error`. |
+| `herdr:state`, `herdr:refresh` | invoke | Read-only observer state for the diagnostic panel; refresh re-reads. No channel mutates Herdr. |
+| main → renderer | events | `dock:mode`, `dock:focus-terminal`, `pty:data`, `pty:exit`, `chat:status`, `chat:host`, `chat:error`, `herdr:state` (throttled push). |
 
 `test/structure.test.js` pins this list: the registered channels, the preload's channels and main's emitted events must match exactly.
 
@@ -76,6 +79,23 @@ Every handler first checks `event.sender` is the local UI window; strangers get 
 - `git diff <base>` covers tracked files only; `git archive` covers files tracked in the commit only.
 - ZIPs live in `<userData>\artifacts` (never in the repo) with names `dock-<repo>-<sha8>-<timestamp>-<rand>.zip`. Deletion is limited to the last generated ZIP, requires that exact naming and folder, refuses symlinks, and never clears the clipboard.
 - The file clipboard uses a constant PowerShell script (`Clipboard.SetFileDropList`, STA); the path travels in an environment variable and the result is read back and verified.
+
+## Herdr workspace integration (M01-I1, read-only)
+
+Herdr remains the source of truth for sessions, workspaces, panes and agents ([ADR 0001](decisions/0001-herdr-workspaces.md)); ContextDeck only *reads* them.
+
+```text
+workspace-observer ──subscribe (events = signals)──┐
+        │                                          ▼
+        └── session.snapshot ──► workspace-reader ──► model ──► herdr:state ──► diagnostic panel
+ session-locator ('herdr session list --json') ─► api-client (\\.\pipe\<socket_path>, JSON lines, read allowlist)
+```
+
+- **Transport and contract:** named pipe `\\.\pipe\<socket_path>`; allowlisted methods `ping`, `session.snapshot`, `workspace.list`, `workspace.get`; subscriptions limited to workspace/tab/pane topology and focus events. Anything else is rejected before a connection is opened. Details and captured exchanges: [validation/m01-i1.md](validation/m01-i1.md).
+- **State model:** one `session.snapshot` per read, Herdr ids verbatim, directory taken from the active tab pane's cwd. `sessionFocus` is the session-wide last focus change from *any* client; it is not the workspace visible in ContextDeck's client.
+- **Reconciliation:** subscribe first, read, then treat every event only as "something changed" (coalesced, debounced re-read); a 60 s heartbeat and every reconnect re-read authoritative state; reconnect backoff 1 s → 15 s. Duplicated, delayed, reordered or lost events cannot corrupt the model.
+- **Active workspace:** `known` only when the session has exactly one workspace; otherwise `ambiguous` (session focus offered only as a candidate) or `unknown`. Herdr exposes no per-client focus, and TUI parsing or "last event wins" are deliberately not used.
+- **Boundaries:** the observer is created in `index.js`, started after the window exists and stopped on window close and quit; the remote ChatGPT page has no path to it. `HERDR_*` is stripped from the locator's child process as for the PTY.
 
 ## Persistent identifiers (do not change casually)
 

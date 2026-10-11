@@ -13,7 +13,7 @@ loads the same file plus `overlay/overlay.css`.
 | `tokens.css` | The **only** place with raw values: surfaces, borders, text, accent, status colors, typography, spacing scale (`--space-1…6`), radii, control heights, layers (`--z-panel`, `--z-menu`), shadow, motion, terminal palette. |
 | `base.css` | Reset, element defaults, one `:focus-visible` ring, `[hidden]`, `prefers-reduced-motion`. |
 | `layout.css` | App frame (top bar, content, footer), mode-dependent visibility (`.terminal-only` / `.chat-only`), responsive breakpoints. |
-| `components.css` | Buttons, controls and select triggers, tabs, toggle, badges, menus, status line, diagnostics panel. |
+| `components.css` | Buttons, controls and select triggers, the segmented view switch, toggle, badges, menus, status line, diagnostics panel. |
 
 Rules enforced by `test/structure.test.js`: no raw hex/rgb colors, no literal `z-index`, no font stacks outside
 `tokens.css`. State is expressed with `aria-*` (`aria-busy`, `aria-pressed`, `aria-disabled`) or `.is-*` classes.
@@ -26,7 +26,7 @@ Animation exists in one place (the pending spinner) and is disabled by `prefers-
 | `dom.js` | `$`, `el`, `setAttr`, `setText` (text is always set with `textContent`, never HTML). | – |
 | `feedback.js` | The status line in the footer, with an error level. | `dom` |
 | `herdr-store.js` | The single subscription to Herdr state pushed by main, plus one initial read; components subscribe to it. | bridge |
-| `header.js` | View tabs, per-view controls, session label. | `dom`, bridge |
+| `header.js` | Terminal/ChatGPT segmented switch (`aria-selected`), per-view controls. | `dom`, bridge |
 | `terminal-view.js` | xterm.js, copy/paste, PTY resize (frame-coalesced, only when the grid changes). Theme from tokens. | bridge, `feedback` |
 | `workspace-selector.js` | Combobox-style trigger + Auto/Manual toggle; opens the menu overlay. | `store`, `feedback`, shared view-model |
 | `git-panel.js` | Git tools and pickers in the footer. | `dom`, `feedback`, bridge |
@@ -34,6 +34,10 @@ Animation exists in one place (the pending spinner) and is disabled by `prefers-
 
 `app.js` only creates the components and connects them. `src/shared/workspace-view.js` is a pure view-model
 (trigger text/tone/busy, menu items, filtering) used by the trigger and by the menu, and unit-tested in Node.
+
+## Top bar
+
+Order: ContextDeck name · Terminal/ChatGPT segmented switch · workspace selector and Auto/Manual · contextual actions · "Chat sem projeto" hint (ChatGPT view only). The switch is one fixed-size group (`.segmented` / `.segment`, same height family as the workspace controls); the selected segment is a filled pill, hover and `:focus-visible` states use the shared tokens, and nothing changes size when switching. The Herdr session name is not in the bar: it is shown in the diagnostics panel. Narrow windows hide the name and the "Workspace" label (≤1000 px) and let the actions scroll (≤700 px effective).
 
 ## Workspace menu (`src/renderer/overlay/`, `src/main/overlay.js`)
 

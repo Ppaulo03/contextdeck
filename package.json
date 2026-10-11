@@ -1,0 +1,21 @@
+{
+  "name": "project-dock-m00",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Minimal Electron/Herdr/ChatGPT workspace feasibility spike for Windows",
+  "main": "main.js",
+  "scripts": {
+    "build:renderer": "esbuild renderer/terminal.js --bundle --platform=browser --format=iife --target=chrome120 --outfile=renderer/terminal.bundle.js",
+    "start": "npm run build:renderer && electron .",
+    "check": "node --check main.js && node --check preload.js && node --test test/*.test.js && npm run build:renderer"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "node-pty": "1.1.0"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "esbuild": "0.25.12"
+  }
+}

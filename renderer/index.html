@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; frame-src 'none'">
+  <title>Project Dock - M00</title>
+  <link rel="stylesheet" href="./terminal.bundle.css">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div id="app" data-mode="terminal">
+    <header class="topbar">
+      <div class="product">Project Dock <span class="version">M00</span></div>
+      <div class="tabs" role="tablist" aria-label="Views">
+        <button id="tab-terminal" class="tab active" role="tab" aria-selected="true" type="button">Herdr</button>
+        <button id="tab-chat" class="tab" role="tab" aria-selected="false" type="button">ChatGPT</button>
+      </div>
+      <div class="view-actions">
+        <div class="actions terminal-actions">
+          <button id="reconnect-terminal" class="action" type="button">Reconectar Herdr</button>
+        </div>
+        <div class="actions chat-actions">
+          <button id="chat-home" class="action" type="button">In&iacute;cio GPT</button>
+          <button id="reload-chat" class="action" type="button">Recarregar</button>
+          <button id="external-chat" class="action" type="button">Abrir no navegador</button>
+        </div>
+      </div>
+      <div class="unlinked" title="Neste M00, o ChatGPT ainda nao esta vinculado a um projeto">Chat sem projeto</div>
+      <div class="session-label" title="Sessao isolada do Herdr"><span class="session-dot"></span><span id="session-name">Conectando...</span></div>
+    </header>
+    <main class="content">
+      <div id="terminal-root" aria-label="Terminal Herdr"></div>
+    </main>
+    <footer class="footer" id="footer">
+      <div class="git-row">
+        <div class="git-repo" id="git-repo" title="">Git: &hellip;</div>
+        <button id="git-pick" class="action" type="button" title="Escolher a pasta do reposit&oacute;rio">Repo&hellip;</button>
+        <button id="git-refresh" class="action icon" type="button" title="Atualizar refer&ecirc;ncias (n&atilde;o faz fetch)" aria-label="Atualizar refer&ecirc;ncias">&#8635;</button>
+        <div class="picker"><span class="plabel">Base diff</span><button id="base-btn" class="pbtn" type="button" aria-haspopup="listbox" aria-expanded="false"></button></div>
+        <div class="picker"><span class="plabel">Revis&atilde;o</span><button id="rev-btn" class="pbtn" type="button" aria-haspopup="listbox" aria-expanded="false"></button><span id="rev-resolved" class="resolved"></span></div>
+        <div class="actions git-actions">
+          <button id="git-diff" class="action" type="button" title="git diff &lt;base&gt; (somente arquivos rastreados)">Copiar Diff</button>
+          <button id="git-show" class="action" type="button" title="git show &lt;revis&atilde;o&gt;">Copiar Git Show</button>
+          <button id="git-zip" class="action" type="button" title="git archive &lt;revis&atilde;o&gt; &rarr; ZIP copiado como arquivo">Gerar + Copiar ZIP</button>
+          <button id="git-zip-delete" class="action danger" type="button" disabled>Excluir ZIP</button>
+        </div>
+      </div>
+      <div class="picker-panel" id="picker-panel" hidden>
+        <input id="picker-search" type="text" role="combobox" aria-controls="picker-list" aria-expanded="true" aria-autocomplete="list" placeholder="Buscar branch, tag ou commit; ou digite HEAD~2 / SHA e Enter" maxlength="200" spellcheck="false" autocomplete="off">
+        <ul id="picker-list" role="listbox"></ul>
+      </div>
+      <div class="hint" id="git-hint" role="alert" hidden></div>
+      <div class="notification" id="notification" role="status">Ctrl+Tab para alternar</div>
+    </footer>
+  </div>
+  <script src="./terminal.bundle.js"></script>
+</body>
+</html>
+

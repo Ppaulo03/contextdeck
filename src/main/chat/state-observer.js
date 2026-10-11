@@ -1,7 +1,7 @@
 'use strict';
 
 const { createState, reduce, PAGE, GEN } = require('./state-model');
-const { WORLD_ID, probeSource, normalizeSignals } = require('./state-detector');
+const { WORLD_ID, probeSource, structureSource, normalizeSignals, sanitizeProbe, sanitizeStructure } = require('./state-detector');
 
 // Sequence bookkeeping alone (lastSeq) is not a change worth reporting.
 const meaningful = (s) => JSON.stringify([s.epoch, s.page, s.identity, s.generation, s.draft, s.visible, s.attention]);
@@ -18,8 +18,9 @@ function createStateObserver({ contents, onChange, intervals = DEFAULT_INTERVALS
   let state = createState();
   let seq = 0;
   let timer;
+  let timerDue = 0;
   let stopped = false;
-  const stats = { polls: 0, changes: 0, signalsLost: 0, lastLatencyMs: null };
+  const stats = { polls: 0, changes: 0, signalsLost: 0, lastLatencyMs: null, dropped: { stale: 0, order: 0 } };
   const source = probeSource({ diagnostic });
 
   function dispatch(event) {
@@ -61,10 +62,14 @@ function createStateObserver({ contents, onChange, intervals = DEFAULT_INTERVALS
   }
 
   function schedule() {
+    if (stopped || state.page !== PAGE.READY) { clearTimer(timer); timer = undefined; return; }
+    // A pending poll that is already due sooner is kept: re-arming on every visibility toggle would starve polling.
+    const wait = interval();
+    const due = Date.now() + wait;
+    if (timer && timerDue <= due) return;
     clearTimer(timer);
-    timer = undefined;
-    if (stopped || state.page !== PAGE.READY) return;
-    timer = setTimer(() => { timer = undefined; void poll(); }, interval());
+    timerDue = due;
+    timer = setTimer(() => { timer = undefined; void poll(); }, wait);
     timer.unref?.();
   }
 
@@ -78,7 +83,11 @@ function createStateObserver({ contents, onChange, intervals = DEFAULT_INTERVALS
       const raw = await contents.executeJavaScriptInIsolatedWorld(WORLD_ID, [{ code: source }]);
       stats.lastLatencyMs = Number(process.hrtime.bigint() - started) / 1e6;
       const signals = normalizeSignals(raw);
-      onProbe?.({ latencyMs: stats.lastLatencyMs, control: raw && raw.controlSignature });
+      const extra = diagnostic ? sanitizeProbe(raw) : null;
+      onProbe?.({ latencyMs: stats.lastLatencyMs, signals, via: extra && extra.via, controls: extra && extra.controls, form: extra && extra.form });
+      // Results that the model will discard are counted, so a silent loss shows up in the diagnostics.
+      if (epoch !== state.epoch) stats.dropped.stale += 1;
+      else if (!(mySeq > state.lastSeq)) stats.dropped.order += 1;
       if (signals) dispatch({ type: 'signals', epoch, seq: mySeq, signals });
       else { stats.signalsLost += 1; dispatch({ type: 'signals-lost', epoch }); }
     } catch {
@@ -86,6 +95,15 @@ function createStateObserver({ contents, onChange, intervals = DEFAULT_INTERVALS
       dispatch({ type: 'signals-lost', epoch });
     }
     schedule();
+  }
+
+  // Sanitized structural snapshot of the page (counts and control attributes, never text) for diagnosing a
+  // page whose composer is not found. Diagnostic mode only; resolves null when it cannot run.
+  async function snapshotStructure() {
+    if (stopped || state.page !== PAGE.READY || contents.isDestroyed()) return null;
+    try {
+      return sanitizeStructure(await contents.executeJavaScriptInIsolatedWorld(WORLD_ID, [{ code: structureSource() }]));
+    } catch { return null; }
   }
 
   function stop() {
@@ -113,6 +131,7 @@ function createStateObserver({ contents, onChange, intervals = DEFAULT_INTERVALS
     setVisible: (visible) => dispatch({ type: 'visibility', visible }),
     markViewed: () => dispatch({ type: 'viewed' }),
     pollNow: poll,
+    snapshotStructure,
     stop
   };
 }

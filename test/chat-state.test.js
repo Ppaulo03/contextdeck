@@ -333,12 +333,17 @@ test('probe: error uses only visible alerts; interrupted is never claimed (no kn
   assert.equal(runProbe(shown).interrupted, null);
 });
 
-test('diagnostic probe adds the control signature (attribute names, short values, label) and nothing else', () => {
-  const submit = fakeElement({ 'aria-label': 'Enviar mensagem', class: 'x', 'data-composer-submit': '', 'data-state': 'idle' });
+test('diagnostic probe reports how the composer was found and the shape of the buttons, never text', () => {
+  const submit = fakeElement({ 'aria-label': 'Enviar mensagem', class: 'x', 'data-composer-submit': '', 'data-state': 'idle', type: 'submit' }, { type: 'submit', hasAttribute: (n) => n === 'data-composer-submit' });
   const out = runProbe(fakeDocument({ 'textarea[data-octane-input]': fakeElement({}, { value: 'secret' }), '[data-composer-submit]': submit }), { diagnostic: true });
-  assert.deepEqual(JSON.parse(JSON.stringify(out.controlSignature)), { label: 'Enviar mensagem', attrs: ['aria-label=Enviar mensagem', 'data-composer-submit=', 'data-state=idle'] });
+  assert.equal(out.via, 'candidate');
+  assert.equal(out.controls.length, 1);
+  assert.equal(out.controls[0].label, 'Enviar mensagem');
+  assert.deepEqual(JSON.parse(JSON.stringify(out.controls[0].attrs)), ['aria-label=Enviar mensagem', 'data-composer-submit=', 'data-state=idle', 'type=submit']);
   assert.doesNotMatch(JSON.stringify(out), /secret/);
-  assert.equal(runProbe(fakeDocument({})).controlSignature, undefined, 'plain probe has no signature');
+  const plain = runProbe(fakeDocument({}));
+  assert.equal(plain.via, undefined, 'the plain probe adds nothing');
+  assert.equal(plain.controls, undefined);
 });
 
 test('normalizeSignals accepts only booleans from the untrusted page', () => {

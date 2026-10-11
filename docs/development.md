@@ -150,3 +150,6 @@ It wires the same pieces as `src/main/index.js` (notices, activity pusher, direc
 
 ### Electron harness exit codes (activity-harness)
 `0` every check passed; `1` a check failed or an error was recorded; `2` fewer than 20 checks ran (stopped early); `3` timeout (9 min); `77` SKIPPED because chatgpt.com is not reachable (reason printed). The report is `activity-report.json` in `HARNESS_OUT` or, by default, `%TEMP%\contextdeck-harness-out` (it used to be written into the throwaway profile and deleted, and the exit code was always 0). Known on the base commit: 2 failing checks and an unhandled script error in the logged-out environment (see validation/m01-i3b-3.md).
+
+### Start-up smoke and harness exit 78
+`npm run smoke` starts the real application on a throwaway profile (`CONTEXTDECK_USER_DATA`) and fails if it logs a start-up error or exits (exit 0 = stayed up; `SMOKE_WAIT_MS` changes the wait). It exists because unit tests never run `src/main/index.js`. The activity harness additionally exits **78 (BLOCKED)** when the main application is open.

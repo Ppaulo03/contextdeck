@@ -327,7 +327,7 @@ test('navigating to an unbound or foreign conversation shows a warning chip, nev
   w.pick(w.A[0]);
   w.views()[0].navigate(chatUrl(9));                      // not bound anywhere
   let s = w.navigator.getState();
-  assert.deepEqual(s.temporaries.map((t) => [t.label, t.warning, t.active]), [['Conversa não vinculada', true, true]]);
+  assert.deepEqual(s.temporaries.map((t) => [t.label, t.warning, t.active]), [['Conversa', true, true]]);
   assert.deepEqual(s.tabs.map((t) => t.active), [false, false, false]);
   w.views()[0].navigate(chatUrl(4));                      // bound to w2
   s = w.navigator.getState();
@@ -370,11 +370,14 @@ test('a new conversation: the application\'s initial page is handed over without
   const first = w.navigator.newConversation({ workspaceKey: WK('w1') });
   assert.equal(first.viewId, home, 'the M00 page is adopted, not replaced');
   assert.deepEqual(w.views()[0].loads, [HOME], 'it was not navigated');
+  const again = w.navigator.newConversation({ workspaceKey: WK('w1') });
+  assert.equal(again.viewId, home, 'a second click while the first page still waits shows it: no second page');
+  w.views()[0].navigate(chatUrl(9));
   const second = w.navigator.newConversation({ workspaceKey: WK('w1') });
   assert.notEqual(second.viewId, home);
   assert.deepEqual(w.views()[1].loads, [HOME]);
   const s = w.navigator.getState();
-  assert.deepEqual(s.temporaries.map((t) => t.label), ['Nova conversa', 'Nova conversa']);
+  assert.deepEqual(s.temporaries.map((t) => t.label), ['Conversa', 'Nova conversa']);
   assert.equal(fs.readFileSync(w.file, 'utf8'), file, 'no binding was created');
   assert.deepEqual(w.navigator.selectTemporary({ viewId: home, workspaceKey: WK('w1') }), { ok: true, viewId: home });
   assert.deepEqual(w.attached(), [home]);
@@ -397,7 +400,7 @@ test('a temporary conversation that receives its address is not bound automatica
   const file = fs.readFileSync(w.file, 'utf8');
   w.views()[0].navigate(chatUrl(8));                      // first message sent: the SPA gets /c/<id>
   let s = w.navigator.getState();
-  assert.equal(s.temporaries[0].label, 'Conversa não vinculada');
+  assert.equal(s.temporaries[0].label, 'Conversa');
   assert.equal(w.manager.get(t).relation, 'acquired');
   assert.equal(fs.readFileSync(w.file, 'utf8'), file, 'nothing bound by itself');
   assert.equal(w.manager.runtimeOf(t).identity.key, `c:${ID(8)}`, 'the runtime identity was updated');
@@ -414,6 +417,7 @@ test('a temporary conversation that receives its address is not bound automatica
 
 test('opening a conversation or creating a new one never closes a temporary view that holds unsent work', () => run((w) => {
   const t = w.navigator.newConversation({ workspaceKey: WK('w1') }).viewId;
+  w.fake.views.find((v) => v.id === t).navigate(chatUrl(9));
   w.pick(w.A[0]);
   w.pick(w.A[1]);
   w.navigator.newConversation({ workspaceKey: WK('w1') });

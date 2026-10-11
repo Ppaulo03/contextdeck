@@ -28,3 +28,12 @@ What is known and what is not:
 - Positive: the Project integration cannot create a wrong association by construction; everything it cannot prove leaves the conversation recoverable (and the "Sem workspace" box of block 1 keeps it reachable when it is not in a workspace).
 - Negative: if the real routes differ from the hypothesis the feature simply never binds (it refuses, it does not guess) and the parser must be corrected with evidence. A conversation started in a Project while the selection is only an estimate (Auto followed Herdr) is not bound automatically.
 - Not decided: whether to open a Project (not only to start a conversation), automatic detection of a Project from the sidebar, sharing one Project between workspaces.
+
+## Amendment (workspace-first, same iteration)
+
+The product decision is now **workspace-first**: opening a conversation in a workspace's context binds it to that workspace (local `ChatBinding`, origin `context`), unless it is bound elsewhere (conflict: go / explicit transfer / back). Consequences for this ADR:
+
+- Decision 5 (creation intent with Project/workspace/evidence checks) is superseded: `project-bindings/creation.js` only opens the Project page in the workspace captured at the click; association is the general rule in `chat-bindings/context-adoption.js`. The creation-evidence hook was removed (it distinguished a new conversation from an old one, which no longer matters for the local binding).
+- Still true: a local binding is **not** proof that a conversation was created inside the Project, and a ProjectBinding is never modified by association. The Project id in the address is validated only when linking a Project.
+- Passive events (hidden route change, reload, redirect, restored view, late event) never bind; a pending creation belongs to the workspace captured at the click even if another workspace is selected later.
+- `ChatBindingsService.adopt` is the only new write; it is reachable only from main (no IPC carries a destination or `targetChosen`).

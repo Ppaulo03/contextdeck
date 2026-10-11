@@ -11,7 +11,7 @@ const { ws } = require('./helpers/bindings-world');
 const ui = { trusted: true };
 const overlay = { overlay: true };
 const stranger = { trusted: false };
-const CHANNELS = ['chatnav:new', 'chatnav:open-unscoped', 'chatnav:select', 'chatnav:select-temporary', 'chatnav:state'];
+const CHANNELS = ['chatnav:new', 'chatnav:open-unscoped', 'chatnav:resolve', 'chatnav:select', 'chatnav:select-temporary', 'chatnav:state'];
 
 function setup({ ready = true } = {}) {
   const w = createViewsWorld({ workspaces: [ws('w1', 'api'), ws('w2', 'app')] });

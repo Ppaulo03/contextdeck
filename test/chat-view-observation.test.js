@@ -290,7 +290,7 @@ test('a new chat that receives its address while responding keeps its state and 
   await w.clock.advance(4000);
   v.navigate(chatUrl(8));                                   // first message sent: /c/<id> in-page
   const s = w.navigator.getState().temporaries[0];
-  assert.deepEqual([s.activity.responding, s.label], [true, 'Conversa não vinculada']);
+  assert.deepEqual([s.activity.responding, s.label], [true, 'Conversa']);
   assert.equal(fs.readFileSync(w.file, 'utf8'), before, 'nothing was bound');
   assert.ok(created.ok);
   v.navigate(chatUrl(9));                                   // another conversation

@@ -62,7 +62,7 @@ test('center model: unverified items need a second step; orphans and unscoped pa
   assert.equal(m.groups[0].items[0].buttonLabel, 'Confirmar e abrir');
   assert.match(m.groups[0].items[0].hint, /identidade deste workspace não foi verificada/);
   assert.equal(m.groups[0].items[1].openable, false);
-  assert.equal(m.groups[1].title, 'Sem workspace');
+  assert.equal(m.groups[1].title, 'Fora de um workspace');
   assert.equal(m.groups[1].items[0].openable, false);
   assert.equal(view.centerModel(view.centerModel(p) && p, null).groups[0].items[0].armed, false);
   assert.match(view.centerModel({ global: { totals: totals(), groups: [] } }).empty, /Nenhuma conversa carregada/);
@@ -97,7 +97,7 @@ function ipcSetup() {
 
 test('IPC: state for the UI window and the overlay; open and dismiss only for the overlay; strangers get nothing', async () => {
   const { handlers, calls } = ipcSetup();
-  assert.deepEqual([...handlers.keys()].sort(), ['activity:bind-unbound', 'activity:dismiss', 'activity:new-unbound', 'activity:open', 'activity:open-unbound', 'activity:state']);
+  assert.deepEqual([...handlers.keys()].sort(), ['activity:dismiss', 'activity:open', 'activity:open-unbound', 'activity:state']);
   assert.ok(await handlers.get('activity:state')({ ui: true }));
   assert.ok(await handlers.get('activity:state')({ overlay: true }));
   assert.equal(await handlers.get('activity:state')({}), null);
@@ -285,8 +285,8 @@ test('activity center: Esc and a click outside close it; arrows, Home and End mo
   await o.openCenter();
   const b = o.buttons();
   await o.key('ArrowDown'); assert.equal(o.document.activeElement, b[1]);
-  await o.key('End'); assert.equal(o.document.activeElement.dataset.key, 'unbound-new', 'the always-present "Sem workspace" action closes the list');
-  await o.key('ArrowDown'); assert.equal(o.document.activeElement.dataset.key, 'unbound-new', 'does not wrap');
+  await o.key('End'); assert.equal(o.document.activeElement, b[3]);
+  await o.key('ArrowDown'); assert.equal(o.document.activeElement, b[3], 'does not wrap');
   await o.key('Home'); assert.equal(o.document.activeElement, b[0]);
   await o.key('ArrowUp'); assert.equal(o.document.activeElement, b[0]);
   await o.key('Escape');

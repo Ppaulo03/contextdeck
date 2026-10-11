@@ -6,8 +6,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { createWorld, chatUrl, ws } = require('./helpers/bindings-world');
 const { createBindingsStore } = require('../src/main/chat-bindings/store');
-const { createStatusWorld, bindMany } = require('./helpers/views-world');
-const { createUnboundActions } = require('../src/main/activity/unbound');
 
 const code = (r) => (r.ok ? 'ok' : r.error.code);
 const withWorld = (opts, fn) => { const w = createWorld(opts); try { return fn(w); } finally { w.cleanup(); } };
@@ -86,28 +84,3 @@ test('the panel/IPC source has no category control and no confirmation checkbox'
   assert.doesNotMatch(ipc, /args\.role/);
 });
 
-// ---- with block 1: an unbound conversation -----------------------------------------------------------------------------
-
-test('a refused bind leaves the unbound conversation listed with its view; a good one moves it', async () => {
-  const w = createStatusWorld({ workspaces: [ws('w1', 'api'), ws('w2', 'app')] });
-  try {
-    w.select('w1'); bindMany(w, [1]); w.select('w1');
-    w.manager.create({ url: w.HOME, scope: null, pristine: true });
-    w.navigator.setMode('chat');
-    const actions = createUnboundActions({ session: w.session, bindings: w.bindings, navigator: w.navigator, showChatTab: () => {}, getMode: () => 'chat' });
-    const { viewId } = actions.create();
-    const view = w.fake.views.find((v) => v.id === viewId);
-    view.finishLoad(chatUrl(9));
-    Object.assign(view.contents.signals, { draft: true });
-    await w.clock.advance(6000);
-    w.disconnect();
-    assert.equal(actions.bind({ viewId, workspaceId: 'w2', selectedAtOpen: 'w1' }).error.code, 'workspace_unavailable');
-    assert.equal(w.navigator.getUnbound().length, 1, 'still there');
-    w.connect();
-    assert.equal(actions.bind({ viewId, workspaceId: 'w2', selectedAtOpen: 'w1' }).ok, true);
-    assert.equal(w.navigator.getUnbound().length, 0);
-    assert.equal(w.manager.get(viewId).scope, 'contextdeck/w2');
-    assert.equal(view.loads.length, 1);
-    assert.equal(w.navigator.getGlobalActivity().groups[0].items[0].draft, true, 'the draft indicator moved with the view');
-  } finally { w.cleanup0(); }
-});

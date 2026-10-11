@@ -3,6 +3,7 @@
 const path = require('node:path');
 const { createStateObserver } = require('./state-observer');
 const { createDiagnosticsLog } = require('./diagnostics');
+const { startTrace } = require('./trace');
 
 const SUMMARY_MS = 30000;
 const SNAPSHOT_DELAYS_MS = [3000, 20000];     // after a load / conversation change: SPA hydration, then a second look
@@ -18,7 +19,8 @@ const SNAPSHOT_LIMIT = 12;                    // per run: the log is evidence, n
 //   and a sanitized structural snapshot of the page while the composer has not been found.
 // Only indicators depend on it: no view lifecycle, binding, navigation or Herdr decision does. No message text is ever read out.
 function startChatObservation({ contents, userDataDir, env = process.env, viewId = null, status = false, onChange: notify, phaseMs = 0, setTimer = setTimeout, clearTimer = clearTimeout, setRepeat = setInterval, clearRepeat = clearInterval }) {
-  const diagnostics = env.CONTEXTDECK_CHAT_OBSERVER === '1';
+  const trace = env.CONTEXTDECK_CHAT_TRACE === '1';
+  const diagnostics = env.CONTEXTDECK_CHAT_OBSERVER === '1' || trace;
   if (!diagnostics && !status) return null;
   if (!diagnostics) return createStateObserver({ contents, onChange: notify, phaseMs, setTimer, clearTimer });
   const log = createDiagnosticsLog({ file: path.join(userDataDir, 'diagnostics', 'chat-observer.jsonl'), tag: viewId });
@@ -73,8 +75,14 @@ function startChatObservation({ contents, userDataDir, env = process.env, viewId
   }, SUMMARY_MS);
   summary.unref?.();
 
+  // Discovery trace (CONTEXTDECK_CHAT_TRACE=1): its own file, because it is a stream and the transition log is evidence.
+  const stopTrace = trace
+    ? startTrace({ contents, log: createDiagnosticsLog({ file: path.join(userDataDir, 'diagnostics', 'chat-trace.jsonl'), tag: viewId, maxBytes: 40 * 1024 * 1024 }), setRepeat, clearRepeat, isVisible: () => observer.getState().visible })
+    : null;
+
   const stop = observer.stop;
   observer.stop = () => {
+    if (stopTrace) stopTrace();
     clearRepeat(summary);
     for (const t of timers) clearTimer(t);
     timers = [];

@@ -60,6 +60,10 @@ Experiments that create, focus, rename or close workspaces must use a throwaway 
 
 M01-I2 additions ([validation/m01-i2.md](validation/m01-i2.md)): to drive the real app, point it at a lab session through a `config.json` in a throwaway clone (not your own `config.json`) and set `CONTEXTDECK_USER_DATA`; count the focus commands the app really sends by wrapping `focusWorkspace` on the object returned by `createApiClient` *before* requiring `src/main/index.js`; switch workspace in the TUI by writing an SGR mouse report (`ESC[<0;col;rowM` + `…m`) into the PTY at the sidebar row of the workspace (`dock.writeTerminal`); choose in the dropdown by setting `select.value` and dispatching a `change` event in the renderer; in test fakes answer `session.snapshot` with the state at request time (not after a simulated delay) or staleness bugs are invisible.
 
+### Chat observation diagnostics (M01-I3P)
+
+`$env:CONTEXTDECK_CHAT_OBSERVER='1'; npm start` writes state transitions to `<userData>diagnosticschat-observer.jsonl` (hashed ids, control attributes, no content). Harness techniques that worked: `webContents.executeJavaScriptInIsolatedWorld(1001, [{ code }])` for passive probes (booleans only); an observer attached to a throwaway-profile `WebContentsView` loading logged-out chatgpt.com (never send a message); injecting stand-in DOM elements into that throwaway page to test the pipeline; `history.pushState` in the page to exercise `did-navigate-in-page` (Electron also emits `did-start-loading` for it: use `did-start-navigation` with `isInPlace` to tell real loads apart). Details and results: [validation/m01-i3p.md](validation/m01-i3p.md).
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

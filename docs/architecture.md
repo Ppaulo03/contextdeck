@@ -27,6 +27,7 @@ src/main/
   paths.js            Project root, preload and built-UI locations.
   window.js           Main window, mode (terminal|chat), ChatGPT view layout, focus, UI-state persistence.
   chat-view.js        ChatGPT WebContentsView: partition, permissions, navigation and popup policy.
+  chat/               Experimental, off by default (CONTEXTDECK_CHAT_OBSERVER=1): passive state model/observer of the ChatGPT page (plain Node). Diagnostic only; see validation/m01-i3p.md.
   web-preferences.js  The only place that defines webPreferences (isolation for every web contents).
   shortcuts.js        Ctrl+Tab decision (pure) and the before-input-event handler.
   herdr/              client.js (PTY client lifecycle), env.js (strips HERDR_* from the PTY env);

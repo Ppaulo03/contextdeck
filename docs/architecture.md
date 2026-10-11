@@ -28,9 +28,9 @@ src/main/
   paths.js            Project root, preload and built-UI locations.
   window.js           Main window, mode (terminal|chat), ChatGPT view layout, focus, UI-state persistence.
   chat-view.js        ChatGPT WebContentsView: partition, permissions, navigation and popup policy.
-  chat/               Experimental, off by default (CONTEXTDECK_CHAT_OBSERVER=1): passive state model/observer of the ChatGPT page (plain Node). Diagnostic only; see validation/m01-i3p.md.
+  chat/               The I3P detector, state model and observer of ONE page (plain Node), now used for the per-view status (see *Conversation status and activity*); diagnostics log only with CONTEXTDECK_CHAT_OBSERVER=1. See validation/m01-i3p.md.
                       Always available and pure: conversation-identity.js (URL → durable conversation identity) and runtime-contract.js (transient ChatRuntime contract, no consumer yet).
-  chat-views/         manager.js (the ChatGPT views: lazy creation, one attached, destroyed only at shutdown), navigator.js (which view for which workspace;
+  chat-views/         observation.js (one status observer per loaded view, summaries, attention/visits, expiry sweep), manager.js (the ChatGPT views: lazy creation, one attached, destroyed only at shutdown), navigator.js (which view for which workspace;
                       reconcile, explicit selection, temporary conversations, runtime provider). Plain Node, injected view factory and host.
   window-metrics.js   Vertical layout shared by the window and the stylesheet (top bar + conversation strip).
   chat-bindings/      model.js (schema, validation, quarantine, migrations), store.js (chat-bindings.json: atomic write, corruption policy),
@@ -78,7 +78,7 @@ Every handler first checks `event.sender` is the local UI window; strangers get 
 | `chats:state` | invoke (UI window **or** overlay) | Compact binding state: store status, Herdr connection, selected workspace (+origin), workspaces, all bindings with their status, and the indicator state of the page currently loaded (computed by main from the view's URL). |
 | `chats:bind`, `chats:update`, `chats:unbind`, `chats:reassign` | invoke (UI window or overlay) | The binding operations. Arguments are picked field by field in main; "bind current" reads the address from the ChatGPT view itself. Rules in *Chat bindings* below. No path, command or Herdr method can be passed. |
 | `overlay:state`, `overlay:choose`, `overlay:close` | invoke (**overlay only**) | The menu reads state, chooses a workspace (same validated selection path) and closes. Each handler refuses the other sender. |
-| main → renderer | events | `dock:mode`, `dock:focus-terminal`, `pty:data`, `pty:exit`, `chat:status`, `chat:host`, `chat:error`, `herdr:state` (throttled push), `chats:state` and `chatnav:state` (throttled, only when the content changed), `overlay:closed` (carries which overlay mode closed), and to the overlay `overlay:open`, `overlay:state-push`, `overlay:chats-push`. |
+| main → renderer | events | `dock:mode`, `dock:focus-terminal`, `pty:data`, `pty:exit`, `chat:status`, `chat:host`, `chat:error`, `herdr:state` (throttled push), `chats:state`, `chatnav:state` and `herdr:state` (throttled, only when the content changed; `herdr:state` also carries `activity`, the per-workspace counts), `overlay:closed` (carries which overlay mode closed), and to the overlay `overlay:open`, `overlay:state-push`, `overlay:chats-push`. |
 
 `test/structure.test.js` pins this list: the registered channels, the preload's channels and main's emitted events must match exactly.
 
@@ -184,6 +184,36 @@ prefs.chat.last[workspace] (ui-state) ───┘        ▲  explicit actions:
 **IPC (UI window only).** `chatnav:state`, `chatnav:select`, `chatnav:select-temporary`, `chatnav:new`, `chatnav:open-unscoped`; push `chatnav:state`. They take ids, never addresses; main opens the stored URL. The overlay and the remote page cannot call them.
 
 **Persistence.** `ui-state.json` → `chat: { last: { "<session>/<workspaceId>": "<bindingId>" } }` (explicit choices only; ids validated; ≤100; older files load with `{}`).
+
+## Conversation status and activity (M01-I3B-2)
+
+Decision record: [0003](decisions/0003-multi-view-navigation.md) (amended). Results, measurements and manual script: [validation/m01-i3b-2.md](validation/m01-i3b-2.md).
+
+```text
+view created ──► manager.onChange ──► ObservationHub.sync() ──► startChatObservation(handle.contents, status:true)   one I3P observer per view
+                                                              │  (detector probe + state model, unchanged; first poll staggered)
+observer onChange (only on meaningful change) ──► hub.refresh(view) ──► signature changed? ──► navigator.emit() ──► chatnav:state (+ herdr:state.activity)
+window: focus / blur / minimize / restore ──► hub.setInteractive()      user visit: tab click, chat tab shown, window focus, typing in the page ──► hub.visit()
+```
+
+**Contract per view** (`hub.summaryOf(viewId)`, fed by the I3P model through `runtime-contract.fromObserverState`):
+
+| Field | Values | Notes |
+|---|---|---|
+| `phase` (PageLifecycle) | loading, ready, error, destroyed | from navigation events |
+| `generation` (GenerationState) | unknown, idle, responding, ended-unclassified, completed, interrupted, error | `responding` is **observed** (stop control); `ended-unclassified` is the real-world end signal; `completed`/`interrupted`/`error` only with their own corroborating signal (inferred) and never derived from `ended-unclassified` |
+| `draft` (DraftState) | unknown, empty, present | presence only, computed inside the probe; the text never leaves the page |
+| `attention` (AttentionState) | none, pending | independent of the other two |
+| `identityKey` / `identityOk` | `c:<uuid>` / bool | the observer's identity (by conversation id, so `/c/<id>` and `/g/<project>/c/<id>` are one) must equal the manager's, or everything degrades to unknown |
+| `evidence`, `observedAt`, `stale` | observed / inferred / unknown, last probe answer, reading expired | readings expire `ttl` (20 s) after the last answer |
+
+**One observer per loaded view.** Created when the manager has the view, stopped when it is gone; keyed by view id (never twice); no view is created, loaded, attached or reloaded to observe it; a conversation that was never opened has no observer and no indicator (it is *not* reported idle). The first polls are spread (`phaseMs`), a probe that never answers times out after 5 s (the chain continues), a single shared sweep timer lets expired readings show as unknown, and nothing is sent to the UI unless a view's summary signature changed. `CONTEXTDECK_CHAT_STATUS=0` turns the status observers off (the app then behaves exactly as in M01-I3B-1); `CONTEXTDECK_CHAT_OBSERVER=1` additionally writes the sanitized diagnostics log, tagged by view.
+
+**Attention policy.** `pending` is set by the model when a response that was observed `responding` stops being observed while the view is not **user-visible** (attached, chat tab showing, window not minimized, shown and focused). It means *activity that must be reviewed*, not *it finished successfully*. It is not set by lost probes, reloads, identity changes, destroyed views or expired readings. It is cleared only by a **visit**: an explicit user action that shows the view (tab click, new conversation, selecting it), the chat tab or the window becoming interactive with the view on screen, or typing into it — and only while the view is user-visible. A workspace selection, an automatic restore, creating or pre-loading a view, or a state push never clears it. A visit means "the user could see it", not "the user read it".
+
+**Identity.** Navigating A → B inside a view resets what was learned (the model's epoch rule) and the tab of A shows nothing about that page; B's tab shows B's state only after B is observed; a stale probe answer in flight is discarded by epoch. A new chat that gets its address *while responding* keeps its state (same conversation) and is not bound. A redirect away from the conversation leaves the placeholder tab without status.
+
+**Interface.** Each tab has a fixed-size status slot (always present, `aria-hidden`; the tab gets an accessible name and a tooltip with the same information): a ring spinner for responding (the only animation, disabled by `prefers-reduced-motion`), `●` for attention, `✎` for a draft, a dashed `?` for unknown (only for a loaded, probed view whose signals are unusable). The workspace selector shows `↻n ●m` for the *other* workspaces next to its label, and each row of the workspace menu shows the same for its workspace; a workspace with no loaded conversation has no badge. Counts are derived (`navigator.getWorkspaceActivity()`), never persisted, and ride on the Herdr state the selector already receives.
 
 ## Persistent identifiers (do not change casually)
 

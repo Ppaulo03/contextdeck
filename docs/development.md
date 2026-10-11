@@ -91,6 +91,25 @@ It drives the real window controller, chat views, manager, navigator and IPC wit
 - The manager's tests assert *events never rewrite an expectation*: a transient redirect (`/c/<id>` → `/auth/…` → `/c/<id>`, seen in the I3P run as a brief `other`) must not detach a view from its conversation.
 - After editing the mutation-sensitive code (`navigator.js` scope/confirmation checks, `manager.js` attach order and destroy rules) re-run the mutation checks listed in the validation document.
 
+### Conversation status (M01-I3B-2)
+
+Unit tests run the REAL I3P observer on a fake `WebContents` with virtual time (`test/helpers/views-world.js`: `createStatusWorld`, `createClock`; the clock replaces `Date.now` and the observers' timers, so hours of polling run in milliseconds and `cleanup0()` restores it). Real Electron:
+
+```powershell
+npm run build
+npx electron test/electron/status-harness.js                                    # status observers on  -> status-report-on.json
+$env:CONTEXTDECK_CHAT_STATUS='0'; npx electron test/electron/status-harness.js   # baseline, observers off -> status-report-off.json
+```
+
+Same rules as the multi-view harness (throwaway profile, logged-out chatgpt.com, fake Herdr, no message sent). The "responding" and "draft" fixtures are the I3P synthetic ones: the page's own send/stop control gets the aria-label `Interromper geração` (matches the detector's stop labels) and the composer `textarea` gets a value through the native setter. Learned:
+
+- The model compares conversation identity by **id**, not by key: `/g/<project>/c/<id>` and `/c/<id>` are one conversation, otherwise opening a Project route would silently reset the state it had learned.
+- A probe whose renderer is busy never answers; without a timeout the poll chain would end there. The harness freezes one page for 7.5 s to prove polling resumes.
+- Detection latency of a hidden view is its poll interval (responding 1 s, visible idle 2 s, hidden idle 5 s); a response shorter than that can be missed.
+- Chromium throttles hidden pages (timers 1/s, no `requestAnimationFrame`): the probe runs through `executeJavaScriptInIsolatedWorld`, not from the page, so it does not depend on either.
+- `startStatePusher(...)` returns the stop function itself (with `.notify`), not an object.
+- Diagnostics (`CONTEXTDECK_CHAT_OBSERVER=1`) now tag every line with the view id; one file for all views.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

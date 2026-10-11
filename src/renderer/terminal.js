@@ -2,6 +2,7 @@ import '@xterm/xterm/css/xterm.css';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { initGitPanel } from './git-panel.js';
+import { initHerdrPanel } from './herdr-panel.js';
 
 const dock = window.dock;
 const app = document.getElementById('app');
@@ -64,6 +65,7 @@ async function startTerminal() {
 function setMode(mode) {
   if (mode !== 'terminal' && mode !== 'chat') return;
   app.dataset.mode = mode;
+  if (mode === 'chat') herdrPanel.hide();
   terminalTab.classList.toggle('active', mode === 'terminal');
   terminalTab.setAttribute('aria-selected', String(mode === 'terminal'));
   chatTab.classList.toggle('active', mode === 'chat');
@@ -134,6 +136,7 @@ document.getElementById('reload-chat').addEventListener('click', () => void dock
 document.getElementById('external-chat').addEventListener('click', () => void dock.openExternalChat());
 
 initGitPanel({ dock, setNotice });
+const herdrPanel = initHerdrPanel({ dock });
 
 async function init() {
   const info = await dock.info();

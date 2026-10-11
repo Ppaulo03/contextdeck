@@ -20,7 +20,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; color: var(--text); font
 .unlinked { margin-left: auto; color: #e4c28c; border: 1px solid #654f37; padding: 4px 7px; border-radius: 4px; font-size: 10px; white-space: nowrap; }
 .session-label { margin-left: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 240px; color: var(--muted); font-size: 11px; }
 .session-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #7bcfa5; margin-right: 6px; }
-.content { min-height: 0; flex: 1; overflow: hidden; background: #0b0f16; }
+.content { position: relative; min-height: 0; flex: 1; overflow: hidden; background: #0b0f16; }
 #terminal-root { width: 100%; height: 100%; padding: 7px 6px 4px; }
 #terminal-root .xterm { height: 100%; }
 .footer { display: flex; flex-direction: column; gap: 4px; padding: 7px 12px 5px; background: var(--surface2); border-top: 1px solid var(--border); }
@@ -68,3 +68,28 @@ html, body { margin: 0; height: 100%; overflow: hidden; color: var(--text); font
 .olabel { font-family: Consolas, monospace; white-space: nowrap; }
 .odetail { color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
 .hint { color: #e9a3ab; font-size: 11px; }
+
+/* Herdr workspace diagnostics (read-only), overlaid on the terminal area */
+.spacer { flex: 1; }
+.diag-panel { position: absolute; top: 8px; right: 8px; z-index: 5; width: min(640px, calc(100% - 16px)); max-height: calc(100% - 16px); overflow: auto; padding: 10px 12px 12px; background: #121826; border: 1px solid #3b485e; border-radius: 8px; box-shadow: 0 8px 28px rgba(0, 0, 0, .55); outline: none; }
+.diag-title { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.diag-ro { color: var(--muted); font-size: 10px; border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+.diag-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.diag-badge { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border); color: var(--muted); }
+.diag-badge.connected { color: #9ece6a; border-color: #4d6b36; }
+.diag-badge.connecting { color: #e0af68; border-color: #6b5530; }
+.diag-badge.disconnected { color: #f7768e; border-color: #7a3b47; }
+.diag-row { display: flex; gap: 8px; font-size: 12px; padding: 1px 0; }
+.diag-label { flex: none; width: 150px; color: var(--muted); }
+.diag-value { min-width: 0; overflow-wrap: anywhere; }
+.diag-active { margin: 8px 0; padding: 7px 9px; border-radius: 6px; border: 1px solid var(--border); font-size: 12px; }
+.diag-active.known { border-color: #4d6b36; }
+.diag-active.ambiguous { border-color: #6b5530; background: #1b1810; }
+.diag-active.unknown { border-color: #7a3b47; }
+.diag-note { color: var(--muted); font-size: 11px; margin: 4px 0 0; }
+.diag-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+.diag-table th { text-align: left; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border); padding: 3px 6px; }
+.diag-table td { padding: 3px 6px; border-bottom: 1px solid #1d2535; }
+.diag-id { font-family: Consolas, monospace; }
+.diag-dir { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: Consolas, monospace; font-size: 11px; }
+.diag-mark { color: #f7768e; width: 16px; text-align: center; }

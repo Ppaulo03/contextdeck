@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld('dock', {
   gitCopyShow: (args) => ipcRenderer.invoke('git:show', args),
   gitMakeZip: (args) => ipcRenderer.invoke('git:zip', args),
   gitDeleteZip: () => ipcRenderer.invoke('git:delete-zip'),
+  herdrState: () => ipcRenderer.invoke('herdr:state'),
+  herdrRefresh: () => ipcRenderer.invoke('herdr:refresh'),
   startTerminal: (dimensions) => ipcRenderer.invoke('pty:start', dimensions),
   writeTerminal: (text) => ipcRenderer.send('pty:write', text),
   resizeTerminal: (dimensions) => ipcRenderer.send('pty:resize', dimensions),
@@ -33,6 +35,7 @@ contextBridge.exposeInMainWorld('dock', {
   onFocusTerminal: (cb) => listen('dock:focus-terminal', cb),
   onPtyData: (cb) => listen('pty:data', cb),
   onPtyExit: (cb) => listen('pty:exit', cb),
+  onHerdrState: (cb) => listen('herdr:state', cb),
   onChatStatus: (cb) => listen('chat:status', cb),
   onChatHost: (cb) => listen('chat:host', cb),
   onChatError: (cb) => listen('chat:error', cb)

@@ -9,6 +9,9 @@ const { USER_DATA_DIRNAME, UI_STATE_FILE } = require('./persistence/identity');
 const { createHerdrClient } = require('./herdr/client');
 const { createWindowController } = require('./window');
 const { registerIpc } = require('./ipc');
+const { startStatePusher } = require('./ipc/herdr');
+const { createSessionLocator } = require('./herdr/session-locator');
+const { createWorkspaceObserver } = require('./herdr/workspace-observer');
 const { PROJECT_ROOT, PRELOAD, RENDERER_HTML } = require('./paths');
 
 const { app } = electron;
@@ -34,19 +37,25 @@ async function bootstrap() {
   const persist = () => saveUiState(uiStateFile, uiState);
 
   let win;
+  let stopPusher = () => {};
   const herdr = createHerdrClient({ settings, homeDir: app.getPath('home'), send: (channel, data) => win.send(channel, data) });
+  // Read-only discovery of the workspaces of the configured Herdr session (M01-I1).
+  const observer = createWorkspaceObserver({ session: settings.herdrSession, locate: createSessionLocator({ herdrExecutable: settings.herdrExecutable }) });
+  const shutdown = () => { herdr.stop(); stopPusher(); observer.stop(); };
   win = createWindowController({
     uiState,
     uiStateFile,
     preloadPath: PRELOAD,
     rendererHtml: RENDERER_HTML,
-    onClosed: () => herdr.stop()
+    onClosed: shutdown
   });
 
-  registerIpc({ electron, win, herdr, settings, uiState, persist, userDataDir });
+  registerIpc({ electron, win, herdr, observer, settings, uiState, persist, userDataDir });
   app.on('second-instance', () => win.focus());
-  app.on('before-quit', () => herdr.stop());
+  app.on('before-quit', shutdown);
   await win.create();
+  stopPusher = startStatePusher({ observer, send: (channel, data) => win.send(channel, data) });
+  observer.start();
 }
 
 if (hasInstanceLock) {

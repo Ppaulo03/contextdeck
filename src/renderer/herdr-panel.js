@@ -1,0 +1,84 @@
+// Diagnostic panel for the Herdr workspace integration (M01-I1). Read-only: it only displays what
+// the main process discovered. It lives over the terminal area (not the footer) because the
+// ChatGPT view would hide it, so it is only reachable in terminal mode.
+const ACTIVE_TEXT = {
+  known: 'Identificado com evidencia confiavel.',
+  ambiguous: 'Ambiguo: a API do Herdr nao informa o foco por cliente. O candidato e apenas o ultimo foco da sessao (de qualquer cliente).',
+  unknown: 'Nao identificado: sem dados utilizaveis.'
+};
+const REASON_TEXT = {
+  single_workspace_in_session: 'a sessao tem um unico workspace',
+  api_has_no_per_client_focus: 'foco da sessao = ultimo cliente que mudou, nao este cliente',
+  no_workspaces: 'a sessao nao tem workspaces',
+  no_data: 'ainda sem leitura'
+};
+const CONNECTION_TEXT = { stopped: 'parado', connecting: 'conectando', connected: 'conectado', disconnected: 'desconectado' };
+
+export function initHerdrPanel({ dock }) {
+  const button = document.getElementById('herdr-diag');
+  const panel = document.getElementById('herdr-panel');
+  const body = document.getElementById('herdr-panel-body');
+  let state = null;
+
+  const time = (ms) => (ms ? new Date(ms).toLocaleTimeString() : '-');
+  const el = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+  const row = (label, value, title) => {
+    const r = el('div', 'diag-row');
+    r.append(el('span', 'diag-label', label), el('span', 'diag-value', value));
+    if (title) r.title = title;
+    return r;
+  };
+
+  function render() {
+    body.textContent = '';
+    if (!state) { body.append(el('p', 'diag-note', 'Sem dados ainda.')); return; }
+    const model = state.model;
+    const head = el('div', 'diag-head');
+    head.append(el('span', `diag-badge ${state.connection}`, CONNECTION_TEXT[state.connection] || state.connection), el('strong', '', `sessao ${state.session}`));
+    body.append(head);
+    body.append(row('Servidor', model ? `Herdr ${model.serverVersion || '?'} · protocolo ${model.protocol ?? '?'} (${model.compatibility === 'tested' ? 'testado' : 'nao testado'})` : '-'));
+    body.append(row('Ultima sincronizacao', state.lastSync ? `${time(state.lastSync.at)} · ${state.lastSync.reason} · ${state.syncCount} leituras` : '-', 'Estado sempre lido do snapshot autoritativo; eventos so sinalizam mudancas.'));
+    body.append(row('Ultimo evento', state.lastEvent ? `${state.lastEvent.type}${state.lastEvent.workspaceId ? ` (${state.lastEvent.workspaceId})` : ''} · ${time(state.lastEvent.at)} · ${state.eventCount} recebidos` : '-'));
+    if (state.lastError) body.append(row('Erro', `${state.lastError.code}: ${state.lastError.message}${state.attempts ? ` · tentativas: ${state.attempts}` : ''}`));
+
+    const active = state.active;
+    const box = el('div', `diag-active ${active.status}`);
+    const who = active.status === 'known' ? active.workspaceId : (active.candidateId ? `candidato ${active.candidateId}` : '-');
+    box.append(el('div', '', `Workspace ativo neste cliente: ${active.status.toUpperCase()} · ${who}`));
+    box.append(el('div', 'diag-note', `${ACTIVE_TEXT[active.status]} (${REASON_TEXT[active.reason] || active.reason}; evidencia: ${active.evidence})`));
+    body.append(box);
+
+    const table = el('table', 'diag-table');
+    const header = el('tr');
+    for (const h of ['', 'ID', 'Nome', 'Diretorio', 'Tabs/Panes']) header.append(el('th', '', h));
+    table.append(header);
+    for (const w of (model ? model.workspaces : [])) {
+      const tr = el('tr');
+      const mark = el('td', 'diag-mark', w.sessionFocused ? '●' : '');
+      mark.title = w.sessionFocused ? 'Ultimo foco da sessao (qualquer cliente)' : '';
+      tr.append(mark, el('td', 'diag-id', w.id), el('td', '', w.label || '(sem nome)'), el('td', 'diag-dir', w.directory || '-'), el('td', '', `${w.tabCount ?? '?'}/${w.paneCount ?? '?'}`));
+      tr.querySelector('.diag-dir').title = w.directory || '';
+      table.append(tr);
+    }
+    body.append(table);
+    if (model && model.workspaces.length === 0) body.append(el('p', 'diag-note', 'Nenhum workspace na sessao.'));
+    body.append(el('p', 'diag-note', '● = ultimo foco da sessao; nao e o workspace visivel neste cliente.'));
+  }
+
+  const show = async () => { panel.hidden = false; button.setAttribute('aria-expanded', 'true'); state = (await dock.herdrState()) || state; render(); panel.focus(); };
+  const hide = () => { panel.hidden = true; button.setAttribute('aria-expanded', 'false'); };
+
+  button.addEventListener('click', () => (panel.hidden ? void show() : hide()));
+  document.getElementById('herdr-panel-close').addEventListener('click', hide);
+  document.getElementById('herdr-panel-refresh').addEventListener('click', async () => { state = (await dock.herdrRefresh()) || state; render(); });
+  panel.addEventListener('keydown', (event) => { if (event.key === 'Escape') { event.stopPropagation(); hide(); button.focus(); } });
+  dock.onHerdrState((next) => { state = next; if (!panel.hidden) render(); });
+  void dock.herdrState().then((initial) => { if (initial) state = initial; });
+
+  return { hide };
+}

@@ -30,6 +30,7 @@ src/main/
   chat-view.js        ChatGPT WebContentsView: partition, permissions, navigation and popup policy.
   chat/               The I3P detector, state model and observer of ONE page (plain Node), now used for the per-view status (see *Conversation status and activity*); diagnostics log only with CONTEXTDECK_CHAT_OBSERVER=1. See validation/m01-i3p.md.
                       Always available and pure: conversation-identity.js (URL → durable conversation identity) and runtime-contract.js (transient ChatRuntime contract, no consumer yet).
+  activity/           notices.js (in-app activity notices: one per view, ttl, retained while attention is pending), direct-open.js (open a conversation of any workspace through the explicit selection). Plain Node.
   chat-views/         observation.js (one status observer per loaded view, summaries, attention/visits, expiry sweep), manager.js (the ChatGPT views: lazy creation, one attached, destroyed only at shutdown), navigator.js (which view for which workspace;
                       reconcile, explicit selection, temporary conversations, runtime provider). Plain Node, injected view factory and host.
   window-metrics.js   Vertical layout shared by the window and the stylesheet (top bar + conversation strip).
@@ -44,14 +45,14 @@ src/main/
   git/                core.js (safe exec, repo/ref validation, diff/show/archive), refs.js (discovery and
                       selection), context.js (active repo + per-repo prefs), actions.js (copy/zip/delete),
                       artifacts.js (ZIP naming and guarded deletion).
-  ipc/                index.js + dock.js, terminal.js, clipboard.js, git.js, herdr.js, overlay.js, chats.js, chatnav.js (channel registration by domain; chats.js/chatnav.js also hold the state pushers).
+  ipc/                index.js + dock.js, terminal.js, clipboard.js, git.js, herdr.js, overlay.js, chats.js, chatnav.js, activity.js (channel registration by domain; chats.js/chatnav.js also hold the state pushers).
   persistence/        settings.js (config), ui-state.js (preferences), identity.js (persistent identifiers).
   platform/           executable.js (PATH/PATHEXT lookup), file-clipboard.js (CF_HDROP via PowerShell STA).
 src/preload/index.js  contextBridge API of the UI window (`window.dock`); overlay.js: the smaller bridge of the menu overlay.
 src/renderer/         index.html, app.js (entry), components/ (header, terminal-view, workspace-selector, chat-link, git-panel,
-                      herdr-panel, herdr-store, chat-strip, feedback, dom), overlay/ (overlay.js menu, chats-panel.js bindings panel), styles/ (tokens,
+                      herdr-panel, herdr-store, chat-strip, activity-indicator, feedback, dom), overlay/ (overlay.js menu, chats-panel.js bindings panel, activity-center.js center and notices), styles/ (tokens,
                       base, layout, components). See design-system.md.
-src/shared/           Pure view-models used by the UI and the overlay (workspace-view.js, chat-bindings-view.js, chat-nav-view.js).
+src/shared/           Pure view-models used by the UI and the overlay (workspace-view.js, chat-bindings-view.js, chat-nav-view.js, activity-view.js).
 scripts/build.js      esbuild: app.bundle, overlay.bundle and styles.css -> dist/renderer.
 test/                 node:test suites (no real repositories; temp repos only).
 ```
@@ -75,10 +76,13 @@ Every handler first checks `event.sender` is the local UI window; strangers get 
 | `herdr:select-workspace`, `herdr:set-sync-mode` | invoke | The user's explicit workspace choice (`workspace.focus`, validated again in main) and the Auto/Manual preference. No other Herdr write exists. |
 | `overlay:open-workspace-menu`, `overlay:open-chats-panel` | invoke (UI window only) | Asks main to show the workspace menu / the chat bindings panel in the overlay; the anchor rectangle is validated (four finite numbers within bounds). |
 | `chatnav:state`, `chatnav:select`, `chatnav:select-temporary`, `chatnav:new`, `chatnav:open-unscoped` | invoke (**UI window only**) | Conversation navigation (see *Multi-view conversation navigation*). Ids only: main opens the stored binding address; stale or unverified requests are refused. Never moves Herdr's focus. |
+| `activity:state` | invoke (UI window **or** overlay) | `{ global, notices }`: totals, groups by workspace (name + id) with conversation states, and the notices to show. Derived; nothing is observed or loaded for it. |
+| `activity:open`, `activity:dismiss` | invoke (**overlay only**) | The activity center's "Abrir" (direct navigation, see *Global activity*) and closing a notice card (never acknowledges attention). |
+| `overlay:open-activity-center` | invoke (UI window only) | Opens the activity center under the top-bar indicator (anchor validated). |
 | `chats:state` | invoke (UI window **or** overlay) | Compact binding state: store status, Herdr connection, selected workspace (+origin), workspaces, all bindings with their status, and the indicator state of the page currently loaded (computed by main from the view's URL). |
 | `chats:bind`, `chats:update`, `chats:unbind`, `chats:reassign` | invoke (UI window or overlay) | The binding operations. Arguments are picked field by field in main; "bind current" reads the address from the ChatGPT view itself. Rules in *Chat bindings* below. No path, command or Herdr method can be passed. |
 | `overlay:state`, `overlay:choose`, `overlay:close` | invoke (**overlay only**) | The menu reads state, chooses a workspace (same validated selection path) and closes. Each handler refuses the other sender. |
-| main → renderer | events | `dock:mode`, `dock:focus-terminal`, `pty:data`, `pty:exit`, `chat:status`, `chat:host`, `chat:error`, `herdr:state` (throttled push), `chats:state`, `chatnav:state` and `herdr:state` (throttled, only when the content changed; `herdr:state` also carries `activity`, the per-workspace counts), `overlay:closed` (carries which overlay mode closed), and to the overlay `overlay:open`, `overlay:state-push`, `overlay:chats-push`. |
+| main → renderer | events | `dock:mode`, `dock:focus-terminal`, `pty:data`, `pty:exit`, `chat:status`, `chat:host`, `chat:error`, `herdr:state` (throttled push), `chats:state`, `chatnav:state`, `activity:state` and `herdr:state` (throttled, only when the content changed; `herdr:state` also carries `activity`, the per-workspace counts), `overlay:closed` (carries which overlay mode closed), and to the overlay `overlay:open`, `overlay:state-push`, `overlay:chats-push`, `overlay:activity-push`. |
 
 `test/structure.test.js` pins this list: the registered channels, the preload's channels and main's emitted events must match exactly.
 
@@ -214,6 +218,33 @@ window: focus / blur / minimize / restore ──► hub.setInteractive()      us
 **Identity.** Navigating A → B inside a view resets what was learned (the model's epoch rule) and the tab of A shows nothing about that page; B's tab shows B's state only after B is observed; a stale probe answer in flight is discarded by epoch. A new chat that gets its address *while responding* keeps its state (same conversation) and is not bound. A redirect away from the conversation leaves the placeholder tab without status.
 
 **Interface.** Each tab has a fixed-size status slot (always present, `aria-hidden`; the tab gets an accessible name and a tooltip with the same information): a ring spinner for responding (the only animation, disabled by `prefers-reduced-motion`), `●` for attention, `✎` for a draft, a dashed `?` for unknown (only for a loaded, probed view whose signals are unusable). The workspace selector shows `↻n ●m` for the *other* workspaces next to its label, and each row of the workspace menu shows the same for its workspace; a workspace with no loaded conversation has no badge. Counts are derived (`navigator.getWorkspaceActivity()`), never persisted, and ride on the Herdr state the selector already receives.
+
+## Global activity (M01-I3B-2H)
+
+Decision record: [0003](decisions/0003-multi-view-navigation.md) (second amendment). Results, measurements and manual script: [validation/m01-i3b-2h.md](validation/m01-i3b-2h.md).
+
+```text
+observation hub (one I3P observer per loaded view) ──summaries──► navigator.getGlobalActivity()   projection of the SAME summaries, all workspaces
+        │ onAttention (none→pending, once)                              │ totals + groups (workspace name+id → conversations → states)
+        ▼                                                               ▼
+ notices controller (≤3 cards, ttl, one timer) ──► activity pusher ──► UI window `activity:state`  ──► top-bar indicator (Terminal and ChatGPT tabs)
+        │                                                  └────────► overlay `overlay:activity-push` ──► notice cards / activity center
+        └─► window.setNotices(n) ─► overlay.showNotice(rect)  (the SAME overlay view, small rectangle, never focused)
+
+activity center "Abrir" ──► activity:open ──► directOpen.open(): resolve target ─► (other workspace?) selection.select() ─► check ─► chat tab ─► navigator.selectBinding()  (= the visit)
+```
+
+**No second source of truth.** Everything is derived on demand from the hub's per-view summaries (`getGlobalActivity()`); nothing is stored, nothing is observed or loaded because the center is open, and a conversation that was never loaded is simply absent. Totals (`responding`, `attention`, `drafts`, `observed`, `loaded`) cover every loaded view of every workspace (plus the unscoped page); groups only list conversations that have something to say, each with `viewId`, `bindingId`, `kind` (`binding` | `temporary`), label, states, binding status and whether it can be opened.
+
+**Indicator.** `#activity-indicator` in the top bar (after the workspace selector, before the contextual actions), outside the tab-specific blocks, so it exists on the Terminal and the ChatGPT tab. `↻n ●m ✎k` (spinner ring, dot, pencil; numbers; accessible name and tooltip say what is observed: "N conversas observadas de M carregadas"); neutral `○ Atividade` when quiet; fixed minimum width (96 px; 52 px below 1000 px, where the label is dropped); the DOM is rebuilt only when the displayed content changes.
+
+**Activity center.** A third page mode of the overlay (`kind: 'activity'`): modal, opens under the indicator from either tab, closes with Esc or a click outside (the scrim), arrows/Home/End move between the "Abrir" buttons. Groups carry workspace name **and id** so homonyms are told apart; items state their condition in words ("Respondendo", "Atividade para revisar", "Rascunho não enviado"); updates are re-rendered in place keeping the focused button.
+
+**Direct navigation** ([activity/direct-open.js](../src/main/activity/direct-open.js)). The user's explicit action only. (1) The target is resolved against the current state (the binding exists in that workspace; orphans/other sessions never open; suspect/unverified need `confirm`, asked *before* anything is sent). (2) If another workspace is selected: the existing explicit selection (`selection.select` → `workspace.focus`, validated by the M01-I2 controller, honouring Auto/Manual); a failure stops here — the chat tab is not shown, no conversation is selected, the message says so. (3) The latest request wins; a refused or late one changes nothing; after the switch the selected workspace must equal the target (Auto may have followed another focus: `context_changed`). (4) The chat tab is shown and `navigator.selectBinding()` selects the conversation: it reuses the loaded view, never reloads, never creates a binding, and is the *same visit* that acknowledges attention (no second rule). Two systems are involved, so atomicity is not pretended: a partial outcome (workspace changed, conversation not opened) is reported as such.
+
+**Notices.** The hub emits an event only for a NEW `none → pending` attention on a valid, ready view (a view already pending when first seen is a baseline; reload, timeout, identity change, expiry and startup never emit). The notice controller keeps one card per view, newest first, at most three shown (the rest counted), a shared timer (8 s), and retires a card when its attention is acknowledged. The cards live in the overlay view laid out as a small rectangle at the top right (outside it everything keeps receiving input), added on top and **never focused**, shown only while the window is interactive and no modal owns the overlay (then they remain in the center). Closing or expiring a card never acknowledges attention. Wording: **"Atividade para revisar"**, never "concluída".
+
+**IPC** (new, named): `activity:state` (UI window or overlay), `activity:open` and `activity:dismiss` (overlay only), `overlay:open-activity-center` (UI window only); pushes `activity:state` (UI) and `overlay:activity-push`. Arguments are ids validated in main (exactly one of `bindingId`/`viewId`); no address, path, command or Herdr method can be passed.
 
 ## Persistent identifiers (do not change casually)
 

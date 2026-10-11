@@ -110,6 +110,24 @@ Same rules as the multi-view harness (throwaway profile, logged-out chatgpt.com,
 - `startStatePusher(...)` returns the stop function itself (with `.notify`), not an object.
 - Diagnostics (`CONTEXTDECK_CHAT_OBSERVER=1`) now tag every line with the view id; one file for all views.
 
+### Global activity (M01-I3B-2H)
+
+Unit/integration tests: `test/activity-global.test.js` (projection, attention events, notices, direct navigation, on the status world), `test/activity-ui.test.js` (view-models, IPC, indicator, activity center and notices in the real overlay script on the fake DOM). Real Electron:
+
+```powershell
+npm run build
+npx electron test/electron/activity-harness.js     # ~3 min, needs network; writes activity-report.json
+```
+
+It wires the same pieces as `src/main/index.js` (notices, activity pusher, direct open) with a fake Herdr, clicks the real indicator, reads the real overlay DOM, and checks focus (`webContents.isFocused()`), sizes (`getBoundingClientRect`), markers in the pages (no reload) and the explicit workspace commands. Learned:
+
+- The overlay is ONE view: the notice cards are the same view laid out as a small rectangle (everything outside it keeps its input), added on top and never focused; a modal replaces them. `overlay.isOpen()` means "a modal"; `isShown()` is "anything of the overlay".
+- CSS cascade: `components.css` is bundled after `layout.css`, so a responsive override of a component needs higher specificity (`.topbar .activity-ind`), not just a media query.
+- `innerText` applies `text-transform`; read `textContent` when asserting names and ids (and do not upper-case workspace ids in the UI: homonyms).
+- The fake DOM of the component tests ignores a node's own text once it has children: put text in spans next to badges/buttons.
+- A request that is refused (a switch in flight) must not invalidate the one being served: `directOpen` increments its sequence only after validation.
+- Notices are fed by the hub's `onAttention`, which fires only on a new `none → pending` of a ready view with a valid identity; the baseline of a first summary is not an event.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

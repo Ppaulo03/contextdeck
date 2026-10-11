@@ -37,7 +37,13 @@ Animation exists in one place (the pending spinner) and is disabled by `prefers-
 
 ## Top bar
 
-Order: ContextDeck name · Terminal/ChatGPT segmented switch · workspace selector and Auto/Manual · contextual actions · "Chat sem projeto" hint (ChatGPT view only). The switch is one fixed-size group (`.segmented` / `.segment`, same height family as the workspace controls); the selected segment is a filled pill, hover and `:focus-visible` states use the shared tokens, and nothing changes size when switching. The Herdr session name is not in the bar: it is shown in the diagnostics panel. Narrow windows hide the name and the "Workspace" label (≤1000 px) and let the actions scroll (≤700 px effective).
+Order: ContextDeck name · Terminal/ChatGPT segmented switch · workspace selector and Auto/Manual · global activity indicator · contextual actions · "Chat sem projeto" hint (ChatGPT view only). The switch is one fixed-size group (`.segmented` / `.segment`, same height family as the workspace controls); the selected segment is a filled pill, hover and `:focus-visible` states use the shared tokens, and nothing changes size when switching. The Herdr session name is not in the bar: it is shown in the diagnostics panel. Narrow windows hide the name and the "Workspace" label (≤1000 px) and let the actions scroll (≤700 px effective).
+
+## Global activity (M01-I3B-2H)
+
+- **Indicator** (`activity-indicator.js`): a pill in the top bar after the workspace selector, on every tab. Shapes carry the meaning, not color: a spinning ring for responding (`↻` in menus and text), `●` for activity to review, `✎` for an unsent draft, `○ Atividade` when quiet. Fixed minimum width (96 px, 52 px under 1000 px where the label is dropped), accessible name and tooltip spell out the counts and what is observed; the only animation is the existing spinner keyframes (off under `prefers-reduced-motion`).
+- **Activity center and notices** (`overlay/activity-center.js`, `overlay.css`): two more modes of the overlay page, built from the menu panel tokens. Group titles show workspace name and id exactly as they are (no upper-casing: homonyms). Notice cards sit in a small non-focusing rectangle and use no animation or transition.
+- Wording is part of the design: **"Atividade para revisar"**, never "concluída"/"terminou"; a conversation never loaded is absent, never "ociosa".
 
 ## Workspace menu (`src/renderer/overlay/`, `src/main/overlay.js`)
 

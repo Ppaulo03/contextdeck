@@ -33,7 +33,7 @@ contextBridge.exposeInMainWorld('dock', {
   chatNavSelect: (args) => ipcRenderer.invoke('chatnav:select', args),
   chatNavSelectTemporary: (args) => ipcRenderer.invoke('chatnav:select-temporary', args),
   chatNavNew: (args) => ipcRenderer.invoke('chatnav:new', args),
-  chatNavSuspend: (args) => ipcRenderer.invoke('chatnav:suspend', args),
+  chatsSuspend: (args) => ipcRenderer.invoke('chats:suspend', args),
   chatNavResolve: (args) => ipcRenderer.invoke('chatnav:resolve', args),
   chatNavOpenUnscoped: () => ipcRenderer.invoke('chatnav:open-unscoped'),
   activityState: () => ipcRenderer.invoke('activity:state'),

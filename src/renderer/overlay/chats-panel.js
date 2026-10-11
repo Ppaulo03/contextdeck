@@ -6,6 +6,7 @@
 // selected when the panel opened (`selectedAtOpen`) so a change in between forces a review.
 import { $, el } from '../components/dom.js';
 import { panelModel } from '../../shared/chat-bindings-view.js';
+import { lifeModel } from '../../shared/lifecycle-view.js';
 import { createDropdown } from '../components/dropdown.js';
 
 // Depth-first lookup by data-key (the panel is rebuilt on every render; this restores the focused control).
@@ -194,6 +195,16 @@ export function createChatsPanel({ api, closeOverlay }) {
     render();
   }
 
+  // Release the page of a conversation (M01-I3C-1). The button exists only for a page main reported as suspendable; main judges again.
+  async function suspend(bindingId) {
+    const result = await run(() => api.chatsSuspend({ bindingId }));
+    if (!result) return;
+    if (result.ok) say('Conversa suspensa. Ela continua na lista e é recarregada quando você a abrir.');
+    else if (result.error && result.error.reasons && result.error.reasons.length) say(`Não foi suspensa: ${lifeModel({ state: 'background', eligible: false, reasons: result.error.reasons }).reasons.join(' ')}`, true);
+    else say((result.error && result.error.message) || 'Não foi possível suspender.', true);
+    render();
+  }
+
   async function unbind(bindingId) {
     unbinding = null;
     const result = await run(() => api.chatsUnbind({ bindingId }));
@@ -219,7 +230,14 @@ export function createChatsPanel({ api, closeOverlay }) {
     detailNode.title = `${detail}
 ${row.url}`;   // the row is ellipsised; the tooltip has the rest
     main.append(detailNode);
+    // What the page costs and why it can (not) be released: only for a conversation that has a page (or was suspended).
+    if (row.life && !orphan) {
+      const life = el('span', 'chats-item-life', row.life.canSuspend || row.life.state === 'suspended' ? row.life.stateText : `${row.life.stateText} · ${row.life.reasons.join(' ')}`);
+      life.title = row.life.help;
+      main.append(life);
+    }
     item.append(main);
+    if (row.life && row.life.canSuspend && !orphan) item.append(button(row.life.label, () => void suspend(row.bindingId), { disabled: busy, title: row.life.help, key: `suspend-${row.bindingId}` }));
     if (orphan) item.append(button('Reassociar aqui', () => void reassign(row.bindingId, m), { disabled: !m.canWrite || isStale() || !m.targetId || false, title: 'Move este vínculo para o destino escolhido acima' }));
     else item.append(button('Editar', () => { editing = row.bindingId; render(); }));
     if (unbinding === row.bindingId) {

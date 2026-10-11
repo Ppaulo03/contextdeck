@@ -8,6 +8,8 @@
 // "concluída": the detector cannot tell a finished answer from a stopped or failed one. A conversation that was never
 // loaded is simply absent (never "ociosa").
 
+const { lifeModel } = require('./lifecycle-view');
+
 const GLYPH = { responding: '↻', attention: '●', draft: '✎' };
 const STATE_TEXT = { responding: 'Respondendo', attention: 'Atividade para revisar', draft: 'Rascunho não enviado' };
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -47,10 +49,12 @@ function unboundModel(g) {
   if (!list.length) return null;
   const items = list.map((u) => {
     const states = ['responding', 'attention', 'draft'].filter((k) => u[k]).map((kind) => ({ kind, glyph: GLYPH[kind], text: STATE_TEXT[kind] }));
-    const status = u.failed ? 'Falha ao carregar' : u.loading ? 'Carregando' : 'Ociosa';
+    // A suspended page is not observed: never "ociosa".
+    const status = u.suspended ? 'Suspensa (não monitorada)' : u.failed ? 'Falha ao carregar' : u.loading ? 'Carregando' : 'Ociosa';
+    const life = u.suspended ? null : lifeModel(u.lifecycle);
     const stateText = states.length ? states.map((s) => s.text).join(' · ') : status;
     const label = `${u.label} · ${u.hint}`;
-    return { viewId: u.viewId, label, states, stateText, warning: u.duplicate ? 'Outra aba mostra a mesma conversa.' : '', active: Boolean(u.active), aria: `Fora de um workspace, ${label}: ${stateText}` };
+    return { viewId: u.viewId, label, states, stateText, suspended: Boolean(u.suspended), canSuspend: Boolean(life && life.canSuspend), suspendHelp: life ? life.help : '', warning: u.duplicate ? 'Outra aba mostra a mesma conversa.' : '', active: Boolean(u.active), aria: `Fora de um workspace, ${label}: ${stateText}` };
   });
   return { title: `Fora de um workspace (${items.length})`, items };
 }

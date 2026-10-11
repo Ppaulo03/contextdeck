@@ -7,6 +7,8 @@
 // Principles: the destination workspace is always shown with its id (names can repeat); an estimated
 // destination says so; nothing here decides anything - main re-validates every write.
 
+const { lifeModel } = require('./lifecycle-view');
+
 const ORIGIN_NOTE = {
   dock: 'escolhido no ContextDeck',
   herdr: 'estimado pelo foco do Herdr',
@@ -82,7 +84,9 @@ function panelModel(state, targetId) {
     statusText: STATUS_TEXT[b.status] || '',
     url: b.url,
     origin: b.origin === 'current-page' ? 'vinculada pela página atual' : (b.origin === 'project-new' ? 'iniciada no Project do workspace' : 'vinculada por URL'),
-    here: state.current && state.current.conversationKey === b.conversationKey
+    here: state.current && state.current.conversationKey === b.conversationKey,
+    // Resources of the conversation's page (M01-I3C-1): null when it was never opened.
+    life: lifeModel(state.lifecycle && state.lifecycle[b.bindingId])
   });
   const orphans = state.bindings.filter((b) => b.status === 'orphan').map((b) => ({ ...row(b), workspace: workspaceName(state, b) }));
   const selectedNote = state.selected ? (ORIGIN_NOTE[state.selected.origin] || state.selected.origin) : '';

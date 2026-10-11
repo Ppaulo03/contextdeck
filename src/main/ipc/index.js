@@ -22,7 +22,7 @@ function registerIpc({ electron, win, herdr, observer, selection, activity, acti
   registerHerdrIpc({ ipcMain, trusted, observer, selection, extra: activity });
   registerOverlayIpc({ ipcMain, trustedUi: trusted, trustedOverlay: (event) => win.isOverlay(event), win, observer, selection, extra: activity });
   // Chat bindings are managed from the UI window and from the overlay panel; never from the remote page.
-  registerChatsIpc({ ipcMain, trusted: (event) => win.isTrusted(event) || win.isOverlay(event), win, bindings, notify: notifyChats, projects, onUnbind });
+  registerChatsIpc({ ipcMain, trusted: (event) => win.isTrusted(event) || win.isOverlay(event), win, bindings, notify: notifyChats, projects, onUnbind, lifecycleState: () => { const lifecycle = win.getLifecycle(); return lifecycle ? lifecycle.byBinding() : {}; } });
   // Conversation navigation: UI window only.
   registerChatNavIpc({ ipcMain, trusted, trustedOverlay: (event) => win.isOverlay(event), win, newConversation, resolve: resolveChat });
   // Global activity: state for the UI window and the overlay; "open" and "dismiss" only from the overlay's activity center / notices.

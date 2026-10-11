@@ -28,10 +28,10 @@ function setup(opts = {}) {
   return { world, handlers, call, notified, bindArgs, setUrl: (u) => { url = u; } };
 }
 
-test('IPC: the five channels exist and each refuses strangers without side effects', async () => {
+test('IPC: the channels exist and each refuses strangers without side effects', async () => {
   const t = setup();
   try {
-    assert.deepEqual([...t.handlers.keys()].sort(), ['chats:bind', 'chats:reassign', 'chats:state', 'chats:unbind', 'chats:update', 'projects:link', 'projects:unlink']);
+    assert.deepEqual([...t.handlers.keys()].sort(), ['chats:bind', 'chats:reassign', 'chats:state', 'chats:suspend', 'chats:unbind', 'chats:update', 'projects:link', 'projects:unlink']);
     for (const channel of t.handlers.keys()) {
       const r = await t.call(channel, t.bindArgs({ bindingId: 'b_0000000000000001' }), stranger);
       assert.ok(r === null || r.ok === false, channel);

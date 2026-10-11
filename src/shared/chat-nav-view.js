@@ -5,6 +5,8 @@
 // src/main/chat-views/navigator.js#getState). The strip never decides anything: it renders, and main re-validates
 // every click.
 
+const { SUSPENDED_HELP, lifeModel } = require('./lifecycle-view');
+
 const STATUS_NOTE = {
   suspect: 'A identidade deste workspace não foi verificada. Clique duas vezes para confirmar e abrir.',
   unverified: 'Herdr desconectado: o workspace não pôde ser verificado. Clique duas vezes para confirmar e abrir.'
@@ -30,10 +32,14 @@ const STATUS = {
   responding: { glyph: 'ring', label: 'Respondendo', title: 'Esta conversa está respondendo.' },
   attention: { glyph: '\u25CF', label: 'Atividade para revisar', title: 'Houve atividade nesta conversa enquanto você não a via. Isso não indica que terminou com sucesso: abra para revisar.' },
   draft: { glyph: '\u270E', label: 'Rascunho não enviado', title: 'Há texto digitado e não enviado nesta conversa (o conteúdo não é lido).' },
+  suspended: { glyph: '⏸︎', label: 'Suspensa', title: SUSPENDED_HELP },
   unknown: { glyph: '?', label: 'Estado desconhecido', title: 'Não foi possível observar o estado desta conversa (a página pode ter mudado). Ela continua utilizável.' }
 };
 
-function statusItems(activity) {
+// A suspended conversation has no page and nothing observes it: it is never reported as responding, idle or anything else. (A
+// conversation that was never opened says nothing either.)
+function statusItems(activity, suspended = false) {
+  if (suspended) return [{ kind: 'suspended', ...STATUS.suspended }];
   if (!activity) return [];
   const out = [];
   if (activity.responding) out.push('responding');
@@ -77,10 +83,14 @@ function barModel(state, armedBindingId = null, armedTransfer = false) {
     if (t.failed) notes.push('Falha ao carregar: clique para tentar de novo.');
     const off = t.relation && t.relation !== 'match' && t.relation !== 'loading';
     if (off && RELATION_NOTE[t.relation]) notes.push(RELATION_NOTE[t.relation]);
-    const status = statusItems(t.activity);
+    const status = statusItems(t.activity, t.suspended);
     if (status.length) notes.push(status.map((s) => s.title).join(' '));
+    else if (t.activity && t.activity.idle) notes.push('Ociosa (observada).');
+    const life = lifeModel(t.suspended ? { state: 'suspended' } : t.lifecycle);
+    if (life && life.state !== 'suspended' && life.state !== 'active') notes.push(life.canSuspend ? 'Pode ser suspensa em Gerenciar.' : life.help);
     return {
       id: t.bindingId,
+      suspended: Boolean(t.suspended),
       status,
       aria: status.map((s) => s.label).join(', '),
       text: armed ? `Confirmar "${t.label}"?` : (t.hint ? `${t.label} · ${t.hint}` : t.label),

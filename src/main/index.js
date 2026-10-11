@@ -126,7 +126,7 @@ async function bootstrap() {
     observer,
     selection,
     getUrl: () => win.getChatUrl(),
-    extra: (url) => ({ projectsEnabled: projectsOn, projects: projects ? projects.getState({ url }) : null }),
+    extra: (url) => ({ projectsEnabled: projectsOn, projects: projects ? projects.getState({ url }) : null, lifecycle: win.getLifecycle() ? win.getLifecycle().byBinding() : {} }),
     send: (channel, data) => { win.send(channel, data); win.sendToOverlay('overlay:chats-push', data); }
   });
   const shutdown = () => { herdr.stop(); stopPusher(); chatsPusher.stop(); navPusher.stop(); activityPusher.stop(); notices.stop(); selection.stop(); observer.stop(); };

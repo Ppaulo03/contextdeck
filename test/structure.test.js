@@ -235,13 +235,13 @@ const HANDLE_CHANNELS = [
   'dock:reload-chat', 'dock:switch', 'git:delete-zip', 'git:diff', 'git:pick-repo', 'git:refs', 'git:set-refs',
   'herdr:refresh', 'herdr:select-workspace', 'herdr:set-sync-mode', 'herdr:state',
   'overlay:choose', 'overlay:close', 'overlay:open-chats-panel', 'overlay:open-workspace-menu', 'overlay:state',
-  'chats:bind', 'chats:reassign', 'chats:state', 'chats:unbind', 'chats:update', 'projects:link', 'projects:unlink',
-  'chatnav:new', 'chatnav:open-unscoped', 'chatnav:select', 'chatnav:select-temporary', 'chatnav:state', 'chatnav:suspend',
+  'chats:bind', 'chats:reassign', 'chats:state', 'chats:suspend', 'chats:unbind', 'chats:update', 'projects:link', 'projects:unlink',
+  'chatnav:new', 'chatnav:open-unscoped', 'chatnav:select', 'chatnav:select-temporary', 'chatnav:state',
   'activity:dismiss', 'activity:open', 'activity:state', 'overlay:open-activity-center', 'activity:open-unbound', 'chatnav:resolve', 'conflict:resolve',
   'git:show', 'git:status', 'git:zip', 'pty:start'
 ].sort();
 // Chat bindings (M01-I3A): callable from the UI window AND from the overlay panel, never from the remote page.
-const CHATS_CHANNELS = ['chats:bind', 'chats:reassign', 'chats:state', 'chats:unbind', 'chats:update', 'projects:link', 'projects:unlink'];
+const CHATS_CHANNELS = ['chats:bind', 'chats:reassign', 'chats:state', 'chats:suspend', 'chats:unbind', 'chats:update', 'projects:link', 'projects:unlink'];
 // What the local UI window may invoke vs what only the menu overlay may invoke (least privilege).
 const OVERLAY_ONLY = ['overlay:choose', 'overlay:close', 'overlay:state', 'activity:open', 'activity:dismiss', 'activity:open-unbound', 'conflict:resolve'];
 // Global activity (M01-I3B-2H): the state is readable by the UI window and by the overlay; opening and dismissing only by the overlay.
@@ -570,7 +570,7 @@ test('M01-I3B-1 (amended by I3C-1): no pool, no eviction, no automatic suspensio
   assert.equal([...lifecycle.matchAll(/manager\.suspend\(/g)].length, 1);
   assert.doesNotMatch(lifecycle, /setTimer|setInterval|setImmediate|hub\.onChange|activity\.onChange|onAttention/, 'nothing schedules or reacts to activity');
   const callers = sourceFiles.filter((f) => /\.suspend\(/.test(fs.readFileSync(f, 'utf8').replace(/^\s*\/\/.*$/gm, ''))).map((f) => path.relative(SRC, f)).sort();
-  assert.deepEqual(callers, [path.join('main', 'chat-views', 'lifecycle.js'), path.join('main', 'ipc', 'chatnav.js')].sort());
+  assert.deepEqual(callers, [path.join('main', 'chat-views', 'lifecycle.js'), path.join('main', 'ipc', 'chats.js')].sort());
 });
 
 test('M01-I3B-1: the navigation channels are UI-window-only and never reach the remote page or the overlay bridge', () => {

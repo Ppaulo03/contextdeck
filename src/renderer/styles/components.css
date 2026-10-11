@@ -178,6 +178,8 @@
 .chat-tab-status { display: inline-flex; flex: none; align-items: center; justify-content: flex-end; gap: var(--space-2); min-width: 26px; height: 12px; }
 .status-ico { display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; font-size: var(--text-2xs); line-height: 1; }
 .status-ico.is-attention { color: var(--warning); }
+.status-ico.is-suspended { color: var(--text-muted); }
+.chat-tab.is-suspended .chat-tab-text { font-style: italic; opacity: 0.8; }
 .status-ico.is-draft { color: var(--text-muted); }
 .status-ico.is-unknown { color: var(--text-muted); border: 1px dashed var(--border-strong); border-radius: 50%; }
 .ws-activity { flex: none; margin-left: var(--space-3); font-size: var(--text-2xs); color: var(--info); white-space: nowrap; }

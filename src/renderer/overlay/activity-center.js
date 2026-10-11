@@ -72,6 +72,8 @@ export function createActivityOverlay({ api, closeOverlay }) {
     renderCenter();
   }
 
+  // Release a page of this list (M01-I3C-1); offered only when main reported it as suspendable, and judged again by main.
+  const suspendUnbound = (item) => runUnbound(() => api.chatsSuspend({ viewId: item.viewId }), () => { say('Conversa suspensa. Ela continua nesta lista e é recarregada quando você a abrir.'); renderCenter(); });
   const openUnbound = (item) => runUnbound(() => api.activityOpenUnbound({ viewId: item.viewId }), () => { void closeOverlay(); });
   function unboundSection(model) {
     const u = model.unbound;
@@ -93,7 +95,18 @@ export function createActivityOverlay({ api, closeOverlay }) {
       open.dataset.key = `unbound:${item.viewId}`;
       open.setAttribute('aria-label', `Abrir: ${item.aria}`);
       open.addEventListener('click', () => void openUnbound(item));
-      row.append(states, text, open);
+      row.append(states, text);
+      if (item.canSuspend) {
+        const release = el('button', 'btn', 'Suspender');
+        release.type = 'button';
+        release.disabled = busy;
+        release.title = item.suspendHelp;
+        release.dataset.key = `suspend:${item.viewId}`;
+        release.setAttribute('aria-label', `Suspender conversa: ${item.aria}`);
+        release.addEventListener('click', () => void suspendUnbound(item));
+        row.append(release);
+      }
+      row.append(open);
       section.append(row);
     }
     return section;

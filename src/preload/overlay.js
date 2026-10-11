@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('overlay', {
   chatsUpdate: (args) => ipcRenderer.invoke('chats:update', args),
   chatsUnbind: (args) => ipcRenderer.invoke('chats:unbind', args),
   chatsReassign: (args) => ipcRenderer.invoke('chats:reassign', args),
+  chatsSuspend: (args) => ipcRenderer.invoke('chats:suspend', args),
   projectsLink: (args) => ipcRenderer.invoke('projects:link', args),
   projectsUnlink: (args) => ipcRenderer.invoke('projects:unlink', args),
   onOpen: (cb) => listen('overlay:open', cb),

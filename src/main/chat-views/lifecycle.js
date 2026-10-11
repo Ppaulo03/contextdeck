@@ -129,6 +129,14 @@ function createViewLifecycle({ manager, navigator, hub, now = () => Date.now(), 
     return rows;
   }
 
+  // What the bindings panel needs: for every binding with a page or a suspension, its state and (for a live page) why it cannot be
+  // suspended. A binding that was never opened has no entry (it has no page and it is not "idle").
+  function byBinding() {
+    const out = {};
+    for (const r of inventory()) if (r.bindingId) out[r.bindingId] = r.state === 'suspended' ? { state: 'suspended', eligible: false, reasons: [] } : { state: r.state, eligible: r.eligible, reasons: r.blockers };
+    return out;
+  }
+
   function summary() {
     const rows = inventory();
     const live = rows.filter((r) => r.state !== 'suspended');
@@ -194,7 +202,7 @@ function createViewLifecycle({ manager, navigator, hub, now = () => Date.now(), 
   });
 
   return {
-    describe, inventory, summary, suspend,
+    describe, inventory, summary, byBinding, suspend,
     isBusy: (viewId) => inflight.has(viewId),
     stop() { stopped = true; offManager(); inflight.clear(); }
   };

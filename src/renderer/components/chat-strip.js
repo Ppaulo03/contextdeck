@@ -22,7 +22,7 @@ export function initChatStrip({ dock, feedback, openChatsPanel }) {
   const tabButtons = () => Array.from(tabsRoot.children).filter((n) => n.dataset && n.dataset.key);
 
   function tab(item, onClick, index, activeIndex) {
-    const b = el('button', `chat-tab${item.active ? ' is-active' : ''}${item.warn ? ' is-warn' : ''}${item.armed ? ' is-armed' : ''}`);
+    const b = el('button', `chat-tab${item.active ? ' is-active' : ''}${item.warn ? ' is-warn' : ''}${item.armed ? ' is-armed' : ''}${item.suspended ? ' is-suspended' : ''}`);
     b.type = 'button';
     b.setAttribute('role', 'tab');
     b.setAttribute('aria-selected', String(item.active));

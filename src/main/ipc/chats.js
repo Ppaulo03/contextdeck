@@ -25,7 +25,7 @@ const pickSelected = (v) => (v === null || typeof v === 'string' ? v : undefined
 // "Link the current Project" never trusts the renderer for the address: main reads it from the ChatGPT view, like for chats.
 // `onUnbind(conversationKey)` (optional): told when the user removed a binding, so the page that still shows that conversation is
 // not bound again by the workspace-first rule (unbinding is a decision, not a state to be "repaired").
-function registerChatsIpc({ ipcMain, trusted, win, bindings, notify, projects = null, onUnbind = null }) {
+function registerChatsIpc({ ipcMain, trusted, win, bindings, notify, projects = null, onUnbind = null, lifecycleState = () => ({}) }) {
   const guard = (fn) => (event, args) => {
     if (!trusted(event)) return denied;
     if (!isPlainObject(args)) return invalid();
@@ -37,7 +37,7 @@ function registerChatsIpc({ ipcMain, trusted, win, bindings, notify, projects = 
   ipcMain.handle('chats:state', (event) => {
     if (!trusted(event)) return null;
     const url = win.getChatUrl();
-    return { ...bindings.getState({ url }), projectsEnabled: Boolean(projects), projects: projects ? projects.getState({ url }) : null };
+    return { ...bindings.getState({ url }), projectsEnabled: Boolean(projects), projects: projects ? projects.getState({ url }) : null, lifecycle: lifecycleState() };
   });
 
   ipcMain.handle('chats:bind', guard((args) => {
@@ -97,6 +97,34 @@ function registerChatsIpc({ ipcMain, trusted, win, bindings, notify, projects = 
     if (result && result.ok && known && onUnbind) onUnbind(known.conversationKey);
     return result;
   }));
+
+  // Release the resources of one loaded conversation (M01-I3C-1), on the user's explicit request: a binding (its page) or a page of the
+  // exceptional list. The arguments only NAME the target; whether it may be released is decided in main, from fresh state and a fresh
+  // reading (chat-views/lifecycle.js), never from anything the renderer says. It changes no binding and sends nothing to Herdr.
+  const VIEW_RE = /^v[0-9]{1,6}$/;
+  const BINDING_RE = /^b_[0-9a-f]{16}$/;
+  const notReady = { ok: false, error: { code: 'not_ready', message: 'O ChatGPT ainda nao esta pronto.' } };
+  ipcMain.handle('chats:suspend', async (event, args) => {
+    if (!trusted(event)) return denied;
+    if (!isPlainObject(args)) return invalid();
+    const navigator = win.getNavigator();
+    const lifecycle = win.getLifecycle();
+    if (!navigator || !lifecycle) return notReady;
+    const byBinding = args.bindingId !== undefined;
+    if (byBinding === (args.viewId !== undefined)) return invalid();                  // exactly one of them
+    let viewId;
+    if (byBinding) {
+      if (typeof args.bindingId !== 'string' || !BINDING_RE.test(args.bindingId)) return invalid();
+      viewId = navigator.viewIdOfBinding(args.bindingId);
+      if (!viewId) return { ok: false, error: { code: 'not_loaded', message: 'Esta conversa nao esta carregada.' } };
+    } else {
+      if (typeof args.viewId !== 'string' || !VIEW_RE.test(args.viewId)) return invalid();
+      viewId = args.viewId;
+    }
+    const result = await lifecycle.suspend({ viewId });
+    if (result && result.ok) notify();
+    return result;
+  });
 
   ipcMain.handle('chats:reassign', guard((args) => {
     if (typeof args.bindingId !== 'string') return invalid();

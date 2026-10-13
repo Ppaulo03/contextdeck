@@ -2,7 +2,7 @@
 
 - Status: **Accepted for the explicit action; automatic release is explicitly NOT decided** (see "What blocks an automatic policy").
 - Date: 2026-10-11
-- Applies to: M01-I3C-1 and I3C-1H (builds on [0002](0002-chat-bindings.md), [0003](0003-multi-view-navigation.md) and the I3B-2 observation hub)
+- Applies to: M01-I3C-1, I3C-1H and I3C-1H2 (builds on [0002](0002-chat-bindings.md), [0003](0003-multi-view-navigation.md) and the I3B-2 observation hub)
 
 ## Context
 
@@ -42,3 +42,11 @@ What is NOT known, and decides how careful this has to be: how a real, logged-in
 The available Herdr snapshot exposes an opaque workspace id, label and a directory derived from an active pane's `cwd`. It exposes no durable workspace generation and that `cwd` is mutable. Therefore any mismatch in recorded label or directory, or missing identity evidence, is `suspect`; automatic adoption and selection are blocked until explicit reconfirmation. Existing ChatBindings and ProjectBindings are preserved. Matching all observed fields still cannot prove that Herdr did not recreate a workspace with the same id, label and directory; this is a documented residual limitation.
 
 Main-frame ChatGPT navigation is limited to HTTPS origins currently used for ChatGPT and supported login providers (`chatgpt.com`, `auth.openai.com`, Google, Microsoft and Apple login). Other origins and non-HTTPS URLs are blocked in the embedded view. Popup authentication remains sandboxed; other popup targets are denied. This policy requires authenticated manual validation before the I3C-1H navigation gate is considered verified.
+
+## Composer validation follow-up (M01-I3C-1H2)
+
+- The production unsent probe returns `present` only for positive evidence inside the selected composer form (a populated file input or visible progress bar); all other structures remain `unknown`. It does not currently return `empty`. Fixtures verify this conservative contract, not the authenticated ChatGPT markup.
+- An unknown cached hint no longer prevents the explicit action from requesting a fresh one-shot check. The final decision still blocks `unknown`; this is not a force-suspend path.
+- If unknown unsent state is the only blocker, the UI offers **Verificar e suspender** to run that fresh check. The page remains ineligible until the final check is `empty`; any other blocker keeps the action hidden.
+- Observer results discarded for an old navigation epoch or sequence cannot refresh `lastPollAt`. A lifecycle fresh reading must be accepted before its summary can pass the timestamp gate.
+- `CONTEXTDECK_COMPOSER_TRACE=1` writes an allowlisted sanitized trace through the existing observer poll. It excludes draft/message text, filenames, file data, cookies, tokens and full URLs. Only a validated authenticated DOM surface may add an `empty` result.

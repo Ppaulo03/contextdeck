@@ -32,7 +32,7 @@ const fail = (code, message, extra) => ({ ok: false, error: { code, message, ...
 
 // The pure rule. `facts` come from navigator.lifecycleFacts(); `notBefore` (optional) is the instant the reading must not predate.
 // Returns every reason that applies (an empty list means eligible), in the order the user should hear about them.
-function blockers(facts, { notBefore = null, busy = false } = {}) {
+function blockers(facts, { notBefore = null, busy = false, checkUnsent = true } = {}) {
   if (!facts) return [REASON.NOT_READY];
   const out = [];
   const add = (r) => { if (!out.includes(r)) out.push(r); };
@@ -53,8 +53,10 @@ function blockers(facts, { notBefore = null, busy = false } = {}) {
   else if (facts.kind === 'binding' && (facts.identity.key !== facts.expectedKey || !facts.reached || facts.relation !== 'match')) add(REASON.IDENTITY);
   if (facts.kind === 'binding' && facts.binding && (facts.binding.status === 'orphan' || facts.binding.status === 'other-session')) add(REASON.BINDING);
   if (facts.kind === 'residual') add(REASON.RESIDUAL);
-  if (facts.unsentState === 'present') add(REASON.UNSENT);
-  else if (facts.unsentState !== 'empty') add(REASON.UNSENT_UNKNOWN);
+  if (checkUnsent) {
+    if (facts.unsentState === 'present') add(REASON.UNSENT);
+    else if (facts.unsentState !== 'empty') add(REASON.UNSENT_UNKNOWN);
+  }
 
   // Recovery: the address the page is rebuilt from must parse to the very conversation it shows.
   if (facts.identity.state === 'durable') {
@@ -168,10 +170,12 @@ function createViewLifecycle({ manager, navigator, hub, now = () => Date.now(), 
     inflight.add(viewId);
     const t0 = clock();
     try {
-      let reasons = blockers(navigator.lifecycleFacts(viewId));
+      const initialFacts = navigator.lifecycleFacts(viewId);
+      let reasons = blockers(initialFacts, { checkUnsent: false });
+      if (initialFacts && initialFacts.unsentState === 'present') reasons.push(REASON.UNSENT);
       if (reasons.length) return refused(viewId, reasons);
       const asked = now();
-      if (hub) await hub.probeNow(viewId);
+      if (hub) await hub.probeNow(viewId); // a rejected/stale result is caught by the fresh summary below
       const handle = manager.handleOf(viewId);
       let unsent = 'unknown';
       try { if (handle && typeof handle.unsentState === 'function') unsent = await handle.unsentState(); } catch { /* A failed page probe is inconclusive. */ }
@@ -179,7 +183,7 @@ function createViewLifecycle({ manager, navigator, hub, now = () => Date.now(), 
       const t1 = clock();
       // From here to manager.suspend() nothing is awaited: what is judged is what is released.
       const facts = navigator.lifecycleFacts(viewId);
-      reasons = blockers(facts, { notBefore: asked });
+      reasons = blockers(facts, { notBefore: asked, checkUnsent: false });
       if (unsent === 'present') reasons.push(REASON.UNSENT);
       else if (unsent !== 'empty') reasons.push(REASON.UNSENT_UNKNOWN);
       if (reasons.length) return refused(viewId, reasons);

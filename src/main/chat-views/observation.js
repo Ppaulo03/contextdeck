@@ -152,10 +152,10 @@ function createObservationHub({ manager, startObserver, now = () => Date.now(), 
   async function probeNow(id) {
     const entry = entries.get(id);
     if (!entry) return false;
-    await entry.observer.pollNow();
+    const accepted = await entry.observer.pollNow();
     if (entries.get(id) !== entry) return false;
     refresh(id);
-    return true;
+    return accepted === true;
   }
 
   const visitVisible = () => (manager.getVisibleId() ? visit(manager.getVisibleId()) : false);

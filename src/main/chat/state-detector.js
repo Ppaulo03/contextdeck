@@ -43,21 +43,6 @@ const BUSY_LIMIT = 200;
 const WORLD_ID = 1001;
 const SHADOW_SCAN_LIMIT = 5000;
 
-// A one-shot lifecycle check. File inputs prove presence while populated; an empty input does not prove
-// that ChatGPT has no staged attachment (the input may have been cleared after upload). Until an authenticated
-// DOM surface is validated for absence, the only safe negative answer is unknown.
-const unsentSource = () => `(() => {
-  const composer = document.querySelector('textarea[data-octane-input], [data-octane-input][contenteditable], textarea[name="prompt"], #prompt-textarea, [data-testid="prompt-textarea"]');
-  const form = composer && composer.closest('form');
-  if (!form) return 'unknown';
-  for (const input of form.querySelectorAll('input[type="file"]')) {
-    if (input.files && input.files.length > 0) return 'present';
-  }
-  if (form.querySelector('[data-testid="attachment-chip"], [data-testid="file-upload-progress"], [role="progressbar"]')) return 'present';
-  return 'unknown';
-})()`;
-const normalizeUnsent = (value) => value === 'present' || value === 'empty' ? value : 'unknown';
-
 // Shared by both probes: tiered composer lookup. Returns { composer, via }.
 const FIND_COMPOSER = `
   const first = (list) => { for (const s of list) { const e = document.querySelector(s); if (e) return e; } return null; };
@@ -84,6 +69,43 @@ const FIND_COMPOSER = `
     return { composer: null, via: null };
   };`;
 
+// Conservative lifecycle proof. A selected file or visible progress bar inside the selected composer form proves
+// pending work. Empty file inputs, absent forms and an apparently quiet composer do not prove absence: ChatGPT can
+// clear the input after upload and may render staged attachments outside the editable element.
+const UNSENT_SCAN = `
+  const form = composer && composer.closest ? composer.closest('form') : null;
+  let populatedFileInputs = 0;
+  let progressbars = 0;
+  if (form) {
+    for (const input of form.querySelectorAll('input[type="file"]')) if (input.files && input.files.length > 0) populatedFileInputs += 1;
+    progressbars = [...form.querySelectorAll('[role="progressbar"]')].filter(visible).length;
+  }
+  const unsentState = !composer || !form ? 'unknown' : (populatedFileInputs > 0 || progressbars > 0 ? 'present' : 'unknown');`;
+const unsentSource = () => `(() => {
+  const C = ${JSON.stringify(CANDIDATES)};
+  ${FIND_COMPOSER}
+  const { composer } = findComposer();
+  ${UNSENT_SCAN}
+  return unsentState;
+})()`;
+const normalizeUnsent = (value) => value === 'present' || value === 'empty' ? value : 'unknown';
+const sanitizeUnsentTrace = (raw, viewVisible = false) => {
+  if (!raw || typeof raw !== 'object') return null;
+  const state = raw.unsentState === 'present' || raw.unsentState === 'empty' ? raw.unsentState : 'unknown';
+  const composerState = ['found', 'absent', 'ambiguous', 'unknown'].includes(raw.composerState) ? raw.composerState : 'unknown';
+  const draftState = ['present', 'empty', 'unknown'].includes(raw.draftState) ? raw.draftState : 'unknown';
+  const reason = ['file-selected', 'upload-progress', 'absence-unverified', 'composer-not-found', 'composer-form-missing'].includes(raw.reason) ? raw.reason : 'absence-unverified';
+  const uploadState = raw.progressbarCount > 0 ? 'present' : 'unknown';
+  return {
+    composerState, composerVia: VIA.has(raw.composerVia) ? raw.composerVia : null, draftState, unsentState: state, reason,
+    visibleEditableCount: safeInt(raw.visibleEditableCount), otherEditableCount: safeInt(raw.otherEditableCount), formPresent: raw.formPresent === true,
+    formButtonCount: safeInt(raw.formButtonCount), fileInputCount: safeInt(raw.fileInputCount),
+    populatedFileInputCount: safeInt(raw.populatedFileInputCount), progressbarCount: safeInt(raw.progressbarCount),
+    uploadState,
+    viewVisible: Boolean(viewVisible)
+  };
+};
+
 // The send/stop control(s): the known ones plus every button of the composer's own form.
 const FIND_CONTROLS = `
   const controls = (composer) => {
@@ -103,7 +125,7 @@ const FIND_CONTROLS = `
 
 // `diagnostic` additionally returns how the composer was found and the state signature of the form's buttons
 // (attribute names, short values; labels only for submit-like or test-id controls): UI chrome, not content.
-const probeSource = ({ diagnostic = false } = {}) => `(() => {
+const probeSource = ({ diagnostic = false, composerTrace = false } = {}) => `(() => {
   const C = ${JSON.stringify(CANDIDATES)};
   ${FIND_COMPOSER}
   ${FIND_CONTROLS}
@@ -145,6 +167,17 @@ const probeSource = ({ diagnostic = false } = {}) => `(() => {
     interrupted: null,
     draft: composer ? ((composer.value !== undefined ? composer.value : composer.textContent) || '').trim().length > 0 : null
   };
+  ${composerTrace ? `${UNSENT_SCAN}
+  const visibleEditableCount = [...document.querySelectorAll(${JSON.stringify(EDITABLE)})].filter(visible).length;
+  out.unsentTrace = {
+    composerState: composer ? 'found' : (visibleEditableCount ? 'ambiguous' : 'absent'), composerVia: via,
+    draftState: composer ? (out.draft === true ? 'present' : out.draft === false ? 'empty' : 'unknown') : 'unknown',
+    unsentState,
+    reason: !composer ? 'composer-not-found' : !form ? 'composer-form-missing' : populatedFileInputs ? 'file-selected' : progressbars ? 'upload-progress' : 'absence-unverified',
+    visibleEditableCount, otherEditableCount: Math.max(0, visibleEditableCount - (composer && visible(composer) ? 1 : 0)), formPresent: !!form, formButtonCount: form ? form.querySelectorAll('button').length : 0,
+    fileInputCount: form ? form.querySelectorAll('input[type="file"]').length : 0,
+    populatedFileInputCount: populatedFileInputs, progressbarCount: progressbars
+  };` : ''}
   ${diagnostic ? `out.via = via;
   out.wide = wideHit ? { by: wideHit.by, label: wideHit.label.length <= 40 ? wideHit.label : '', testid: wideHit.testid.length <= 40 ? wideHit.testid : '' } : null;
   out.busyCount = busyList.length;
@@ -156,8 +189,8 @@ const probeSource = ({ diagnostic = false } = {}) => `(() => {
   out.controls = buttons.slice(0, 8).map(sig);
   // The composer form itself carries state attributes on the live page (data-announcement-*, data-logged-out, ...):
   // its attribute values are UI chrome and are logged whenever they change.
-  const form = composer && composer.closest ? composer.closest('form') : null;
-  out.form = form ? [...form.attributes].filter((a) => !/^(class|style)$/.test(a.name)).map((a) => a.name + (a.value.length <= 40 ? '=' + a.value : '')).sort().slice(0, 30) : [];` : ''}
+  const diagnosticForm = composer && composer.closest ? composer.closest('form') : null;
+  out.form = diagnosticForm ? [...diagnosticForm.attributes].filter((a) => !/^(class|style)$/.test(a.name)).map((a) => a.name + (a.value.length <= 40 ? '=' + a.value : '')).sort().slice(0, 30) : [];` : ''}
   return out;
 })()`;
 
@@ -247,4 +280,4 @@ function sanitizeStructure(raw) {
   };
 }
 
-module.exports = { FIND_COMPOSER, CANDIDATES, WORLD_ID, probeSource, structureSource, normalizeSignals, sanitizeProbe, sanitizeStructure, SIGNAL_KEYS, unsentSource, normalizeUnsent };
+module.exports = { FIND_COMPOSER, CANDIDATES, WORLD_ID, probeSource, structureSource, normalizeSignals, sanitizeProbe, sanitizeStructure, SIGNAL_KEYS, unsentSource, normalizeUnsent, sanitizeUnsentTrace };

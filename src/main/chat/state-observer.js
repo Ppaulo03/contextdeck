@@ -1,7 +1,7 @@
 'use strict';
 
 const { createState, reduce, PAGE, GEN } = require('./state-model');
-const { WORLD_ID, probeSource, structureSource, normalizeSignals, sanitizeProbe, sanitizeStructure } = require('./state-detector');
+const { WORLD_ID, probeSource, structureSource, normalizeSignals, sanitizeProbe, sanitizeStructure, sanitizeUnsentTrace } = require('./state-detector');
 
 // Sequence bookkeeping alone (lastSeq) is not a change worth reporting.
 const meaningful = (s) => JSON.stringify([s.epoch, s.page, s.identity, s.generation, s.draft, s.visible, s.attention]);
@@ -16,7 +16,7 @@ const DEFAULT_INTERVALS = Object.freeze({ respondingMs: 1000, visibleIdleMs: 200
 // onChange runs only when the model actually changed, never per poll.
 // `phaseMs` offsets the FIRST poll so that many observers (one per loaded view) do not probe in the same instant;
 // `probeTimeoutMs` bounds a probe that never answers (a hung renderer), which would otherwise end the poll chain.
-function createStateObserver({ contents, onChange, intervals = DEFAULT_INTERVALS, diagnostic = false, onProbe, phaseMs = 0, probeTimeoutMs = 5000, setTimer = setTimeout, clearTimer = clearTimeout }) {
+function createStateObserver({ contents, onChange, intervals = DEFAULT_INTERVALS, diagnostic = false, composerTrace = false, onProbe, phaseMs = 0, probeTimeoutMs = 5000, setTimer = setTimeout, clearTimer = clearTimeout }) {
   let state = createState();
   let seq = 0;
   let timer;
@@ -24,7 +24,7 @@ function createStateObserver({ contents, onChange, intervals = DEFAULT_INTERVALS
   let stopped = false;
   const stats = { polls: 0, changes: 0, signalsLost: 0, probeTimeouts: 0, lastLatencyMs: null, lastPollAt: null, dropped: { stale: 0, order: 0 } };
   let phase = Math.max(0, phaseMs);
-  const source = probeSource({ diagnostic });
+  const source = probeSource({ diagnostic, composerTrace });
 
   function dispatch(event) {
     const next = reduce(state, event);
@@ -88,23 +88,31 @@ function createStateObserver({ contents, onChange, intervals = DEFAULT_INTERVALS
       const timeout = new Promise((_, reject) => { guard = setTimer(() => reject(Object.assign(new Error('probe timed out'), { code: 'probe-timeout' })), probeTimeoutMs); guard.unref?.(); });
       const raw = await Promise.race([contents.executeJavaScriptInIsolatedWorld(WORLD_ID, [{ code: source }]), timeout]);
       clearTimer(guard);
-      stats.lastPollAt = Date.now();
       stats.lastLatencyMs = Number(process.hrtime.bigint() - started) / 1e6;
       const signals = normalizeSignals(raw);
       const extra = diagnostic ? sanitizeProbe(raw) : null;
-      onProbe?.({ latencyMs: stats.lastLatencyMs, signals, via: extra && extra.via, controls: extra && extra.controls, form: extra && extra.form, wide: extra && extra.wide, busyCount: extra && extra.busyCount });
       // Results that the model will discard are counted, so a silent loss shows up in the diagnostics.
-      if (epoch !== state.epoch) stats.dropped.stale += 1;
-      else if (!(mySeq > state.lastSeq)) stats.dropped.order += 1;
+      const accepted = epoch === state.epoch && mySeq > state.lastSeq;
+      if (!accepted) {
+        if (epoch !== state.epoch) stats.dropped.stale += 1;
+        else stats.dropped.order += 1;
+      } else {
+        stats.lastPollAt = Date.now();
+      }
+      try { onProbe?.({ latencyMs: stats.lastLatencyMs, signals, via: extra && extra.via, controls: extra && extra.controls, form: extra && extra.form, wide: extra && extra.wide, busyCount: extra && extra.busyCount,
+        accepted, discarded: accepted ? null : (epoch !== state.epoch ? 'stale' : 'out-of-order'), composerTrace: composerTrace ? sanitizeUnsentTrace(raw && raw.unsentTrace, state.visible) : null }); } catch { /* Diagnostics cannot change lifecycle state. */ }
+      if (!accepted) return false;
       if (signals) dispatch({ type: 'signals', epoch, seq: mySeq, signals });
       else { stats.signalsLost += 1; dispatch({ type: 'signals-lost', epoch }); }
+      return true;
     } catch (error) {
       clearTimer(guard);
       if (error && error.code === 'probe-timeout') stats.probeTimeouts += 1;
       stats.signalsLost += 1;
       dispatch({ type: 'signals-lost', epoch });
-    }
-    schedule();
+      try { onProbe?.({ latencyMs: Number(process.hrtime.bigint() - started) / 1e6, accepted: false, discarded: error && error.code === 'probe-timeout' ? 'timeout' : 'probe-error', composerTrace: composerTrace ? null : undefined }); } catch { /* Diagnostics cannot change lifecycle state. */ }
+      return false;
+    } finally { schedule(); }
   }
 
   // Sanitized structural snapshot of the page (counts and control attributes, never text) for diagnosing a

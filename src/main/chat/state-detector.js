@@ -81,6 +81,39 @@ const UNSENT_SCAN = `
     progressbars = [...form.querySelectorAll('[role="progressbar"]')].filter(visible).length;
   }
   const unsentState = !composer || !form ? 'unknown' : (populatedFileInputs > 0 || progressbars > 0 ? 'present' : 'unknown');`;
+// Authenticated discovery captures bounded structural relations only: never text, attribute values,
+// URLs, file names or file data. Ancestor counts help compare the same surface before/after user actions.
+const COMPOSER_STRUCTURE_TRACE = `
+  const tagName = (e) => e && e.tagName ? String(e.tagName).toLowerCase().slice(0, 16) : 'unknown';
+  const roleName = (e) => ['textbox','button','listitem','group','progressbar','toolbar','presentation','img'].includes(e && e.getAttribute ? e.getAttribute('role') : '') ? e.getAttribute('role') : 'other';
+  const count = (root, selector) => { try { return root && root.querySelectorAll ? root.querySelectorAll(selector).length : 0; } catch { return 0; } };
+  const scopeMetrics = (root) => ({
+    buttons: count(root, 'button'), roleButtons: count(root, '[role="button"]'), images: count(root, 'img, [role="img"]'),
+    fileInputs: count(root, 'input[type="file"]'), progressbars: count(root, '[role="progressbar"]'), busyNodes: count(root, '[aria-busy="true"]'),
+    testIdNodes: count(root, '[data-testid]'), labeledNodes: count(root, '[aria-label]'), listItems: count(root, '[role="listitem"]'),
+    attachmentAttrNodes: count(root, '[data-attachment], [data-file-id], [data-upload-state]')
+  });
+  const editableNodes = [...document.querySelectorAll(${JSON.stringify(EDITABLE)})];
+  const visibleEditableNodes = editableNodes.filter(visible);
+  const eligibleForms = [...document.querySelectorAll('form')].filter((f) => visibleEditableNodes.some((e) => e.closest && e.closest('form') === f) && f.querySelector(${JSON.stringify(SUBMIT_IN_FORM)})).length;
+  const editableStructure = editableNodes.slice(0, 8).map((e, index) => {
+    const ancestry = []; let node = e;
+    for (let depth = 0; node && depth < 5; depth += 1, node = node.parentElement) ancestry.push({ depth, tag: tagName(node), role: roleName(node), visible: visible(node), ...scopeMetrics(node) });
+    const ownForm = e.closest ? e.closest('form') : null;
+    return { index, tag: tagName(e), role: roleName(e), visible: visible(e), contentEditable: e.getAttribute && e.getAttribute('contenteditable') === 'true', inForm: !!ownForm,
+      formHasSubmit: !!(ownForm && ownForm.querySelector(${JSON.stringify(SUBMIT_IN_FORM)})), ancestry };
+  });
+  const candidateHits = Object.fromEntries(Object.entries(C).map(([key, selectors]) => [key, selectors.map((selector) => count(document, selector))]));
+  const fileNodes = [...document.querySelectorAll('input[type="file"]')];
+  const fileInputEvidence = { total: document.querySelectorAll('input[type="file"]').length,
+    visible: fileNodes.filter(visible).length,
+    populated: fileNodes.filter((input) => input.files && input.files.length > 0).length,
+    inComposerForm: form ? count(form, 'input[type="file"]') : 0 };
+  const documentEvidence = { formCount: document.querySelectorAll('form').length, eligibleFormCount: eligibleForms,
+    visibleEditableCount: visibleEditableNodes.length, totalEditableCount: editableNodes.length,
+    visibleProgressbars: [...document.querySelectorAll('[role="progressbar"]')].filter(visible).length,
+    visibleBusyNodes: [...document.querySelectorAll('[aria-busy="true"]')].filter(visible).length };
+`;
 const unsentSource = () => `(() => {
   const C = ${JSON.stringify(CANDIDATES)};
   ${FIND_COMPOSER}
@@ -91,17 +124,34 @@ const unsentSource = () => `(() => {
 const normalizeUnsent = (value) => value === 'present' || value === 'empty' ? value : 'unknown';
 const sanitizeUnsentTrace = (raw, viewVisible = false) => {
   if (!raw || typeof raw !== 'object') return null;
-  const state = raw.unsentState === 'present' || raw.unsentState === 'empty' ? raw.unsentState : 'unknown';
+  // This probe has no validated absence surface; even an unexpected raw "empty" is not trusted in diagnostics.
+  const state = raw.unsentState === 'present' ? 'present' : 'unknown';
   const composerState = ['found', 'absent', 'ambiguous', 'unknown'].includes(raw.composerState) ? raw.composerState : 'unknown';
   const draftState = ['present', 'empty', 'unknown'].includes(raw.draftState) ? raw.draftState : 'unknown';
   const reason = ['file-selected', 'upload-progress', 'absence-unverified', 'composer-not-found', 'composer-form-missing'].includes(raw.reason) ? raw.reason : 'absence-unverified';
+  const locatorReason = ['found', 'multiple-editables-no-selected-form', 'multiple-editables-no-submit-form', 'no-visible-editable'].includes(raw.locatorReason) ? raw.locatorReason : 'unknown';
+  const metricKeys = ['buttons', 'roleButtons', 'images', 'fileInputs', 'progressbars', 'busyNodes', 'testIdNodes', 'labeledNodes', 'listItems', 'attachmentAttrNodes'];
+  const counts = (value, keys) => Object.fromEntries(keys.map((key) => [key, safeInt(value && value[key])]));
+  const editableStructure = safeList(raw.editableStructure, 8, (e) => ({
+    index: safeInt(e && e.index), tag: ['textarea', 'input', 'div', 'span'].includes(e && e.tag) ? e.tag : 'other',
+    role: ['textbox', 'button', 'listitem', 'group', 'progressbar', 'toolbar', 'presentation', 'img'].includes(e && e.role) ? e.role : 'other',
+    visible: !!(e && e.visible), contentEditable: !!(e && e.contentEditable), inForm: !!(e && e.inForm), formHasSubmit: !!(e && e.formHasSubmit),
+    ancestry: safeList(e && e.ancestry, 5, (scope) => ({ depth: safeInt(scope && scope.depth),
+      tag: ['form', 'div', 'section', 'main', 'article', 'button', 'span', 'textarea', 'input'].includes(scope && scope.tag) ? scope.tag : 'other',
+      role: ['textbox', 'button', 'listitem', 'group', 'progressbar', 'toolbar', 'presentation', 'img'].includes(scope && scope.role) ? scope.role : 'other',
+      visible: !!(scope && scope.visible), ...counts(scope, metricKeys) }))
+  }));
+  const candidateHits = {};
+  if (raw.candidateHits && typeof raw.candidateHits === 'object') for (const key of Object.keys(CANDIDATES)) candidateHits[key] = safeList(raw.candidateHits[key], 8, safeInt);
+  const fileInputEvidence = counts(raw.fileInputEvidence, ['total', 'visible', 'populated', 'inComposerForm']);
+  const documentEvidence = counts(raw.documentEvidence, ['formCount', 'eligibleFormCount', 'visibleEditableCount', 'totalEditableCount', 'visibleProgressbars', 'visibleBusyNodes']);
   const uploadState = raw.progressbarCount > 0 ? 'present' : 'unknown';
   return {
-    composerState, composerVia: VIA.has(raw.composerVia) ? raw.composerVia : null, draftState, unsentState: state, reason,
+    composerState, composerVia: VIA.has(raw.composerVia) ? raw.composerVia : null, locatorReason, draftState, unsentState: state, reason,
     visibleEditableCount: safeInt(raw.visibleEditableCount), otherEditableCount: safeInt(raw.otherEditableCount), formPresent: raw.formPresent === true,
     formButtonCount: safeInt(raw.formButtonCount), fileInputCount: safeInt(raw.fileInputCount),
     populatedFileInputCount: safeInt(raw.populatedFileInputCount), progressbarCount: safeInt(raw.progressbarCount),
-    uploadState,
+    uploadState, editableStructure, candidateHits, fileInputEvidence, documentEvidence,
     viewVisible: Boolean(viewVisible)
   };
 };
@@ -168,15 +218,18 @@ const probeSource = ({ diagnostic = false, composerTrace = false } = {}) => `(()
     draft: composer ? ((composer.value !== undefined ? composer.value : composer.textContent) || '').trim().length > 0 : null
   };
   ${composerTrace ? `${UNSENT_SCAN}
+  ${COMPOSER_STRUCTURE_TRACE}
   const visibleEditableCount = [...document.querySelectorAll(${JSON.stringify(EDITABLE)})].filter(visible).length;
   out.unsentTrace = {
     composerState: composer ? 'found' : (visibleEditableCount ? 'ambiguous' : 'absent'), composerVia: via,
+    locatorReason: composer ? 'found' : visibleEditableCount ? (eligibleForms ? 'multiple-editables-no-selected-form' : 'multiple-editables-no-submit-form') : 'no-visible-editable',
     draftState: composer ? (out.draft === true ? 'present' : out.draft === false ? 'empty' : 'unknown') : 'unknown',
     unsentState,
     reason: !composer ? 'composer-not-found' : !form ? 'composer-form-missing' : populatedFileInputs ? 'file-selected' : progressbars ? 'upload-progress' : 'absence-unverified',
     visibleEditableCount, otherEditableCount: Math.max(0, visibleEditableCount - (composer && visible(composer) ? 1 : 0)), formPresent: !!form, formButtonCount: form ? form.querySelectorAll('button').length : 0,
     fileInputCount: form ? form.querySelectorAll('input[type="file"]').length : 0,
-    populatedFileInputCount: populatedFileInputs, progressbarCount: progressbars
+    populatedFileInputCount: populatedFileInputs, progressbarCount: progressbars,
+    editableStructure, candidateHits, fileInputEvidence, documentEvidence
   };` : ''}
   ${diagnostic ? `out.via = via;
   out.wide = wideHit ? { by: wideHit.by, label: wideHit.label.length <= 40 ? wideHit.label : '', testid: wideHit.testid.length <= 40 ? wideHit.testid : '' } : null;

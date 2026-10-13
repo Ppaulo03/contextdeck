@@ -238,7 +238,7 @@ test('composer trace is opt-in, uses the existing observer poll, and writes only
     const rows = text.trim().split('\n').map(JSON.parse);
     assert.equal(rows.filter((row) => row.type === 'probe').length, 1);
     assert.deepEqual(Object.keys(rows.find((row) => row.type === 'probe').evidence).sort(), [
-      'composerState', 'composerVia', 'draftState', 'fileInputCount', 'formButtonCount', 'formPresent', 'otherEditableCount', 'populatedFileInputCount', 'progressbarCount', 'reason', 'unsentState', 'uploadState', 'viewVisible', 'visibleEditableCount'
+      'candidateHits', 'composerState', 'composerVia', 'documentEvidence', 'draftState', 'editableStructure', 'fileInputCount', 'fileInputEvidence', 'formButtonCount', 'formPresent', 'locatorReason', 'otherEditableCount', 'populatedFileInputCount', 'progressbarCount', 'reason', 'unsentState', 'uploadState', 'viewVisible', 'visibleEditableCount'
     ].sort());
     assert.doesNotMatch(text, /DO NOT LOG|private-name|token=secret|https?:/);
     o.stop();

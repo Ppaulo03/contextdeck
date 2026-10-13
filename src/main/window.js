@@ -211,7 +211,7 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     composerTraceLog = process.env.CONTEXTDECK_COMPOSER_TRACE === '1'
       ? createDiagnosticsLog({ file: path.join(path.dirname(uiStateFile), 'diagnostics', 'composer-trace.jsonl'), maxBytes: 4 * 1024 * 1024 })
       : null;
-    composerTraceLog?.note({ type: 'trace-started', schema: 1 });
+    composerTraceLog?.note({ type: 'trace-started', schema: 2 });
     const toggleShortcut = createShortcutHandler(() => switchMode(activeMode === 'terminal' ? 'chat' : 'terminal'));
     const handleShortcuts = toggleShortcut;
     mainWindow = new BrowserWindow({

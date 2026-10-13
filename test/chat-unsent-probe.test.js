@@ -47,21 +47,49 @@ test('composer trace source exposes only structural counts and a boolean draft s
   assert.match(source, /out\.unsentTrace/);
   assert.match(source, /populatedFileInputCount/);
   assert.match(source, /progressbarCount/);
-  assert.doesNotMatch(source, /input\.name|file\.name|\.files\[\d+\]|FileReader|arrayBuffer/);
+  assert.match(source, /editableStructure/);
+  assert.match(source, /candidateHits/);
+  assert.match(source, /fileInputEvidence/);
+  assert.match(source, /multiple-editables-no-submit-form/);
+  assert.doesNotMatch(source, /innerHTML|outerHTML|input\.name|file\.name|\.files\[\d+\]|FileReader|arrayBuffer/);
 });
 
 test('composer trace sanitizer drops private and URL-like data and accepts only known states', () => {
   const evidence = sanitizeUnsentTrace({
-    composerState: 'found', composerVia: 'structural', draftState: 'present', unsentState: 'empty', reason: 'absence-unverified',
+    composerState: 'found', composerVia: 'structural', draftState: 'present', unsentState: 'unknown', reason: 'absence-unverified',
     visibleEditableCount: 3, otherEditableCount: 2, formPresent: true, formButtonCount: 4, fileInputCount: 1, populatedFileInputCount: 0, progressbarCount: 0,
+    locatorReason: 'found',
+    editableStructure: [{ index: 0, tag: 'div', role: 'textbox', visible: true, contentEditable: true, inForm: false, formHasSubmit: false,
+      ancestry: [{ depth: 0, tag: 'div', role: 'textbox', visible: true, buttons: 1, roleButtons: 2, images: 1, fileInputs: 4, progressbars: 0, busyNodes: 0, testIdNodes: 3, labeledNodes: 2, listItems: 1, attachmentAttrNodes: 0 }] }],
+    candidateHits: { composer: [0, 0, 0, 0, 0], submit: [0, 1, 0], privateKey: ['secret'] },
+    fileInputEvidence: { total: 4, visible: 1, populated: 0, inComposerForm: 4 },
+    documentEvidence: { formCount: 2, eligibleFormCount: 0, visibleEditableCount: 6, totalEditableCount: 6, visibleProgressbars: 0, visibleBusyNodes: 1 },
     draft: 'secret draft', fileName: 'private.pdf', url: 'https://chatgpt.com/c/private?token=secret'
   }, true);
   assert.deepEqual(evidence, {
-    composerState: 'found', composerVia: 'structural', draftState: 'present', unsentState: 'empty', reason: 'absence-unverified',
-    visibleEditableCount: 3, otherEditableCount: 2, formPresent: true, formButtonCount: 4, fileInputCount: 1, populatedFileInputCount: 0, progressbarCount: 0, uploadState: 'unknown', viewVisible: true
+    composerState: 'found', composerVia: 'structural', locatorReason: 'found', draftState: 'present', unsentState: 'unknown', reason: 'absence-unverified',
+    visibleEditableCount: 3, otherEditableCount: 2, formPresent: true, formButtonCount: 4, fileInputCount: 1, populatedFileInputCount: 0, progressbarCount: 0, uploadState: 'unknown',
+    editableStructure: [{ index: 0, tag: 'div', role: 'textbox', visible: true, contentEditable: true, inForm: false, formHasSubmit: false,
+      ancestry: [{ depth: 0, tag: 'div', role: 'textbox', visible: true, buttons: 1, roleButtons: 2, images: 1, fileInputs: 4, progressbars: 0, busyNodes: 0, testIdNodes: 3, labeledNodes: 2, listItems: 1, attachmentAttrNodes: 0 }] }],
+    candidateHits: { composer: [0, 0, 0, 0, 0], submit: [0, 1, 0], stop: [], turnActions: [], error: [] },
+    fileInputEvidence: { total: 4, visible: 1, populated: 0, inComposerForm: 4 },
+    documentEvidence: { formCount: 2, eligibleFormCount: 0, visibleEditableCount: 6, totalEditableCount: 6, visibleProgressbars: 0, visibleBusyNodes: 1 },
+    viewVisible: true
   });
   assert.doesNotMatch(JSON.stringify(evidence), /secret|private\.pdf|https?:/);
   assert.equal(sanitizeUnsentTrace({ composerState: 'surprise', unsentState: 'surprise', reason: 'secret', composerVia: 'other' }).unsentState, 'unknown');
+  assert.equal(sanitizeUnsentTrace({ composerState: 'found', unsentState: 'empty' }).unsentState, 'unknown', 'schema-2 cannot claim empty from unvalidated evidence');
+});
+
+test('structural attachment candidates and absent upload indicators never produce an empty unsent result', () => {
+  const evidence = sanitizeUnsentTrace({ composerState: 'ambiguous', locatorReason: 'multiple-editables-no-submit-form', draftState: 'unknown', unsentState: 'unknown',
+    editableStructure: [{ index: 0, tag: 'div', role: 'textbox', visible: true, ancestry: [{ depth: 1, tag: 'section', role: 'other', images: 2, buttons: 3, fileInputs: 1, testIdNodes: 4, attachmentAttrNodes: 0 }] }],
+    fileInputEvidence: { total: 2, visible: 1, populated: 0, inComposerForm: 0 }, documentEvidence: { visibleProgressbars: 0 } });
+  assert.equal(evidence.unsentState, 'unknown');
+  assert.equal(evidence.uploadState, 'unknown');
+  assert.equal(evidence.locatorReason, 'multiple-editables-no-submit-form');
+  assert.equal(evidence.editableStructure[0].ancestry[0].images, 2);
+  assert.equal(evidence.fileInputEvidence.populated, 0);
 });
 
 test('unrecognized, unavailable, or failed probe results stay unknown', () => {

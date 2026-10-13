@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { isAllowedMainNavigation, isAllowedAuthPopup } = require('../src/main/chat-navigation-policy');
+const { isAllowedMainNavigation, isAllowedAuthPopup, safeNavigationOrigin } = require('../src/main/chat-navigation-policy');
 
 test('main-frame navigation allows ChatGPT and supported HTTPS login origins only', () => {
   for (const url of [
@@ -22,6 +22,11 @@ test('main-frame navigation allows ChatGPT and supported HTTPS login origins onl
     'data:text/html,hello',
     'not a url'
   ]) assert.equal(isAllowedMainNavigation(url), false, url);
+});
+
+test('navigation diagnostics retain only the origin and discard paths, query parameters, fragments and credentials', () => {
+  assert.equal(safeNavigationOrigin('https://user:password@auth.openai.com/oauth/callback?code=secret#token'), 'https://auth.openai.com');
+  assert.equal(safeNavigationOrigin('not a URL'), 'invalid');
 });
 
 test('only HTTPS authentication providers are allowed as sandboxed popups', () => {

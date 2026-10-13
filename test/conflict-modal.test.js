@@ -135,7 +135,7 @@ test('the window keeps the modal STATE-driven: covers only the chat area, re-sho
   assert.doesNotMatch(win, /event.preventDefault(); return; }/, 'the tab shortcut is NOT swallowed: the Terminal stays reachable');
   assert.match(win, /{ bounds: chatArea }/, 'only the chat area is covered: top bar and conversation strip keep working');
   assert.match(win, /if \(kind === 'conflict'\) \{ decisionOpen = false; conflictOpen = false;/, 'closed by anything else -> shown again');
-  assert.match(win, /navigator\.onChange\(\(state\) => \{ lastNavState = state; onNavChange\?\.\(\); syncConflict\(\); \}\)/);
+  assert.match(win, /navigator\.onChange\(\(state\) => \{[\s\S]*lastNavState = state;[\s\S]*onNavChange\?\.\(\); syncConflict\(\);\s*\}\)/);
   assert.match(win, /const sticky = banner\.kind === 'conflict'/, 'only a conflict is undismissible');
   assert.match(win, /if \(overlay\.isOpen\(\) && !sticky\) return;/, 'a question never interrupts a menu the user opened');
 });

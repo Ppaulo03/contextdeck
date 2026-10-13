@@ -151,6 +151,24 @@ test('observer counts results the model discards (stale epoch) so a silent loss 
   c.url = 'https://chatgpt.com/c/22222222-aaaa-bbbb-cccc-000000000002'; c.emit('did-navigate-in-page', {}, c.url, true);
   release(); await pending;
   assert.equal(o.getStats().dropped.stale, 1);
+  assert.equal(o.getStats().lastPollAt, null, 'a stale reply cannot refresh observation freshness');
+  o.stop();
+});
+
+test('an older overlapping probe cannot overwrite a newer accepted observation', async () => {
+  const c = fakeContents(); const t = timers(); const o = createStateObserver({ contents: c, ...t });
+  load(c, CONV);
+  const resolvers = [];
+  c.executeJavaScriptInIsolatedWorld = () => new Promise((resolve) => resolvers.push(resolve));
+  const older = o.pollNow();
+  const newer = o.pollNow();
+  const reply = { composer: true, stop: false, turnActions: true, error: false, interrupted: null, draft: false };
+  resolvers[1](reply); assert.equal(await newer, true);
+  const acceptedAt = o.getStats().lastPollAt;
+  resolvers[0](reply); assert.equal(await older, false);
+  assert.equal(o.getStats().dropped.order, 1);
+  assert.equal(o.getStats().lastPollAt, acceptedAt, 'out-of-order reply cannot replace freshness');
+  assert.equal(o.getState().lastSeq, 2);
   o.stop();
 });
 
@@ -200,6 +218,38 @@ test('diagnostic orchestration: snapshots while the composer is missing, summari
     assert.equal(cleared.length, 1, 'summary interval cleared');
     assert.equal(t.pending.length, 0, 'no timers left');
     assert.ok(readLog(dir).length >= before);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('composer trace is opt-in, uses the existing observer poll, and writes only sanitized evidence', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chat-composer-trace-'));
+  const c = fakeContents({ replies: { probe: {
+    composer: true, surface: true, stop: false, stopWide: false, busy: false, turnActions: true, error: false, interrupted: null, draft: false,
+    unsentTrace: { composerState: 'found', composerVia: 'structural', draftState: 'empty', unsentState: 'unknown', reason: 'absence-unverified', visibleEditableCount: 1,
+      formPresent: true, formButtonCount: 2, fileInputCount: 1, populatedFileInputCount: 0, progressbarCount: 0, draftText: 'DO NOT LOG', fileName: 'private-name.png', url: 'https://chatgpt.com/c/private?token=secret' }
+  } } });
+  const t = timers();
+  try {
+    const o = startChatObservation({ contents: c, userDataDir: dir, viewId: 'view-123', env: { CONTEXTDECK_COMPOSER_TRACE: '1' }, status: false, ...t });
+    load(c, CONV);
+    assert.equal(c.calls.filter((kind) => kind === 'probe').length, 0, 'no background observer poll is added by the trace');
+    assert.equal(await o.pollNow(), true);
+    const text = fs.readFileSync(path.join(dir, 'diagnostics', 'composer-trace.jsonl'), 'utf8');
+    const rows = text.trim().split('\n').map(JSON.parse);
+    assert.equal(rows.filter((row) => row.type === 'probe').length, 1);
+    assert.deepEqual(Object.keys(rows.find((row) => row.type === 'probe').evidence).sort(), [
+      'composerState', 'composerVia', 'draftState', 'fileInputCount', 'formButtonCount', 'formPresent', 'otherEditableCount', 'populatedFileInputCount', 'progressbarCount', 'reason', 'unsentState', 'uploadState', 'viewVisible', 'visibleEditableCount'
+    ].sort());
+    assert.doesNotMatch(text, /DO NOT LOG|private-name|token=secret|https?:/);
+    o.stop();
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('composer trace writes nothing when its environment flag is absent', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chat-composer-trace-off-'));
+  try {
+    assert.equal(startChatObservation({ contents: fakeContents(), userDataDir: dir, env: {}, status: false }), null);
+    assert.equal(fs.existsSync(path.join(dir, 'diagnostics', 'composer-trace.jsonl')), false);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

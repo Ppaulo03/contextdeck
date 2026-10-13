@@ -72,7 +72,7 @@ test('a view that is loading is created (first load) or restoring (after a suspe
 
 test('an idle, observed, draft-free background conversation is eligible', () => run(async (w) => {
   await w.background(w.A[0]);
-  assert.deepEqual(w.lifecycle.describe(w.viewOf(w.A[0]).id), { state: 'background', kind: 'binding', eligible: true, reasons: [] });
+  assert.deepEqual(w.lifecycle.describe(w.viewOf(w.A[0]).id), { state: 'background', kind: 'binding', eligible: true, canVerifyUnsent: false, reasons: [] });
   assert.equal(w.tab(w.A[0]).lifecycle.eligible, true);
 }));
 
@@ -168,6 +168,19 @@ test('a failed unsent-state probe is unknown and never authorizes release', () =
   assert.equal(r.ok, false);
   assert.ok(r.error.reasons.includes(REASON.UNSENT_UNKNOWN));
   assert.equal(a1.isDestroyed(), false);
+}));
+
+test('unknown initial hint defers to the fresh lifecycle probe; only that exact final result can authorize release', () => run(async (w) => {
+  const a1 = await w.open(w.A[0]); await w.open(w.A[1]);
+  w.set(a1, { unsentState: 'unknown' });
+  let calls = 0;
+  a1.unsentState = async () => { calls += 1; return 'empty'; };
+  const pendingCheck = w.lifecycle.describe(a1.id);
+  assert.deepEqual([pendingCheck.eligible, pendingCheck.canVerifyUnsent, pendingCheck.reasons], [false, true, [REASON.UNSENT_UNKNOWN]]);
+  const result = await w.suspend(w.A[0]);
+  assert.equal(calls, 1);
+  assert.equal(result.ok, true, 'the fixture supplies an explicit fresh empty result; this does not validate ChatGPT DOM behavior');
+  assert.equal(a1.isDestroyed(), true);
 }));
 
 test('an unreadable draft (composer not found) blocks: unknown is not empty', () => run(async (w) => {
@@ -684,6 +697,10 @@ test('every reason the policy can give has words, and a page that cannot be susp
   const blocked = lifeModel({ state: 'background', eligible: false, reasons: ['draft'] });
   assert.deepEqual([blocked.canSuspend, blocked.reasons], [false, [REASON_TEXT.draft]]);
   assert.match(blocked.help, /rascunho/);
+  const verify = lifeModel({ state: 'background', eligible: false, canVerifyUnsent: true, reasons: ['unsent-unknown'] });
+  assert.deepEqual([verify.canSuspend, verify.canVerifyUnsent, verify.label], [false, true, 'Verificar e suspender']);
+  assert.match(verify.help, /nova leitura/);
+  assert.equal(lifeModel({ state: 'background', eligible: false, canVerifyUnsent: true, reasons: ['unsent-unknown', 'draft'] }).canVerifyUnsent, false, 'verification is offered only when this is the sole blocker');
   assert.equal(lifeModel({ state: 'background', eligible: true, reasons: [] }).canSuspend, true);
   assert.equal(lifeModel({ state: 'background', eligible: true, reasons: ['draft'] }).canSuspend, false, 'a reason always wins over the flag');
   assert.equal(lifeModel({ state: 'background', eligible: true, reasons: ['made-up'] }).canSuspend, false);
@@ -715,7 +732,7 @@ test('the Gerenciar rows carry lifecycle reasons; the activity center keeps resi
   const stateOf = () => ({ ...w.bindings.getState({ url: '' }), lifecycle: w.lifecycle.byBinding() });
   let rows = panelModel(stateOf(), 'w1').rows;
   const r1 = rows.find((r) => r.bindingId === w.A[0].bindingId);
-  assert.deepEqual([r1.life.canSuspend, r1.life.reasons], [false, [REASON_TEXT.draft]]);
+  assert.deepEqual([r1.life.canSuspend, r1.life.canVerifyUnsent, r1.life.reasons], [false, false, [REASON_TEXT.draft]]);
   assert.equal(rows.find((r) => r.bindingId === w.A[2].bindingId).life, null, 'never opened: nothing claimed');
   w.set(a1, { draft: false }); await w.clock.advance(6000);
   rows = panelModel(stateOf(), 'w1').rows;

@@ -77,6 +77,15 @@ test('panel model: rows of the destination, orphans, blocked reasons, confirmati
   assert.equal(view.panelModel(chatsState({ current: { state: 'unknown', reason: 'new' } })).canBindCurrent, false);
 });
 
+test('the panel offers only a fresh verification action for the unsent-unknown sole blocker', () => {
+  const id = binding(1).bindingId;
+  const life = view.panelModel(chatsState({ bindings: [binding(1)], lifecycle: { [id]: { state: 'background', eligible: false, canVerifyUnsent: true, reasons: ['unsent-unknown'] } } })).rows[0].life;
+  assert.deepEqual([life.canSuspend, life.canVerifyUnsent, life.label], [false, true, 'Verificar e suspender']);
+  const panel = fs.readFileSync(path.join(SRC, 'overlay', 'chats-panel.js'), 'utf8');
+  assert.match(panel, /row\.life\.canSuspend \|\| row\.life\.canVerifyUnsent/);
+  assert.match(panel, /button\(row\.life\.label/);
+});
+
 test('the view-model mirrors the service rule for confirmation', () => {
   assert.equal(view.needsTargetConfirmation(chatsState(), 'w1'), false);
   assert.equal(view.needsTargetConfirmation(chatsState(), 'w2'), true);

@@ -43,8 +43,10 @@ const REASON_TEXT = {
 };
 
 const SUSPEND_LABEL = 'Suspender conversa';
+const VERIFY_SUSPEND_LABEL = 'Verificar e suspender';
 const SUSPEND_HELP = 'Libera a memória desta página após uma verificação. A conversa vinculada é recarregada quando você a abrir; anexos não enviados, rolagem e estado visual não são preservados.';
 const SUSPENDED_HELP = 'Suspensa: a página foi liberada e não é monitorada. Não se sabe se está respondendo ou ociosa. Abra para restaurar.';
+const VERIFY_SUSPEND_HELP = 'Faz uma nova leitura do compositor antes de liberar a página. Se a ausência de conteúdo não enviado continuar inconclusiva, a conversa permanece aberta.';
 
 // `life` is { state, eligible, reasons } as main reports it, or null/undefined when the conversation has no page (never opened).
 // A page that cannot be suspended is never offered a button: it gets the reasons instead.
@@ -53,14 +55,16 @@ function lifeModel(life) {
   const reasons = (Array.isArray(life.reasons) ? life.reasons : []).map((r) => REASON_TEXT[r] || 'Não pode ser suspensa agora.');
   if (life.state === 'suspended') return { state: 'suspended', stateText: STATE_TEXT.suspended, canSuspend: false, reasons: [], help: SUSPENDED_HELP };
   const canSuspend = life.eligible === true && reasons.length === 0;
+  const canVerifyUnsent = life.canVerifyUnsent === true && life.reasons?.length === 1 && life.reasons[0] === 'unsent-unknown';
   return {
     state: life.state,
     stateText: STATE_TEXT[life.state] || '',
     canSuspend,
-    label: SUSPEND_LABEL,
+    canVerifyUnsent,
+    label: canVerifyUnsent ? VERIFY_SUSPEND_LABEL : SUSPEND_LABEL,
     reasons,
-    help: canSuspend ? SUSPEND_HELP : `Não pode ser suspensa agora: ${reasons.join(' ')}`.trim()
+    help: canVerifyUnsent ? VERIFY_SUSPEND_HELP : canSuspend ? SUSPEND_HELP : `Não pode ser suspensa agora: ${reasons.join(' ')}`.trim()
   };
 }
 
-module.exports = { lifeModel, STATE_TEXT, REASON_TEXT, SUSPEND_LABEL, SUSPEND_HELP, SUSPENDED_HELP };
+module.exports = { lifeModel, STATE_TEXT, REASON_TEXT, SUSPEND_LABEL, VERIFY_SUSPEND_LABEL, SUSPEND_HELP, SUSPENDED_HELP, VERIFY_SUSPEND_HELP };

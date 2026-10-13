@@ -325,10 +325,11 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
         const liveIds = new Set(rows.map((row) => row.viewId));
         for (const row of rows) {
           const reasons = Array.isArray(row.blockers) ? row.blockers.filter((reason) => typeof reason === 'string' && /^[a-z-]{1,40}$/.test(reason)).slice(0, 12) : [];
-          const signature = JSON.stringify([row.state, row.eligible === true, reasons]);
+          const signature = JSON.stringify([row.state, row.eligible === true, row.canVerifyUnsent === true, reasons]);
           if (composerEligibility.get(row.viewId) !== signature) {
             composerEligibility.set(row.viewId, signature);
-            composerTraceLog.note({ type: 'eligibility-state', view: String(row.viewId).slice(0, 64), state: String(row.state).slice(0, 24), eligible: row.eligible === true, reasons });
+            composerTraceLog.note({ type: 'eligibility-state', view: String(row.viewId).slice(0, 64), state: String(row.state).slice(0, 24), eligible: row.eligible === true,
+              canVerifyUnsent: row.canVerifyUnsent === true, reasons });
           }
         }
         for (const id of composerEligibility.keys()) if (!liveIds.has(id)) composerEligibility.delete(id);

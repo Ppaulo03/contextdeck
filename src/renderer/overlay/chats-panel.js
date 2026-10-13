@@ -237,7 +237,7 @@ ${row.url}`;   // the row is ellipsised; the tooltip has the rest
       main.append(life);
     }
     item.append(main);
-    if (row.life && row.life.canSuspend && !orphan) item.append(button(row.life.label, () => void suspend(row.bindingId), { disabled: busy, title: row.life.help, key: `suspend-${row.bindingId}` }));
+    if (row.life && (row.life.canSuspend || row.life.canVerifyUnsent) && !orphan) item.append(button(row.life.label, () => void suspend(row.bindingId), { disabled: busy, title: row.life.help, key: `suspend-${row.bindingId}` }));
     if (orphan) item.append(button('Reassociar aqui', () => void reassign(row.bindingId, m), { disabled: !m.canWrite || isStale() || !m.targetId || false, title: 'Move este vínculo para o destino escolhido acima' }));
     else item.append(button('Editar', () => { editing = row.bindingId; render(); }));
     if (unbinding === row.bindingId) {

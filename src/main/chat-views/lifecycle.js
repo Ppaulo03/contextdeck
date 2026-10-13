@@ -99,7 +99,8 @@ function createViewLifecycle({ manager, navigator, hub, now = () => Date.now(), 
     const facts = navigator.lifecycleFacts(viewId);
     if (!facts) return null;
     const reasons = blockers(facts, { busy: inflight.has(viewId) });
-    return { state: stateOf(facts), kind: facts.kind, eligible: reasons.length === 0, reasons };
+    return { state: stateOf(facts), kind: facts.kind, eligible: reasons.length === 0,
+      canVerifyUnsent: reasons.length === 1 && reasons[0] === REASON.UNSENT_UNKNOWN, reasons };
   }
 
   // Every managed page and every suspended conversation, with the answers the policy needs. A read, on demand: it never polls and never
@@ -121,7 +122,7 @@ function createViewLifecycle({ manager, navigator, hub, now = () => Date.now(), 
         uncertain: s ? s.uncertain === true : null, navigating: facts.page === 'loading',
         conflict: facts.conflict, duplicate: facts.duplicate,
         restoreMs: facts.restoreMs,
-        eligible: reasons.length === 0, blockers: reasons
+        eligible: reasons.length === 0, canVerifyUnsent: reasons.length === 1 && reasons[0] === REASON.UNSENT_UNKNOWN, blockers: reasons
       });
     }
     for (const r of suspendedRows) {
@@ -139,7 +140,7 @@ function createViewLifecycle({ manager, navigator, hub, now = () => Date.now(), 
   // suspended. A binding that was never opened has no entry (it has no page and it is not "idle").
   function byBinding() {
     const out = {};
-    for (const r of inventory()) if (r.bindingId) out[r.bindingId] = r.state === 'suspended' ? { state: 'suspended', eligible: false, reasons: [] } : { state: r.state, eligible: r.eligible, reasons: r.blockers };
+    for (const r of inventory()) if (r.bindingId) out[r.bindingId] = r.state === 'suspended' ? { state: 'suspended', eligible: false, canVerifyUnsent: false, reasons: [] } : { state: r.state, eligible: r.eligible, canVerifyUnsent: r.canVerifyUnsent, reasons: r.blockers };
     return out;
   }
 

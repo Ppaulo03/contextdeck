@@ -22,6 +22,8 @@ With `CONTEXTDECK_COMPOSER_TRACE=1`, the existing per-view poll now records boun
 
 The evidence is for comparing structure around operator-marked state changes. Candidate counts are **not** classified as attachment chips, and they never authorize `empty`. `unsentState` remains `unknown` unless a positive pending-work signal produces `present`; the diagnostic sanitizer also downgrades an unexpected raw `empty` to `unknown`.
 
+`viewVisible` is the observation hub's interaction flag: the app window is shown, focused and not minimized **and** this view is selected/attached in the ChatGPT pane. `false` does not mean the WebContentsView was closed or destroyed; background views remain loaded and managed.
+
 The probe does not return text or attribute values for the new structure. It does not read `innerHTML`, filenames, file bytes, URLs, cookies, tokens or message text. Tag and role names are allowlisted; counts and arrays are bounded. Existing generation/draft protections and the final lifecycle revalidation remain in place. The trace uses the existing observer poll and adds no observer or timer.
 
 ## Authenticated collection protocol

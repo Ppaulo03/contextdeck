@@ -573,6 +573,23 @@ function withProjectAdoption(w, { link = false } = {}) {
   w.creation = createProjectCreation({ session: w.session, navigator: w.navigator, projects: w.projects });
   if (link) assert.equal(w.projects.link({ target: w.target('w1'), url: PROJECT_HOME, selectedAtOpen: 'w1', targetChosen: true }).ok, true);
 }
+
+test('a suspect Project workspace blocks automatic workspace-first association until identity records are reconfirmed', () => run(async (w) => {
+  withProjectAdoption(w, { link: true });
+  w.setWorkspaces([ws('w1', 'api-recreated', 'D:\\new-root'), ws('w2', 'app')]);
+  const v = w.newChat();
+  v.finishLoad(w.HOME);
+  v.navigate(inProject(9));
+  assert.equal(w.projects.forWorkspace(w.target('w1')).status, 'suspect');
+  assert.equal(w.bindings.all().some((b) => b.conversationKey === `c:${chatUrl(9).slice(-36)}`), false);
+  assert.equal(w.navigator.getState().pending.code, 'workspace_suspect');
+  const reconfirmed = w.projects.link({ target: w.target('w1'), url: PROJECT_HOME, selectedAtOpen: 'w1', targetChosen: true, replace: true });
+  assert.equal(reconfirmed.ok, true);
+  const chatRecord = w.bindings.reassign({ bindingId: w.A[0].bindingId, target: w.target('w1'), selectedAtOpen: 'w1', confirmReassign: true });
+  assert.equal(chatRecord.ok, true);
+  w.adoption.resolve();
+  assert.ok(w.bindings.all().some((b) => b.conversationKey === `c:${chatUrl(9).slice(-36)}`));
+}));
 const OTHER = 'g-p-ffffffffffffffffffffffffffffffff';
 
 test('a Project page on screen in a workspace without a Project: the app asks whether to link it (nothing is read from the page)', () => run(async (w) => {

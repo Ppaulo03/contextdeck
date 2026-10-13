@@ -56,8 +56,8 @@ function normalizeRole(value) {
 const dirKey = (d) => (typeof d === 'string' ? d.replace(/[\\/]+$/, '').toLowerCase() : '');
 
 // How a recorded workspace compares with what Herdr says now (shared by chat bindings and project bindings):
-//   linked      the workspace exists and matches what we recorded (label or directory; a rename keeps the directory)
-//   suspect     the id exists but BOTH label and directory differ: probably a recreated session reusing the id
+//   linked      the workspace exists and all available recorded evidence agrees
+//   suspect     any recorded evidence disagrees (or there is too little to verify); requires explicit confirmation
 //   orphan      this session, connected, and the workspace is gone
 //   unverified  Herdr is not connected, so nothing can be said
 //   other-session  belongs to another Herdr session than the configured one: preserved, not judged
@@ -65,11 +65,8 @@ function workspaceStatus({ identity, session, connected, workspace, recorded }) 
   if (identity.session !== session) return 'other-session';
   if (!connected) return 'unverified';
   if (!workspace) return 'orphan';
-  if (recorded && recorded.seenAt > 0 && (recorded.label || recorded.directory)) {
-    const sameLabel = workspace.label === recorded.label;
-    const sameDir = Boolean(recorded.directory) && dirKey(workspace.directory) === dirKey(recorded.directory);
-    if (!sameLabel && !sameDir) return 'suspect';
-  }
+  if (!recorded || !(recorded.seenAt > 0) || !recorded.label || !recorded.directory || !workspace.directory) return 'suspect';
+  if (workspace.label !== recorded.label || dirKey(workspace.directory) !== dirKey(recorded.directory)) return 'suspect';
   return 'linked';
 }
 

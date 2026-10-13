@@ -136,7 +136,7 @@ test('limits are enforced with a message', () => withWorld({}, (w) => {
     bindingId: `b_${String(i + 5000).padStart(16, '0')}`, conversationKey: `c:${ID(1).slice(0, 24)}${String(i).padStart(12, '0')}`, url: `https://chatgpt.com/c/${ID(1).slice(0, 24)}${String(i).padStart(12, '0')}`,
     label: '', role: 'general', origin: 'url', workspaceIdentity: { session: 'contextdeck', workspaceId: 'w1' }, createdAt: 1, updatedAt: 1
   }));
-  fs.writeFileSync(w.file, JSON.stringify({ schema: 1, contexts: {}, bindings, quarantine: [] }));
+  fs.writeFileSync(w.file, JSON.stringify({ schema: 1, contexts: { 'contextdeck/w1': { session: 'contextdeck', workspaceId: 'w1', label: 'api', directory: 'C:\\work\\api', seenAt: 1 } }, bindings, quarantine: [] }));
   w.store.load();
   assert.equal(w.store.get().bindings.length, LIMITS.perWorkspace);
   assert.equal(code(w.bindings.bind(w.args(9))), 'limit_reached');
@@ -255,13 +255,15 @@ test('Herdr disconnected: bindings are unverified, never reported as orphans', (
   assert.deepEqual(w.bindings.listOrphans(), []);
 }));
 
-test('renaming a workspace does not change its identity or its bindings; the record follows the new name', () => withWorld({}, (w) => {
+test('renaming a workspace is retained but marked suspect until explicit reconfirmation', () => withWorld({}, (w) => {
   w.bindings.bind(w.args(1));
   w.setWorkspaces([ws('w1', 'api-renamed', 'C:\\work\\api'), ws('w2', 'app')]);
   const [b] = w.bindings.list(w.target('w1'));
-  assert.equal(b.status, 'linked');
-  assert.equal(w.bindings.getState().bindings[0].workspaceLabel, 'api-renamed');
-  assert.equal(w.read().contexts['contextdeck/w1'].label, 'api-renamed', 'recovery metadata refreshed');
+  assert.equal(b.status, 'suspect');
+  assert.equal(w.read().contexts['contextdeck/w1'].label, 'api', 'old recovery label is retained');
+  const confirmed = w.bindings.reassign({ bindingId: b.bindingId, target: w.target('w1'), selectedAtOpen: 'w1', confirmReassign: true });
+  assert.equal(confirmed.binding.status, 'linked');
+  assert.equal(w.read().contexts['contextdeck/w1'].label, 'api-renamed', 'explicit confirmation refreshes recovery metadata');
   assert.equal(w.read().bindings[0].workspaceIdentity.workspaceId, 'w1');
 }));
 
@@ -277,6 +279,14 @@ test('same id, completely different workspace (recreated session): the binding i
   const ok = w.bindings.reassign({ bindingId: b.bindingId, target: w.target('w1'), selectedAtOpen: 'w1', confirmReassign: true });
   assert.equal(ok.binding.status, 'linked');
   assert.equal(w.read().contexts['contextdeck/w1'].label, 'totally-other');
+}));
+
+test('same id and name with a changed directory is suspect; a matching directory with a renamed label is also reconfirmed', () => withWorld({}, (w) => {
+  w.bindings.bind(w.args(1));
+  w.setWorkspaces([ws('w1', 'api', 'D:\\elsewhere'), ws('w2', 'app')]);
+  assert.equal(w.bindings.list(w.target('w1'))[0].status, 'suspect');
+  w.setWorkspaces([ws('w1', 'api-renamed', 'C:\\work\\api'), ws('w2', 'app')]);
+  assert.equal(w.bindings.list(w.target('w1'))[0].status, 'suspect');
 }));
 
 // ---- the indicator -----------------------------------------------------------------------------------------------

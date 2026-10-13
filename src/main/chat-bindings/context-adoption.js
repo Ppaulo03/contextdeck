@@ -65,7 +65,12 @@ function createContextAdoption({ session, navigator, bindings, selection, projec
     if (!(v.pending || v.visible || force)) return 'passive';
     // A workspace with a Project: a conversation that is outside it (a general chat, or another Project) is bound only after the
     // user confirms ("Vincular mesmo assim"). Inside the Project nothing is asked.
-    const rec = projects && !force ? projects.forWorkspace({ session, workspaceId: v.workspaceId }) : null;
+    const projectContext = projects ? projects.forWorkspace({ session, workspaceId: v.workspaceId }) : null;
+    const rec = projectContext && !force ? projectContext : null;
+    if (projectContext && projectContext.status === 'suspect') {
+      pendingNotes.set(v.viewId, { kind: 'pending', code: 'workspace_suspect', text: noteFor('workspace_suspect') });
+      return 'pending:workspace_suspect';
+    }
     if (rec && rec.status === 'linked') {
       const p = parseProjectUrl(v.identity.url);
       if (!(p.ok && p.projectId === rec.projectId)) {

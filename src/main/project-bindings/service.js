@@ -16,7 +16,7 @@ const { LIMITS } = require('./model');
 // (`bindings.judge`: linked / suspect / orphan / unverified). On top of that:
 //   * one Project per workspace and one workspace per Project; neither is ever replaced or moved silently:
 //     `replace` swaps the Project of a workspace, `move` takes a Project away from the workspace that has it;
-//   * a workspace whose record is `suspect` (same id, label and directory both changed: a recreated session) can only be
+//   * a workspace whose record is `suspect` (missing or changed identity evidence) can only be
 //     written with `replace`, which is the explicit re-confirmation;
 //   * the Project is identified by its id, never by its name; the same id with another slug is the same Project (a rename).
 function createProjectBindings({ store, session, bindings, observer, selection, now = () => Date.now() }) {

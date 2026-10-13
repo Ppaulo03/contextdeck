@@ -34,8 +34,8 @@ function createChatBindings({ store, session, observer, selection, now = () => D
     return { connected, workspaces, byId: new Map(workspaces.map((w) => [w.id, w])) };
   }
 
-  // linked      workspace exists and matches what we recorded (label or directory; a rename keeps the directory)
-  // suspect     the id exists but BOTH label and directory differ: probably a recreated session reusing the id
+  // linked      all recorded identity evidence agrees
+  // suspect     evidence is missing or any recorded label/directory differs; explicit reconfirmation is required
   // orphan      this session, connected, and the workspace is gone
   // unverified  Herdr is not connected, so nothing can be said
   // other-session  belongs to another Herdr session than the configured one: preserved, not judged
@@ -56,8 +56,8 @@ function createChatBindings({ store, session, observer, selection, now = () => D
     };
   }
 
-  // Keeps the recovery metadata of linked workspaces current (a rename or a changed directory must not make a
-  // later check look like a recreated workspace). Metadata only; failures are ignored; never touches bindings.
+  // Keeps recovery metadata current only while every recorded identity field agrees. A change is preserved as suspect
+  // until explicit reconfirmation; failures are ignored and bindings are never rewritten here.
   function refreshContexts(snapshot) {
     if (!store.info().writable || !snapshot.connected) return;
     const data = store.get();
@@ -129,7 +129,7 @@ function createChatBindings({ store, session, observer, selection, now = () => D
         ? err('already_bound', 'Esta conversa ja esta vinculada a este workspace.', { binding: view })
         : err('conflict', 'Esta conversa ja esta vinculada a outro workspace. Reassocie explicitamente para move-la.', { binding: view });
     }
-    // A workspace whose identity is in doubt (same id, label and directory both changed) is not made trustworthy by writing
+    // A workspace whose identity is in doubt is not made trustworthy by writing
     // into it: that would overwrite the recovery record. The user re-confirms it by reassigning one of its conversations.
     if (data.bindings.some((b) => sameWorkspace(b.workspaceIdentity, target) && statusOf(b, checked.snapshot, data) === 'suspect')) {
       return err('workspace_suspect', 'A identidade deste workspace nao foi verificada (parece ter sido recriado). Reassocie uma das conversas dele para reconfirma-lo antes de vincular outra.');

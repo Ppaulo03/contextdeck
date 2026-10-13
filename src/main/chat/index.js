@@ -18,11 +18,20 @@ const SNAPSHOT_LIMIT = 12;                    // per run: the log is evidence, n
 //   (polls, lost/dropped results, how often each signal was true/false/unknown, how the composer was found)
 //   and a sanitized structural snapshot of the page while the composer has not been found.
 // Only indicators depend on it: no view lifecycle, binding, navigation or Herdr decision does. No message text is ever read out.
-function startChatObservation({ contents, userDataDir, env = process.env, viewId = null, status = false, onChange: notify, phaseMs = 0, setTimer = setTimeout, clearTimer = clearTimeout, setRepeat = setInterval, clearRepeat = clearInterval }) {
+function startChatObservation({ contents, userDataDir, env = process.env, viewId = null, status = false, onChange: notify, phaseMs = 0, composerLog: sharedComposerLog = null, setTimer = setTimeout, clearTimer = clearTimeout, setRepeat = setInterval, clearRepeat = clearInterval }) {
   const trace = env.CONTEXTDECK_CHAT_TRACE === '1';
+  const composerTrace = env.CONTEXTDECK_COMPOSER_TRACE === '1';
   const diagnostics = env.CONTEXTDECK_CHAT_OBSERVER === '1' || trace;
-  if (!diagnostics && !status) return null;
-  if (!diagnostics) return createStateObserver({ contents, onChange: notify, phaseMs, setTimer, clearTimer });
+  const composerLog = composerTrace ? (sharedComposerLog || createDiagnosticsLog({ file: path.join(userDataDir, 'diagnostics', 'composer-trace.jsonl'), tag: viewId, maxBytes: 4 * 1024 * 1024 })) : null;
+  if (composerLog) composerLog.note({ type: 'trace-started', schema: 1, ...(sharedComposerLog ? { view: viewId } : {}) });
+  if (!diagnostics && !status && !composerTrace) return null;
+  if (!diagnostics) {
+    return createStateObserver({
+      contents, onChange: notify, phaseMs, setTimer, clearTimer, composerTrace,
+      onProbe: composerLog ? (result) => composerLog.note({ type: 'probe', ...(sharedComposerLog ? { view: viewId } : {}), evidence: result.composerTrace, accepted: result.accepted === true,
+        outcome: result.discarded || (result.signals ? 'ok' : 'signals-unavailable'), latencyMs: Number.isFinite(result.latencyMs) ? Math.max(0, Math.round(result.latencyMs * 10) / 10) : null }) : undefined
+    });
+  }
   const log = createDiagnosticsLog({ file: path.join(userDataDir, 'diagnostics', 'chat-observer.jsonl'), tag: viewId });
   let lastControls = '';
   let lastObs = { signals: null, at: null, dtMs: null, wide: null, busyCount: null };
@@ -50,6 +59,7 @@ function startChatObservation({ contents, userDataDir, env = process.env, viewId
   const observer = createStateObserver({
     contents,
     diagnostic: true,
+    composerTrace,
     phaseMs,
     onChange: (state, prev, event) => {
       log.transition(state, prev, event, { signals: lastObs.signals, dtMs: lastObs.dtMs, wide: lastObs.wide, busyCount: lastObs.busyCount });
@@ -57,7 +67,9 @@ function startChatObservation({ contents, userDataDir, env = process.env, viewId
       // Every load or conversation change starts a new search for the composer.
       if ((event.type === 'page-ready' || event.type === 'navigated') && state.page === 'ready') { composerSeen = false; scheduleSnapshots(event.type); }
     },
-    onProbe: ({ signals, via, controls, form, wide, busyCount }) => {
+    onProbe: ({ signals, via, controls, form, wide, busyCount, accepted, discarded, latencyMs, composerTrace: composerEvidence }) => {
+      if (composerLog) composerLog.note({ type: 'probe', ...(sharedComposerLog ? { view: viewId } : {}), evidence: composerEvidence, accepted: accepted === true,
+        outcome: discarded || (signals ? 'ok' : 'signals-unavailable'), latencyMs: Number.isFinite(latencyMs) ? Math.max(0, Math.round(latencyMs * 10) / 10) : null });
       const at = Date.now();
       lastObs = { signals: signals || null, at, dtMs: lastObs.at === null ? null : at - lastObs.at, wide: wide || null, busyCount: busyCount ?? null };
       if (signals) { tally(counters.composer, signals.composer); tally(counters.stop, signals.stop); tally(counters.draft, signals.draft); tally(counters.stopWide, signals.stopWide); tally(counters.busy, signals.busy); if (signals.composer === true) composerSeen = true; }

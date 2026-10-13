@@ -33,6 +33,8 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
   let initialViewId = null;
   let hub = null;               // per-view status observation (see chat-views/observation.js)
   let lifecycle = null;         // which views can give their resources back, and the explicit suspension (see chat-views/lifecycle.js)
+  let composerTraceLog = null;  // opt-in, structurally sanitized composer evidence only
+  const composerEligibility = new Map();
   let noticeCount = 0;          // activity notices wanted on screen (see syncNotices)
   let interactive = false;
   let overlay;
@@ -206,6 +208,10 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
   }
 
   async function create() {
+    composerTraceLog = process.env.CONTEXTDECK_COMPOSER_TRACE === '1'
+      ? createDiagnosticsLog({ file: path.join(path.dirname(uiStateFile), 'diagnostics', 'composer-trace.jsonl'), maxBytes: 4 * 1024 * 1024 })
+      : null;
+    composerTraceLog?.note({ type: 'trace-started', schema: 1 });
     const toggleShortcut = createShortcutHandler(() => switchMode(activeMode === 'terminal' ? 'chat' : 'terminal'));
     const handleShortcuts = toggleShortcut;
     mainWindow = new BrowserWindow({
@@ -267,6 +273,11 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
         // Typing into the page is the user being there: a visit (a no-op unless attention is pending).
         onBeforeInput: (event, input) => { handleShortcuts(event, input); if (input && input.type === 'keyDown') navigator?.visitVisible(); },
         onEvent,
+        onNavigationDecision: (decision) => {
+          if (!composerTraceLog) return;
+          const origin = typeof decision.origin === 'string' && decision.origin.length <= 255 ? decision.origin : 'invalid';
+          composerTraceLog.note({ type: 'navigation', view: id, kind: decision.kind === 'popup' ? 'popup' : 'main', origin, allowed: decision.allowed === true });
+        },
         onNavigated: () => onChatNavigated?.(),
         // The footer line describes the page the user is looking at, not a background one.
         status: (channel, data) => { if (manager && manager.isVisible(id)) send(channel, data); }
@@ -276,8 +287,8 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     const statusOn = process.env.CONTEXTDECK_CHAT_STATUS !== '0';
     hub = createObservationHub({
       manager,
-      startObserver: ({ viewId, handle, onChange, phaseMs }) => (statusOn || process.env.CONTEXTDECK_CHAT_OBSERVER === '1'
-        ? startChatObservation({ contents: handle.contents, userDataDir: path.dirname(uiStateFile), viewId, status: statusOn, onChange, phaseMs })
+      startObserver: ({ viewId, handle, onChange, phaseMs }) => (statusOn || process.env.CONTEXTDECK_CHAT_OBSERVER === '1' || process.env.CONTEXTDECK_COMPOSER_TRACE === '1'
+        ? startChatObservation({ contents: handle.contents, userDataDir: path.dirname(uiStateFile), viewId, status: statusOn, onChange, phaseMs, composerLog: composerTraceLog })
         : null)
     });
     navigator = createChatNavigator({
@@ -297,9 +308,33 @@ function createWindowController({ uiState, uiStateFile, preloadPath, overlayPrel
     // CONTEXTDECK_LIFECYCLE_LOG=1 appends each suspension, refusal and restoration (with a resource snapshot) to
     // <userData>\diagnostics\lifecycle.jsonl: evidence for the manual homologation, never read back as state.
     const lifecycleLog = process.env.CONTEXTDECK_LIFECYCLE_LOG === '1' ? createDiagnosticsLog({ file: path.join(path.dirname(uiStateFile), 'diagnostics', 'lifecycle.jsonl') }) : null;
-    lifecycle = createViewLifecycle({ manager, navigator, hub, onEvent: lifecycleLog ? (event) => lifecycleLog.note({ lifecycle: event, resources: resourceReport().totals }) : null });
+    lifecycle = createViewLifecycle({ manager, navigator, hub, onEvent: (event) => {
+      if (lifecycleLog) lifecycleLog.note({ lifecycle: event, resources: resourceReport().totals });
+      if (!composerTraceLog) return;
+      const reasons = Array.isArray(event.reasons) ? event.reasons.filter((reason) => typeof reason === 'string' && /^[a-z-]{1,40}$/.test(reason)).slice(0, 12) : [];
+      composerTraceLog.note({ type: 'eligibility', view: typeof event.viewId === 'string' ? event.viewId.slice(0, 64) : null,
+        result: event.type === 'suspended' ? 'suspended' : event.type === 'refused' ? 'blocked' : 'other', reasons,
+        judgeMs: Number.isFinite(event.timings?.judgeMs) ? Math.max(0, event.timings.judgeMs) : null,
+        releaseMs: Number.isFinite(event.timings?.releaseMs) ? Math.max(0, event.timings.releaseMs) : null });
+    } });
     navigator.setLifecycle(lifecycle);
-    navigator.onChange((state) => { lastNavState = state; onNavChange?.(); syncConflict(); });
+    navigator.onChange((state) => {
+      lastNavState = state;
+      if (composerTraceLog && lifecycle) {
+        const rows = lifecycle.inventory();
+        const liveIds = new Set(rows.map((row) => row.viewId));
+        for (const row of rows) {
+          const reasons = Array.isArray(row.blockers) ? row.blockers.filter((reason) => typeof reason === 'string' && /^[a-z-]{1,40}$/.test(reason)).slice(0, 12) : [];
+          const signature = JSON.stringify([row.state, row.eligible === true, reasons]);
+          if (composerEligibility.get(row.viewId) !== signature) {
+            composerEligibility.set(row.viewId, signature);
+            composerTraceLog.note({ type: 'eligibility-state', view: String(row.viewId).slice(0, 64), state: String(row.state).slice(0, 24), eligible: row.eligible === true, reasons });
+          }
+        }
+        for (const id of composerEligibility.keys()) if (!liveIds.has(id)) composerEligibility.delete(id);
+      }
+      onNavChange?.(); syncConflict();
+    });
     // The application's own initial page (what M00 always had), loaded as before and kept unscoped until the user
     // hands it to a workspace ("new conversation"). Nothing else is loaded until it is asked for.
     initialViewId = manager.create({ url: CHAT_HOME, scope: null, pristine: true });

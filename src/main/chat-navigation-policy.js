@@ -22,4 +22,8 @@ function isAllowedAuthPopup(url) {
   try { return AUTH_HOSTS.has(new URL(url).hostname) && new URL(url).hostname !== 'chatgpt.com'; } catch { return false; }
 }
 
-module.exports = { AUTH_HOSTS, isHttps, isAllowedMainNavigation, isAllowedAuthPopup };
+function safeNavigationOrigin(url) {
+  try { return new URL(url).origin.slice(0, 255); } catch { return 'invalid'; }
+}
+
+module.exports = { AUTH_HOSTS, isHttps, isAllowedMainNavigation, isAllowedAuthPopup, safeNavigationOrigin };

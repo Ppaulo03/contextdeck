@@ -4,7 +4,7 @@ const { WebContentsView, session } = require('electron');
 const { CHAT_PARTITION, CHAT_HOME } = require('./persistence/identity');
 const { chatWebPreferences, authPopupWebPreferences } = require('./web-preferences');
 const { WORLD_ID, unsentSource, normalizeUnsent } = require('./chat/state-detector');
-const { isHttps, isAllowedMainNavigation, isAllowedAuthPopup } = require('./chat-navigation-policy');
+const { isHttps, isAllowedMainNavigation, isAllowedAuthPopup, safeNavigationOrigin } = require('./chat-navigation-policy');
 
 // Permissions of the ChatGPT profile. Set on the session, which every ChatGPT view shares (one persistent
 // partition: the login is common to all of them), so this runs once.
@@ -31,7 +31,7 @@ function configureChatSession() {
 // and `status` (the footer line, which the window only forwards for the view that is on screen).
 // Every ChatGPT view of the application is created here, so they all have the same isolation, navigation and
 // popup policy.
-function createChatView({ onBeforeInput, onEvent, status, onNavigated }) {
+function createChatView({ onBeforeInput, onEvent, onNavigationDecision, status, onNavigated }) {
   configureChatSession();
   const view = new WebContentsView({ webPreferences: chatWebPreferences(CHAT_PARTITION) });
   const contents = view.webContents;
@@ -60,14 +60,17 @@ function createChatView({ onBeforeInput, onEvent, status, onNavigated }) {
   contents.on('render-process-gone', () => onEvent?.('process-gone', {}));
   contents.on('destroyed', () => onEvent?.('destroyed', {}));
   contents.on('will-navigate', (event, url) => {
-    if (!isAllowedMainNavigation(url)) event.preventDefault();
+    const allowed = isAllowedMainNavigation(url);
+    onNavigationDecision?.({ kind: 'main', origin: safeNavigationOrigin(url), allowed });
+    if (!allowed) event.preventDefault();
   });
 
   // HTTPS authentication popups stay sandboxed and share this separate profile.
   // Other popups are denied; remote pages never launch OS URLs automatically.
   contents.setWindowOpenHandler(({ url }) => {
-    if (!isHttps(url)) return { action: 'deny' };
+    if (!isHttps(url)) { onNavigationDecision?.({ kind: 'popup', origin: safeNavigationOrigin(url), allowed: false }); return { action: 'deny' }; }
     if (isAllowedAuthPopup(url)) {
+      onNavigationDecision?.({ kind: 'popup', origin: safeNavigationOrigin(url), allowed: true });
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
@@ -78,6 +81,7 @@ function createChatView({ onBeforeInput, onEvent, status, onNavigated }) {
         }
       };
     }
+    onNavigationDecision?.({ kind: 'popup', origin: safeNavigationOrigin(url), allowed: false });
     return { action: 'deny' };
   });
 

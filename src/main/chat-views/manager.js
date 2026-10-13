@@ -18,6 +18,7 @@ const { initialRuntime, observation, PageLifecycle, Reliability, Source } = requ
 //   identity     what the page ACTUALLY shows now, from its URL only: { state: 'durable'|'pending'|'other'|'unknown', key }
 //   epoch        bumps whenever the identity changes; stale observations are never attributed across epochs
 //   page         loading | ready | error | destroyed          (PageLifecycle, from navigation events only)
+//   suspending   true only while explicit suspension awaits physical destruction; entry stays managed until confirmed
 // The relation between expectation and identity is derived, never stored (relation()). A view that stops showing
 // its conversation is NOT mutated by an event: it keeps its expectation until someone explicitly takes it over
 // (open()/demote()), so a transient redirect cannot detach a view, and a real divergence cannot go unnoticed.
@@ -25,7 +26,7 @@ const { initialRuntime, observation, PageLifecycle, Reliability, Source } = requ
 // Lifecycle rules (docs/decisions/0003-multi-view.md, 0005-view-lifecycle.md): views are created only on demand; an existing
 // view is never reloaded or navigated to select it; hiding a view only detaches it; a view is destroyed in exactly two
 // places: destroyAll() when the application closes, and suspend() on the user's explicit request (chat-views/lifecycle.js
-// decides whether that is safe; this file only refuses what is structurally wrong). No pool, no eviction, no timers.
+// decides whether that is safe; this file keeps the entry managed until destruction is confirmed). No pool, no eviction, no timers.
 //
 // A suspended conversation has NO view. The manager keeps only a minimal in-memory record of it (`suspended`: conversation
 // key -> recovery address), so the navigation can still list it and restoring it is the normal path (create()). The binding,
@@ -60,7 +61,7 @@ const identityOf = (url) => {
   return { state: 'other', key: null, url: '' };
 };
 
-function createChatViewManager({ createView, host, now = () => Date.now() }) {
+function createChatViewManager({ createView, host, now = () => Date.now(), destructionTimeoutMs = 5000 }) {
   const entries = new Map();
   const suspended = new Map();   // conversationKey -> { id, key, url, at }: conversations whose view was released on request
   const listeners = new Set();
@@ -115,7 +116,14 @@ function createChatViewManager({ createView, host, now = () => Date.now() }) {
         break;
       case 'load-failed': setPage(entry, PageLifecycle.ERROR); changed = true; break;
       case 'process-gone': setPage(entry, PageLifecycle.ERROR); changed = true; break;
-      case 'destroyed': setPage(entry, PageLifecycle.DESTROYED); if (attachedId === id) { attachedId = null; } if (visibleId === id) visibleId = null; changed = true; break;
+      case 'destroyed':
+        setPage(entry, PageLifecycle.DESTROYED);
+        if (attachedId === id) { try { host.detach(entry.handle); } catch { /* The native view is already gone. */ } attachedId = null; }
+        if (visibleId === id) visibleId = null;
+        entries.delete(id);
+        entry.destroyed?.();
+        changed = true;
+        break;
       default: return;
     }
     if (changed) emit();
@@ -188,7 +196,7 @@ function createChatViewManager({ createView, host, now = () => Date.now() }) {
 
   function show(id) {
     const entry = entries.get(id);
-    if (!alive(entry)) return false;
+    if (!alive(entry) || entry.suspending) return false;
     visibleId = id;
     entry.lastShownAt = now();
     entry.pristine = false;
@@ -248,21 +256,44 @@ function createChatViewManager({ createView, host, now = () => Date.now() }) {
   // the view must be alive, not the one the user is looking at or that is attached, and show a durable conversation
   // whose canonical address is the recovery address. The entry leaves `entries` and listeners are told BEFORE the
   // page is destroyed, so observers stop before their WebContents goes away; late events of the old id are dropped.
-  function suspend(id, { url } = {}) {
+  async function suspend(id, { url } = {}) {
     if (destroyed) return { ok: false, code: 'closed' };
     const entry = entries.get(id);
     if (!alive(entry)) return { ok: false, code: 'view_gone' };
+    if (entry.suspending) return { ok: false, code: 'busy' };
     if (id === visibleId || id === attachedId) return { ok: false, code: 'selected' };
     if (entry.identity.state !== 'durable') return { ok: false, code: 'identity' };
     const target = identityOf(url);
     if (target.state !== 'durable' || target.key !== entry.identity.key) return { ok: false, code: 'recovery_url' };
     if (suspended.has(entry.identity.key)) return { ok: false, code: 'already_suspended' };
     const record = Object.freeze({ id, key: entry.identity.key, url: target.url, at: now() });
-    suspended.set(record.key, record);
-    entries.delete(id);
+    entry.suspending = true;
     emit();
-    try { entry.handle.destroy(); } catch { /* Already gone. */ }
-    return { ok: true, record };
+    let wake;
+    const gone = new Promise((resolve) => { wake = resolve; });
+    entry.destroyed = wake;
+    let destroyError = null;
+    let timer;
+    const timeout = new Promise((resolve) => { timer = setTimeout(resolve, destructionTimeoutMs); });
+    try {
+      const result = entry.handle.destroy();
+      if (result && typeof result.then === 'function') {
+        await Promise.race([Promise.resolve(result).catch((error) => { destroyError = error; }), gone, timeout]);
+      }
+    } catch (error) { destroyError = error; }
+    if (!entry.handle.isDestroyed() && entries.get(id) === entry && !destroyed) await Promise.race([gone, timeout]);
+    clearTimeout(timer);
+    const confirmed = entry.handle.isDestroyed() || entry.page === PageLifecycle.DESTROYED;
+    entry.destroyed = null;
+    if (confirmed) {
+      entries.delete(id);
+      if (!destroyed) suspended.set(record.key, record);
+      emit();
+      return destroyed ? { ok: false, code: 'closed' } : { ok: true, record };
+    }
+    entry.suspending = false;
+    emit();
+    return { ok: false, code: destroyed ? 'closed' : (destroyError ? 'destroy_failed' : 'destroy_timeout') };
   }
 
   function snapshot(entry) {
@@ -271,6 +302,7 @@ function createChatViewManager({ createView, host, now = () => Date.now() }) {
       page: entry.page, relation: relation(entry), visible: entry.id === visibleId, attached: entry.id === attachedId,
       pristine: entry.pristine, reached: entry.reached, lastShownAt: entry.lastShownAt,
       createdAt: entry.createdAt, restored: entry.restoredFrom !== null,
+      suspending: entry.suspending === true,
       restoreMs: entry.restoredFrom !== null && entry.firstReadyAt !== null ? entry.firstReadyAt - entry.createdAt : null
     };
   }
@@ -289,6 +321,7 @@ function createChatViewManager({ createView, host, now = () => Date.now() }) {
     reconcileAttachment();
     for (const e of entries.values()) {
       if (e.page !== 'destroyed') { try { e.handle.destroy(); } catch { /* Already gone. */ } setPage(e, PageLifecycle.DESTROYED); }
+      e.destroyed?.();
     }
     entries.clear();
     suspended.clear();
@@ -305,6 +338,10 @@ function createChatViewManager({ createView, host, now = () => Date.now() }) {
     canGoBack: (id) => { const e = entries.get(id); return Boolean(alive(e) && e.handle.canGoBack && e.handle.canGoBack()); },
     goBack: (id) => { const e = entries.get(id); return Boolean(alive(e) && e.handle.goBack && e.handle.goBack()); },
     handleOf: (id) => (entries.has(id) ? entries.get(id).handle : null),
+    unsentStateHintOf: (id) => {
+      const e = entries.get(id);
+      try { return e && e.handle.unsentStateHint ? e.handle.unsentStateHint() : 'unknown'; } catch { return 'unknown'; }
+    },
     getVisibleId: () => visibleId,
     getAttachedId: () => attachedId,
     isAttached: () => attached,

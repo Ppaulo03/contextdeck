@@ -28,6 +28,7 @@ function createFakeViews() {
     contents.hang = false;       // the probe never answers
     contents.probeError = null;
     contents.probeGate = null;   // a promise the probe waits for (to resolve results late / out of order)
+    contents.unsentGate = null;
     contents.executeJavaScriptInIsolatedWorld = async () => {
       contents.probes += 1;
       if (contents.hang) return new Promise(() => {});
@@ -51,6 +52,8 @@ function createFakeViews() {
       },
       focus() { log.push(['focus', id]); },
       isDestroyed: () => gone,
+      unsentState: async () => { if (contents.unsentGate) await contents.unsentGate; return contents.signals.unsentState === undefined ? 'empty' : contents.signals.unsentState; },
+      unsentStateHint: () => contents.signals.unsentState === undefined ? 'empty' : contents.signals.unsentState,
       destroy() { gone = true; log.push(['destroy', id]); contents.emit('destroyed'); },
       // test controls
       navigate(u, { inPage = true } = {}) {

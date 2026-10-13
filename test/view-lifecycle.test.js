@@ -127,6 +127,49 @@ test('a draft blocks; a draft that appears between the last reading and the clic
   assert.ok(w.lifecycleEvents.some((e) => e.type === 'refused'));
 }));
 
+test('unsent attachment presence and unknown state block suspension even with an empty text composer', () => run(async (w) => {
+  const a1 = await w.open(w.A[0]); await w.open(w.A[1]);
+  w.set(a1, { draft: true, unsentState: 'present' });
+  let r = await w.suspend(w.A[0]);
+  assert.ok(r.error.reasons.includes(REASON.DRAFT) || r.error.reasons.includes(REASON.UNSENT), 'text plus attachment remains protected');
+  assert.equal(a1.isDestroyed(), false);
+  w.set(a1, { draft: false });
+  r = await w.suspend(w.A[0]);
+  assert.equal(r.ok, false);
+  assert.ok(r.error.reasons.includes(REASON.UNSENT));
+  assert.equal(a1.isDestroyed(), false);
+  w.set(a1, { unsentState: 'unknown' });
+  r = await w.suspend(w.A[0]);
+  assert.ok(r.error.reasons.includes(REASON.UNSENT_UNKNOWN));
+  assert.equal(a1.isDestroyed(), false);
+  w.set(a1, { unsentState: 'empty' });
+  assert.equal((await w.suspend(w.A[0])).ok, true, 'removing the staged attachment clears the verified fake state');
+}));
+
+test('an attachment detected during the final one-shot check prevents destruction', () => run(async (w) => {
+  const a1 = await w.open(w.A[0]); await w.open(w.A[1]);
+  let resolve;
+  a1.contents.unsentGate = new Promise((r) => { resolve = r; });
+  const pending = w.suspend(w.A[0]);
+  await Promise.resolve(); await Promise.resolve();
+  w.set(a1, { unsentState: 'present' });
+  resolve();
+  const r = await pending;
+  assert.equal(r.ok, false);
+  assert.ok(r.error.reasons.includes(REASON.UNSENT));
+  assert.equal(a1.isDestroyed(), false);
+}));
+
+test('a failed unsent-state probe is unknown and never authorizes release', () => run(async (w) => {
+  const a1 = await w.open(w.A[0]); await w.open(w.A[1]);
+  a1.contents.signals.unsentState = 'empty';
+  a1.unsentState = async () => { throw new Error('probe failed'); };
+  const r = await w.suspend(w.A[0]);
+  assert.equal(r.ok, false);
+  assert.ok(r.error.reasons.includes(REASON.UNSENT_UNKNOWN));
+  assert.equal(a1.isDestroyed(), false);
+}));
+
 test('an unreadable draft (composer not found) blocks: unknown is not empty', () => run(async (w) => {
   const a1 = await w.open(w.A[0]);
   await w.open(w.A[1]);
@@ -479,34 +522,26 @@ async function makeResidual(w) {
   return a1;
 }
 
-test('a page left over after an unbind is a residual: reported, eligible under the same rules, and recoverable from the exceptional list', () => run(async (w) => {
+test('a page left over after an unbind remains live because it has no durable recovery binding', () => run(async (w) => {
   const a1 = await makeResidual(w);
   const row = w.lifecycle.inventory().find((r) => r.viewId === a1.id);
-  assert.deepEqual([row.kind, row.hasBinding, row.eligible], ['residual', false, true]);
+  assert.deepEqual([row.kind, row.hasBinding, row.eligible], ['residual', false, false]);
+  assert.ok(row.blockers.includes(REASON.RESIDUAL));
   assert.equal(w.lifecycle.summary().residual, 1);
-  assert.equal(w.navigator.getUnbound()[0].lifecycle.eligible, true);
+  assert.equal(w.navigator.getUnbound()[0].lifecycle.eligible, false);
   const r = await w.lifecycle.suspend({ viewId: a1.id });
-  assert.equal(r.ok, true);
-  assert.equal(r.kind, 'residual');
-  const list = w.navigator.getUnbound();
-  assert.deepEqual([list.length, list[0].suspended, list[0].viewId], [1, true, a1.id]);
+  assert.equal(r.ok, false);
+  assert.ok(r.error.reasons.includes(REASON.RESIDUAL));
+  assert.equal(a1.isDestroyed(), false);
   assert.equal(w.bindings.all().length, 4, 'no binding was created or touched');
-  // Restoring it is the user opening it from the list.
-  const n = w.fake.views.length;
-  const opened = w.navigator.openUnbound({ viewId: a1.id });
-  assert.equal(opened.ok, true);
-  assert.equal(w.fake.views.length, n + 1);
-  assert.deepEqual(w.fake.views.at(-1).loads, [chatUrl(1)]);
-  assert.equal(w.manager.suspendedList().length, 0);
-  assert.equal(w.navigator.openUnbound({ viewId: a1.id }).ok, false, 'the old id no longer names anything');
-  assert.equal(w.fake.views.length, n + 1);
 }));
 
 test('a residual with a draft or a response in progress is protected like any other page', () => run(async (w) => {
   const a1 = await makeResidual(w);
   w.set(a1, { draft: true });
   const r = await w.lifecycle.suspend({ viewId: a1.id });
-  assert.deepEqual([r.ok, r.error.reasons], [false, [REASON.DRAFT]]);
+  assert.equal(r.ok, false);
+  assert.ok(r.error.reasons.includes(REASON.RESIDUAL));
   assert.equal(a1.isDestroyed(), false);
 }));
 
@@ -525,14 +560,14 @@ test('a residual without a recoverable identity is kept and reported, never disc
   assert.equal(w.fake.views[0].isDestroyed(), false);
 }));
 
-test('a residual that is later bound becomes a tab, not a second entry in the exceptional list', () => run(async (w) => {
+test('a residual stays live until it is bound and then becomes a tab', () => run(async (w) => {
   const a1 = await makeResidual(w);
-  assert.equal((await w.lifecycle.suspend({ viewId: a1.id })).ok, true);
-  assert.equal(w.navigator.getUnbound().length, 1);
+  assert.equal((await w.lifecycle.suspend({ viewId: a1.id })).ok, false);
+  assert.equal(a1.isDestroyed(), false);
   const again = w.bindings.bind(w.args(1)).binding;
   w.navigator.reconcile();
   assert.equal(w.navigator.getUnbound().length, 0);
-  assert.equal(w.tab(again).suspended, true);
+  assert.equal(w.tab(again).suspended, false);
 }));
 
 // ---- observability at rest ---------------------------------------------------------------------------------------------------------------
@@ -557,7 +592,7 @@ test('at rest the lifecycle adds no timer, no probe and no state push', () => ru
 test('suspending and restoring many times leaves no residue: listeners, observers and records stay bounded', () => run(async (w) => {
   await w.open(w.A[0]);
   const keep = await w.open(w.A[1]);
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 100; i++) {
     assert.equal((await w.suspend(w.A[0])).ok, true, `round ${i}`);
     w.pick(w.A[0]);
     const v = w.fake.views.at(-1);
@@ -634,11 +669,12 @@ test('chats:suspend: both the UI window and the overlay may ask; main judges; a 
   assert.equal(ipc.state().lifecycle[w.A[0].bindingId].state, 'suspended');
 }));
 
-test('chats:suspend: a page of the exceptional list is named by its view id', () => run(async (w) => {
+test('chats:suspend: residual pages are rejected even when named by view id', () => run(async (w) => {
   const ipc = ipcFor(w);
   const a1 = await makeResidual(w);
   const r = await ipc.call({ viewId: a1.id });
-  assert.deepEqual([r.ok, r.kind], [true, 'residual']);
+  assert.equal(r.ok, false);
+  assert.ok(r.error.reasons.includes(REASON.RESIDUAL));
 }));
 
 // ---- view-models --------------------------------------------------------------------------------------------------------------------------
@@ -673,7 +709,7 @@ test('the strip marks a suspended conversation distinctly (shape and words), nev
   assert.deepEqual(active.status.map((s) => s.kind), []);
 }));
 
-test('the Gerenciar rows carry the state and the reasons; the activity center offers Suspender only for an eligible residual', () => run(async (w) => {
+test('the Gerenciar rows carry lifecycle reasons; the activity center keeps residuals recoverable', () => run(async (w) => {
   const a1 = await w.open(w.A[0]); await w.open(w.A[1]);
   w.set(a1, { draft: true }); await w.clock.advance(6000);
   const stateOf = () => ({ ...w.bindings.getState({ url: '' }), lifecycle: w.lifecycle.byBinding() });
@@ -690,11 +726,11 @@ test('the Gerenciar rows carry the state and the reasons; the activity center of
   w.bindings.unbind({ bindingId: w.A[0].bindingId });
   w.navigator.releaseConversation(w.A[0].conversationKey); w.navigator.reconcile();
   const model = centerModel({ global: w.navigator.getGlobalActivity(), notices: { items: [], more: 0 } });
-  assert.deepEqual([model.unbound.items.length, model.unbound.items[0].canSuspend, model.unbound.items[0].suspended], [1, true, false]);
+  assert.deepEqual([model.unbound.items.length, model.unbound.items[0].canSuspend, model.unbound.items[0].suspended], [1, false, false]);
   const rid = model.unbound.items[0].viewId;
-  await w.lifecycle.suspend({ viewId: rid });
+  assert.equal((await w.lifecycle.suspend({ viewId: rid })).ok, false);
   const after = centerModel({ global: w.navigator.getGlobalActivity(), notices: { items: [], more: 0 } });
-  assert.deepEqual([after.unbound.items[0].canSuspend, after.unbound.items[0].suspended, after.unbound.items[0].stateText], [false, true, 'Suspensa (não monitorada)']);
+  assert.deepEqual([after.unbound.items[0].canSuspend, after.unbound.items[0].suspended], [false, false]);
 }));
 
 // ---- resource report ---------------------------------------------------------------------------------------------------------------------

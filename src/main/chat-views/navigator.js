@@ -64,8 +64,8 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
         const b = byKey.get(v.identity.key);
         // A conversation bound later (or by navigating to a bound one) leaves the exceptional unscoped list with its view intact.
         // (unless another page already is that conversation's tab: then this one stays out, never a second tab)
-        if (b && v.scope === null) { if (!views.some((x) => x.id !== v.id && x.expectedKey === v.identity.key)) { manager.setScope(v.id, wsKeyOf(b)); manager.setExpected(v.id, v.identity.key); } }
-        else if (b && v.scope !== null && wsKeyOf(b) === v.scope && !manager.list().some((x) => x.id !== v.id && x.expectedKey === v.identity.key)) manager.setExpected(v.id, v.identity.key);
+        if (b && b.status === 'linked' && v.scope === null) { if (!views.some((x) => x.id !== v.id && x.expectedKey === v.identity.key)) { manager.setScope(v.id, wsKeyOf(b)); manager.setExpected(v.id, v.identity.key); } }
+        else if (b && b.status === 'linked' && v.scope !== null && wsKeyOf(b) === v.scope && !manager.list().some((x) => x.id !== v.id && x.expectedKey === v.identity.key)) manager.setExpected(v.id, v.identity.key);
       }
     }
   }
@@ -153,6 +153,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
     const id = viewFor(b, true);
     if (!id) return fail('open_failed', 'Nao foi possivel abrir a conversa.');
     const entry = manager.get(id);
+    if (entry && entry.suspending) return fail('suspending', 'Esta conversa está sendo suspensa. Aguarde a confirmação.');
     if (entry && entry.page === 'error') manager.reloadFailed(id, b.url);
     choice.delete(g.wk);
     manager.show(id);
@@ -542,6 +543,7 @@ function createChatNavigator({ manager, session, bindings, selection, prefs, hom
       restored: v.restored, restoreMs: v.restoreMs,
       summary: activity ? activity.summaryOf(v.id) : null,
       observed: Boolean(activity && activity.isObserved(v.id)),
+      unsentState: manager.unsentStateHintOf(v.id),
       recoveryUrl: ownedHere ? own.url : (v.identity.state === 'durable' ? v.identity.url : '')
     };
   }

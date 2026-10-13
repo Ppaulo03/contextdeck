@@ -7,9 +7,9 @@ const { createFakeViews } = require('./helpers/views-world');
 const { chatUrl, projectUrl } = require('./helpers/bindings-world');
 const rc = require('../src/main/chat/runtime-contract');
 
-const setup = () => {
+const setup = (options = {}) => {
   const fake = createFakeViews();
-  const manager = createChatViewManager({ createView: fake.factory, host: fake.host });
+  const manager = createChatViewManager({ createView: fake.factory, host: fake.host, ...options });
   return { fake, manager, ops: () => fake.log.map((l) => l.slice(0, 2).join(':')) };
 };
 const flush = () => new Promise((r) => setImmediate(r));
@@ -152,8 +152,7 @@ test('late events are dropped: a load that finished for an older request, and an
   assert.equal(manager.getVisibleId(), null, 'a destroyed view is not visible any more');
   fake.views[0].navigate(chatUrl(2));
   fake.views[0].emit('loaded', {});
-  assert.equal(manager.get(id).page, 'destroyed');
-  assert.equal(manager.get(id).identity.key, null, 'a navigation reported after destruction is ignored');
+  assert.equal(manager.get(id), null, 'destroyed entries are removed, not retained as dead handles');
   assert.equal(manager.list().length, 0, 'destroyed views leave the list');
   assert.equal(manager.show(id), false);
 });
@@ -208,6 +207,74 @@ test('destroyAll closes every view once, detaches the visible one and silences t
   assert.equal(manager.create({ url: chatUrl(3), scope: 's/w1' }), null, 'nothing is created after shutdown');
   fake.views[0].navigate(chatUrl(9));
   assert.equal(changes, 0, 'late events from closed views change nothing');
+});
+
+test('suspension only reports success after a destroyed event or destroyed handle is confirmed', async () => {
+  const { fake, manager } = setup({ destructionTimeoutMs: 10 });
+  const id = manager.create({ url: chatUrl(7) });
+  const view = fake.views[0];
+  view.finishLoad(); await flush();
+  view.destroy = () => { throw new Error('before destroy'); };
+  let result = await manager.suspend(id, { url: chatUrl(7) });
+  assert.equal(result.ok, false);
+  assert.equal(manager.get(id).suspending, false);
+  assert.equal(manager.list().length, 1);
+  assert.equal(manager.suspendedList().length, 0);
+  view.destroy = () => { view.emit('destroyed'); throw new Error('after destroy'); };
+  result = await manager.suspend(id, { url: chatUrl(7) });
+  assert.equal(result.ok, true);
+  assert.equal(view.isDestroyed(), false, 'the event confirms native destruction even if the wrapper reports late');
+  assert.equal(manager.get(id), null);
+});
+
+test('suspension rejects a live handle after timeout and preserves its managed entry', async () => {
+  const { fake, manager } = setup({ destructionTimeoutMs: 10 });
+  const id = manager.create({ url: chatUrl(8) });
+  const view = fake.views[0];
+  view.finishLoad(); await flush();
+  view.destroy = () => new Promise(() => {});
+  const result = await manager.suspend(id, { url: chatUrl(8) });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'destroy_timeout');
+  assert.ok(manager.get(id));
+  assert.equal(manager.suspendedList().length, 0);
+});
+
+test('destroyed notifications may arrive asynchronously and more than once without leaving an orphan entry', async () => {
+  const { fake, manager } = setup({ destructionTimeoutMs: 100 });
+  const id = manager.create({ url: chatUrl(9) });
+  const view = fake.views[0];
+  view.finishLoad(); await flush();
+  view.destroy = () => new Promise((resolve) => setTimeout(() => {
+    view.emit('destroyed');
+    view.emit('destroyed');
+    resolve();
+  }, 5));
+  const result = await manager.suspend(id, { url: chatUrl(9) });
+  assert.equal(result.ok, true);
+  assert.equal(manager._size(), 0);
+  assert.equal(manager.list().length, 0);
+  assert.equal(manager.suspendedList().length, 1);
+});
+
+test('selection, duplicate suspension and shutdown during destruction cannot escape manager ownership', async () => {
+  const { fake, manager } = setup({ destructionTimeoutMs: 100 });
+  const url = chatUrl(1);
+  const id = manager.create({ url, scope: 's/w1' });
+  const view = fake.views[0];
+  view.finishLoad(); await flush();
+  let release;
+  view.destroy = () => new Promise((resolve) => { release = resolve; });
+  const first = manager.suspend(id, { url });
+  assert.equal(manager.show(id), false, 'selection cannot attach a handle while its destruction is pending');
+  assert.equal((await manager.suspend(id, { url })).code, 'busy');
+  assert.equal(fake.views.length, 1);
+  manager.destroyAll();
+  view.emit('destroyed');
+  release?.();
+  assert.equal((await first).ok, false, 'closing the manager is not reported as a user suspension');
+  assert.equal(manager.suspendedList().length, 0);
+  assert.equal(manager._size(), 0);
 });
 
 test('the manager module is plain Node: no Electron, no persistence, no bindings', () => {

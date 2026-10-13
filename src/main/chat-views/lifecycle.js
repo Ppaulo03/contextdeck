@@ -21,7 +21,8 @@ const REASON = Object.freeze({
   NOT_READY: 'not-ready', NAVIGATING: 'navigating', IDENTITY: 'identity-unconfirmed', CREATING: 'creating', DECISION: 'pending-decision',
   CONFLICT: 'conflict', DUPLICATE: 'duplicate', SWITCHING: 'workspace-switching', BINDING: 'binding-unavailable', RECOVERY: 'recovery-url',
   UNOBSERVED: 'observation-unavailable', STALE: 'observation-stale', UNKNOWN: 'state-unknown', UNCERTAIN: 'uncertain',
-  RESPONDING: 'responding', DRAFT: 'draft', DRAFT_UNKNOWN: 'draft-unknown', ATTENTION: 'attention', BUSY: 'operation-in-progress'
+  RESPONDING: 'responding', DRAFT: 'draft', DRAFT_UNKNOWN: 'draft-unknown', ATTENTION: 'attention', BUSY: 'operation-in-progress',
+  UNSENT: 'unsent-content', UNSENT_UNKNOWN: 'unsent-unknown', RESIDUAL: 'residual-unbound', DESTROY: 'destroy-unconfirmed'
 });
 
 // Generations that mean "not producing an answer". `ended-unclassified` is in the list ONLY as a possible value: the other rules still apply.
@@ -51,6 +52,9 @@ function blockers(facts, { notBefore = null, busy = false } = {}) {
   if (facts.identity.state !== 'durable') add(facts.kind === 'binding' ? REASON.IDENTITY : REASON.NO_IDENTITY);
   else if (facts.kind === 'binding' && (facts.identity.key !== facts.expectedKey || !facts.reached || facts.relation !== 'match')) add(REASON.IDENTITY);
   if (facts.kind === 'binding' && facts.binding && (facts.binding.status === 'orphan' || facts.binding.status === 'other-session')) add(REASON.BINDING);
+  if (facts.kind === 'residual') add(REASON.RESIDUAL);
+  if (facts.unsentState === 'present') add(REASON.UNSENT);
+  else if (facts.unsentState !== 'empty') add(REASON.UNSENT_UNKNOWN);
 
   // Recovery: the address the page is rebuilt from must parse to the very conversation it shows.
   if (facts.identity.state === 'durable') {
@@ -168,15 +172,20 @@ function createViewLifecycle({ manager, navigator, hub, now = () => Date.now(), 
       if (reasons.length) return refused(viewId, reasons);
       const asked = now();
       if (hub) await hub.probeNow(viewId);
+      const handle = manager.handleOf(viewId);
+      let unsent = 'unknown';
+      try { if (handle && typeof handle.unsentState === 'function') unsent = await handle.unsentState(); } catch { /* A failed page probe is inconclusive. */ }
       if (stopped || manager.isClosed()) return fail('shutting_down', 'O aplicativo esta encerrando.');
       const t1 = clock();
       // From here to manager.suspend() nothing is awaited: what is judged is what is released.
       const facts = navigator.lifecycleFacts(viewId);
       reasons = blockers(facts, { notBefore: asked });
+      if (unsent === 'present') reasons.push(REASON.UNSENT);
+      else if (unsent !== 'empty') reasons.push(REASON.UNSENT_UNKNOWN);
       if (reasons.length) return refused(viewId, reasons);
-      const r = manager.suspend(viewId, { url: facts.recoveryUrl });
+      const r = await manager.suspend(viewId, { url: facts.recoveryUrl });
       const t2 = clock();
-      if (!r.ok) return refused(viewId, [r.code === 'selected' ? REASON.SELECTED : REASON.RECOVERY]);
+      if (!r.ok) return refused(viewId, [r.code === 'selected' ? REASON.SELECTED : REASON.DESTROY]);
       const result = { ok: true, viewId, key: r.record.key, kind: facts.kind, bindingId: facts.binding ? facts.binding.bindingId : null, timings: { judgeMs: round(t1 - t0), releaseMs: round(t2 - t1) } };
       emitEvent({ type: 'suspended', ...result, at: now() });
       return result;
@@ -193,6 +202,8 @@ function createViewLifecycle({ manager, navigator, hub, now = () => Date.now(), 
   // A page that came back after a suspension reports how long it took to be ready (once).
   const reported = new Set();
   const offManager = manager.onChange(() => {
+    const live = new Set(manager.list().map((v) => v.id));
+    for (const id of reported) if (!live.has(id)) reported.delete(id);
     for (const v of manager.list()) {
       if (v.restored && v.restoreMs !== null && !reported.has(v.id)) {
         reported.add(v.id);
@@ -204,7 +215,7 @@ function createViewLifecycle({ manager, navigator, hub, now = () => Date.now(), 
   return {
     describe, inventory, summary, byBinding, suspend,
     isBusy: (viewId) => inflight.has(viewId),
-    stop() { stopped = true; offManager(); inflight.clear(); }
+    stop() { stopped = true; offManager(); inflight.clear(); reported.clear(); }
   };
 }
 

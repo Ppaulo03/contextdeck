@@ -3,18 +3,8 @@
 const { WebContentsView, session } = require('electron');
 const { CHAT_PARTITION, CHAT_HOME } = require('./persistence/identity');
 const { chatWebPreferences, authPopupWebPreferences } = require('./web-preferences');
-
-const AUTH_POPUP_HOSTS = new Set([
-  'chatgpt.com',
-  'auth.openai.com',
-  'accounts.google.com',
-  'login.microsoftonline.com',
-  'appleid.apple.com'
-]);
-
-function isHttps(url) {
-  try { return new URL(url).protocol === 'https:'; } catch { return false; }
-}
+const { WORLD_ID, unsentSource, normalizeUnsent } = require('./chat/state-detector');
+const { isHttps, isAllowedMainNavigation, isAllowedAuthPopup } = require('./chat-navigation-policy');
 
 // Permissions of the ChatGPT profile. Set on the session, which every ChatGPT view shares (one persistent
 // partition: the login is common to all of them), so this runs once.
@@ -70,14 +60,14 @@ function createChatView({ onBeforeInput, onEvent, status, onNavigated }) {
   contents.on('render-process-gone', () => onEvent?.('process-gone', {}));
   contents.on('destroyed', () => onEvent?.('destroyed', {}));
   contents.on('will-navigate', (event, url) => {
-    if (!isHttps(url)) event.preventDefault();
+    if (!isAllowedMainNavigation(url)) event.preventDefault();
   });
 
   // HTTPS authentication popups stay sandboxed and share this separate profile.
   // Other popups are denied; remote pages never launch OS URLs automatically.
   contents.setWindowOpenHandler(({ url }) => {
     if (!isHttps(url)) return { action: 'deny' };
-    if (AUTH_POPUP_HOSTS.has(new URL(url).hostname)) {
+    if (isAllowedAuthPopup(url)) {
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
@@ -107,6 +97,18 @@ function createChatView({ onBeforeInput, onEvent, status, onNavigated }) {
     // OS process hosting this page (resource report only; shared with other views when Chromium reuses a renderer).
     getProcessId: () => (alive() ? contents.getOSProcessId() : 0),
     isDestroyed: () => !alive(),
+    unsentStateHint: () => 'unknown',
+    async unsentState() {
+      if (!alive()) return 'unknown';
+      let timer;
+      try {
+        const result = await Promise.race([
+          contents.executeJavaScriptInIsolatedWorld(WORLD_ID, [{ code: unsentSource() }]),
+          new Promise((resolve) => { timer = setTimeout(() => resolve('unknown'), 3000); })
+        ]);
+        return normalizeUnsent(result);
+      } catch { return 'unknown'; } finally { clearTimeout(timer); }
+    },
     destroy: () => { if (alive()) contents.close(); }
   };
 }

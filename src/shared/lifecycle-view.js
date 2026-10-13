@@ -35,11 +35,15 @@ const REASON_TEXT = {
   'draft': 'Há um rascunho não enviado.',
   'draft-unknown': 'Não foi possível verificar se há rascunho.',
   'attention': 'Há atividade para revisar.',
-  'operation-in-progress': 'Outra operação está em andamento.'
+  'operation-in-progress': 'Outra operação está em andamento.',
+  'unsent-content': 'Esta conversa possui um anexo ou upload pendente.',
+  'unsent-unknown': 'Não foi possível confirmar que não há conteúdo não enviado.',
+  'residual-unbound': 'Esta página não tem vínculo persistente para recuperação após reiniciar.',
+  'destroy-unconfirmed': 'Não foi possível confirmar a liberação da página; ela continua sob gerenciamento.'
 };
 
 const SUSPEND_LABEL = 'Suspender conversa';
-const SUSPEND_HELP = 'Libera a memória desta página. A conversa continua na lista e é recarregada quando você a abrir; rolagem e estado visual da página se perdem.';
+const SUSPEND_HELP = 'Libera a memória desta página após uma verificação. A conversa vinculada é recarregada quando você a abrir; anexos não enviados, rolagem e estado visual não são preservados.';
 const SUSPENDED_HELP = 'Suspensa: a página foi liberada e não é monitorada. Não se sabe se está respondendo ou ociosa. Abra para restaurar.';
 
 // `life` is { state, eligible, reasons } as main reports it, or null/undefined when the conversation has no page (never opened).

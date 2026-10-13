@@ -43,6 +43,21 @@ const BUSY_LIMIT = 200;
 const WORLD_ID = 1001;
 const SHADOW_SCAN_LIMIT = 5000;
 
+// A one-shot lifecycle check. File inputs prove presence while populated; an empty input does not prove
+// that ChatGPT has no staged attachment (the input may have been cleared after upload). Until an authenticated
+// DOM surface is validated for absence, the only safe negative answer is unknown.
+const unsentSource = () => `(() => {
+  const composer = document.querySelector('textarea[data-octane-input], [data-octane-input][contenteditable], textarea[name="prompt"], #prompt-textarea, [data-testid="prompt-textarea"]');
+  const form = composer && composer.closest('form');
+  if (!form) return 'unknown';
+  for (const input of form.querySelectorAll('input[type="file"]')) {
+    if (input.files && input.files.length > 0) return 'present';
+  }
+  if (form.querySelector('[data-testid="attachment-chip"], [data-testid="file-upload-progress"], [role="progressbar"]')) return 'present';
+  return 'unknown';
+})()`;
+const normalizeUnsent = (value) => value === 'present' || value === 'empty' ? value : 'unknown';
+
 // Shared by both probes: tiered composer lookup. Returns { composer, via }.
 const FIND_COMPOSER = `
   const first = (list) => { for (const s of list) { const e = document.querySelector(s); if (e) return e; } return null; };
@@ -232,4 +247,4 @@ function sanitizeStructure(raw) {
   };
 }
 
-module.exports = { FIND_COMPOSER, CANDIDATES, WORLD_ID, probeSource, structureSource, normalizeSignals, sanitizeProbe, sanitizeStructure, SIGNAL_KEYS };
+module.exports = { FIND_COMPOSER, CANDIDATES, WORLD_ID, probeSource, structureSource, normalizeSignals, sanitizeProbe, sanitizeStructure, SIGNAL_KEYS, unsentSource, normalizeUnsent };

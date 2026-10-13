@@ -8,7 +8,7 @@
 // through history.pushState (logged out, /c/<uuid> redirects to "/"). What it measures that mocks cannot:
 //   - memory / processes / idle CPU with 1, 3, 5 and 10 views, Terminal active vs ChatGPT active;
 //   - memory before and after suspending (right after, +3 s, +10 s), time to release, time to restore, switching time;
-//   - that protected pages (responding, draft) are refused, that nothing is pushed to the UI at rest, and that no Herdr command is sent.
+//   - destruction confirmation and recovery in real Electron; unsent absence is explicitly controlled by the harness, never inferred from this logged-out page.
 // METHOD AND LIMITS: see docs/validation/m01-i3c-1.md ("Medição"). Numbers from a logged-out profile are a LOWER bound for real, logged-in
 // conversations (their pages are heavier), and Chromium may keep memory allocated after a view is destroyed.
 // Exit codes (a harness that did not run must never look like a pass): 0 every check passed; 1 a check failed or an error was recorded;
@@ -121,6 +121,15 @@ app.whenReady().then(async () => {
   const settled = async (count) => { await waitFor(() => chatPages().length >= count && chatPages().every((w) => !w.isLoading()), 40000); await sleep(800); };
   const tab = (b) => nav.getState().tabs.find((t) => t.bindingId === b.bindingId);
   const viewIdOf = (b) => nav.viewIdOfBinding(b.bindingId);
+  const setHarnessUnsentEmpty = () => {
+    const handle = win.getChat();
+    if (!handle) return false;
+    // The logged-out harness has no authenticated attachment surface. This controlled test fixture exercises
+    // destruction, observers and restoration; it does not validate the production DOM absence check.
+    handle.unsentStateHint = () => 'empty';
+    handle.unsentState = async () => 'empty';
+    return true;
+  };
   const respondingOn = (wc) => wc.executeJavaScript(`(() => { const b = document.querySelector('button[data-composer-submit]'); if (!b) return false; b.setAttribute('aria-label', 'Interromper geração'); return true; })()`);
   const respondingOff = (wc) => wc.executeJavaScript(`(() => { const b = document.querySelector('button[data-composer-submit]'); if (!b) return false; b.setAttribute('aria-label', 'Enviar mensagem'); return true; })()`);
   const draftSet = (wc, on) => wc.executeJavaScript(`(() => { const t = document.querySelector('textarea[data-octane-input], textarea[name=prompt], textarea'); if (!t) return false; Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(t, ${on ? "'rascunho'" : "''"}); t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
@@ -151,6 +160,7 @@ app.whenReady().then(async () => {
   for (let i = 1; i <= 10; i++) {
     const t0 = process.hrtime.bigint();
     pick(A[i - 1]);
+    setHarnessUnsentEmpty();
     await settled(1 + i);
     createMs.push(Number(process.hrtime.bigint() - t0) / 1e6 - 800);
     const wc = win.getChat().contents;
@@ -245,6 +255,7 @@ app.whenReady().then(async () => {
   const pagesBefore = chatPages().length;
   const tR = process.hrtime.bigint();
   const rr = pick(A[1]);
+  setHarnessUnsentEmpty();
   const wasLoading = tab(A[1]) ? tab(A[1]).loading : null;
   pick(A[1]); pick(A[1]);                                          // repeated requests: still one page
   await settled(pagesBefore + 1);
@@ -270,17 +281,17 @@ app.whenReady().then(async () => {
   const residualRow = () => lc.inventory().find((r) => r.kind === 'residual' && r.identity === 'durable');
   const residualId = residualRow() && residualRow().viewId;
   check('an unbound conversation\'s page remains as a residual page, reported by the inventory', Boolean(residualId));
-  await waitFor(() => lc.describe(residualId) && lc.describe(residualId).eligible, 45000, 250);
+  const residualBlocked = lc.describe(residualId).reasons.includes('residual-unbound');
   const rs = await lc.suspend({ viewId: residualId });
-  check('an eligible residual page can be suspended and stays listed as suspended', rs.ok && nav.getUnbound().some((u) => u.viewId === residualId && u.suspended), JSON.stringify(rs));
+  check('an unbound residual is kept live because it has no restart recovery binding', residualBlocked && !rs.ok && !nav.getUnbound().some((u) => u.viewId === residualId && u.suspended), JSON.stringify(rs));
   const opened = nav.openUnbound({ viewId: residualId });
   await settled(chatPages().length);
   check('opening it from the list restores it', opened.ok && nav.getUnbound().every((u) => !u.suspended), JSON.stringify(opened));
 
   // ---- 8. another workspace ------------------------------------------------------------------------------------------------------------------
   sel.selected = { workspaceId: 'w2', origin: 'dock' }; fire();
-  pick(B[0]); await settled(chatPages().length + 1); pages.B1 = win.getChat().contents; await bePage(pages.B1, 21);
-  pick(B[1]); await settled(chatPages().length + 1); pages.B2 = win.getChat().contents; await bePage(pages.B2, 22);
+  pick(B[0]); setHarnessUnsentEmpty(); await settled(chatPages().length + 1); pages.B1 = win.getChat().contents; await bePage(pages.B1, 21);
+  pick(B[1]); setHarnessUnsentEmpty(); await settled(chatPages().length + 1); pages.B2 = win.getChat().contents; await bePage(pages.B2, 22);
   await eligible(B[0]);
   const rb = await lc.suspend({ viewId: viewIdOf(B[0]) });
   check('a conversation of another workspace can be suspended while that workspace is selected', rb.ok, JSON.stringify(rb));

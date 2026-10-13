@@ -38,6 +38,23 @@ This collection is discovery only. Do not suspend the tested conversation. Use o
 
 Do not paste private content into the draft. The detector discards text locally and the trace only records `draftState`.
 
+## Follow-up live collection (2026-10-13)
+
+The operator walked through empty, attachment selected, upload completed, attachment removed, draft typed, and draft cleared in the authenticated view `v3`. These observations are from the schema-2 trace; the operator's action labels identify the stages, while the trace contains no private composer content.
+
+| Stage | Sanitized observation | Conclusion |
+|---|---|---|
+| Empty and stable | At 23:47:50 UTC, composer found structurally and `draftState=empty`; `unsentState=unknown`. | Text absence was observable, but attachment absence was not proven. No suspension eligibility. |
+| Attachment selected | At 23:49:29 UTC, a visible progressbar was detected and `unsentState=present` with reason `upload-progress`. | Positive evidence blocks during upload. |
+| Upload completed, still staged | Subsequent probes no longer saw progress; file inputs remained unpopulated/invisible and `unsentState=unknown`. | No reliable completed-but-unsent signal was identified. Unknown correctly remains blocking. |
+| Attachment removed | Around 23:52:03 UTC, a probe found the composer and `draftState=empty`, while `unsentState=unknown`; later probes became ambiguous. | Removal did not produce evidence sufficient to classify attachments as absent. |
+| Draft typed | From around 23:55:25 UTC, the composer was found and `draftState=present`; eligibility included `draft` and `unsent-unknown`. | Text draft detection and its lifecycle block were demonstrated without collecting text. |
+| Draft cleared (`limpo`) | From around 23:56:56 UTC, and in the latest probes through 23:58:26 UTC, six visible editables were reported, zero eligible submit forms, `locatorReason=multiple-editables-no-submit-form`, and both draft/unsent were `unknown`. | The trace cannot confirm the cleared state because it no longer identifies the composer. This is a locator ambiguity, not evidence that text remains. |
+
+In the latest ambiguous samples, the document had one form and six visible editables; none of the forms qualified as containing an editable plus submit control. File-input totals varied with page structure (four in the latest sample), but none was visible or populated. Such counts and absences are not treated as proof about staged attachments. `viewVisible=true` in these samples means the view was selected and interactive under the observer's definition; it does not alter the ambiguity of the composer locator.
+
+This live run confirms one positive signal during upload and confirms text-draft detection. It does **not** establish a structural marker for a completed staged attachment, does not establish trustworthy `unsentState=empty`, and did not attempt suspension or restoration. Keep the conservative block. A future collection should focus on the composer locator ambiguity and the upload-complete/removal transition; it must not infer empty from missing file inputs, progressbars, or chips.
+
 When sharing results, provide only schema-2 lines for the test view plus the UTC scenario marker times. Do not provide screenshots, conversation content, filenames or the full profile. Existing schema-1 and schema-2 entries may coexist because the trace is append-only.
 
 ## Decision gate

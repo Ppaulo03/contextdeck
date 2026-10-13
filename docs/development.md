@@ -106,6 +106,16 @@ Writes `lifecycle-report.json` (memory / processes / CPU by view count, before a
 - `app.getAppMetrics()` working sets include shared pages in every process; compare deltas, and expect Chromium to trim background renderers by itself (an earlier sample can be hundreds of MB above a later one).
 - `CONTEXTDECK_LIFECYCLE_LOG=1` makes the real app append suspension / refusal / restoration events (with a resource snapshot) to `<userData>\diagnostics\lifecycle.jsonl`; no conversation content, never read back as state.
 
+### Lifecycle hardening (M01-I3C-1H)
+
+- The ChatGPT page currently provides no authenticated, validated DOM marker that proves the composer has no staged attachment or upload. The one-shot isolated-world check recognizes populated file inputs and upload/progress markers as `present`; otherwise it returns `unknown`. Unknown blocks UI eligibility and the final suspension decision. It never reads file names, file bytes, or message text. Validate the real DOM before adding any `empty` signal.
+- `manager.suspend()` keeps a view entry while in `SUSPENDING`, then records suspension only after `destroyed` or `isDestroyed()` confirms release. A live handle after an exception or timeout stays managed and can be retried. A destroyed event removes references immediately and the observation hub stops its observer.
+- Herdr does not expose a durable workspace generation. The directory normalized by `workspace-reader.js` is an active-pane `cwd`, not a workspace root. A mismatch in recorded label or cwd is therefore treated as suspect; explicit reconfirmation updates recovery metadata. Identical id + label + cwd after recreation remains indistinguishable with the current API.
+- Residual unbound pages cannot be suspended because their recovery record is memory-only. Keep them alive through restart; do not add a permanent residual catalog as part of I3C-1H.
+- Embedded main-frame navigation allows only HTTPS ChatGPT and current authentication origins. Manual authenticated login and redirect validation is still required before changing this list.
+- Restore-report IDs are pruned when their managed view disappears and when lifecycle observation stops; a 100-cycle test pins bounded behavior.
+- On Node 24, bare `node --test` recursively discovers `test/electron/*.js` harness entrypoints and runs them without Electron, producing false test failures. Use the project command `npm test` (`node --test test/*.test.js`) for the unit suite; run Electron harnesses with `npx electron test/electron/<harness>.js` separately.
+
 ### Conversation status (M01-I3B-2)
 
 Unit tests run the REAL I3P observer on a fake `WebContents` with virtual time (`test/helpers/views-world.js`: `createStatusWorld`, `createClock`; the clock replaces `Date.now` and the observers' timers, so hours of polling run in milliseconds and `cleanup0()` restores it). Real Electron:

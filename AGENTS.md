@@ -4,7 +4,7 @@ Standing instructions for development agents (Claude Code, Codex, etc.). They co
 
 ## What this is
 
-Windows Electron app: Herdr (xterm.js + node-pty) and ChatGPT Web (isolated `WebContentsView`) in one window, plus read-only Git tools. Currently the M00 feature set (homologated) on the R00 foundation. See [docs/roadmap.md](docs/roadmap.md) for what is and is not in scope.
+Windows Electron app: Herdr (xterm.js + node-pty) and ChatGPT Web (isolated `WebContentsView`) in one window, plus read-only Git tools. M00 is homologated; M01-I3B-2 and I3B-3 are homologated; I3C-1 is implemented pending authenticated manual homologation; I3C-1H hardens explicit suspension. See [docs/roadmap.md](docs/roadmap.md).
 
 ## Hard constraints
 
@@ -15,7 +15,12 @@ Windows Electron app: Herdr (xterm.js + node-pty) and ChatGPT Web (isolated `Web
 - ChatGPT page observation (`src/main/chat/`) is passive and boolean-only: isolated-world probe plus Electron navigation events; never read or store message text, never use `webRequest`/`debugger`/cookies, no preload or IPC for the remote page, no MutationObserver on the whole page. Enabled only with `CONTEXTDECK_CHAT_OBSERVER=1`; its state must never authorize destroying a view.
 - IPC: fixed named channels only, sender-checked, arguments validated in main. Never add a generic "run command" channel. Channel names are a contract with the preload (`test/structure.test.js` pins them).
 - Git: argument arrays, no shell; read-only operations; refs validated in main (`isSafeRef` + `rev-parse`) and passed as resolved SHAs; outputs capped. The only write is the ZIP in `<userData>\artifacts`; deletion only of the last generated, correctly named ZIP.
-- No new frameworks or build tools without need; keep modules small and avoid abstractions without a consumer. Do not start milestones that were not requested (M01 is not started).
+- Herdr owns workspace lifecycle; ContextDeck reads workspace snapshots and subscriptions and may send `workspace.focus` only after an explicit user selection. Workspace identity uses session + opaque ID plus recorded label and observed directory evidence; disagreement requires explicit reconfirmation.
+- ChatBindings associate individual conversations with workspaces. ProjectBindings associate a workspace with a ChatGPT Project for new conversations; neither implies the other. Workspace-first adoption remains explicit to the context the user opened.
+- Global activity is a projection of existing per-view observers. ChatGPT observation returns bounded control metadata and booleans only, never message text or file details.
+- Conversation suspension is manual only. It requires fresh generation/draft evidence, a persistent recovery binding, and confirmed native view destruction. Unknown unsent-content state blocks suspension. No automatic suspension, LRU, inactivity timer, or memory threshold is in scope.
+- Restoring reloads the conversation URL; unsent attachments, scroll position, and transient visual state are not preserved. Do not claim otherwise.
+- No new frameworks or build tools without need; keep modules small and avoid abstractions without a consumer. Do not start milestones that were not requested.
 
 ## Persistent data — handle with care
 

@@ -509,13 +509,16 @@ test('M01-I3A: the persistent identifiers that keep the login are unchanged and 
   assert.ok(Object.isFrozen(id));
 });
 
-test('M01-I3A: the chat view only reports navigations; its permission and popup policy is untouched', () => {
+test('ChatGPT view permissions and popup creation remain constrained; main-frame navigation uses the allowlist', () => {
   const chat = read('src', 'main', 'chat-view.js');
   assert.match(chat, /contents\.on\('did-navigate-in-page'/);
   assert.match(chat, /onEvent\?\.\('navigated', \{ url \}\)/);
   assert.match(chat, /requestingHost === 'chatgpt\.com'/);
   assert.match(chat, /setPermissionCheckHandler\(\(\) => false\)/);
-  assert.match(chat, /AUTH_POPUP_HOSTS/);
+  const policy = read('src', 'main', 'chat-navigation-policy.js');
+  assert.match(chat, /will-navigate[\s\S]{0,100}isAllowedMainNavigation/);
+  assert.match(chat, /isAllowedAuthPopup\(url\)/);
+  assert.match(policy, /function isAllowedMainNavigation\(url\)[\s\S]{0,120}AUTH_HOSTS\.has/);
 });
 
 test('M01-I3A: documentation and decision record exist', () => {
@@ -536,7 +539,10 @@ test('M01-I3B-1 (amended by I3C-1): ChatGPT views are created in one place, dest
   // I3C-1: exactly two destroy calls, destroyAll() (shutdown) and suspend() (the user's explicit request, judged by chat-views/lifecycle.js).
   assert.equal([...manager.matchAll(/\.destroy\(\)/g)].length, 2, 'destroyAll and suspend only');
   assert.match(manager.slice(manager.indexOf('function destroyAll')), /e\.handle\.destroy\(\)/);
-  assert.match(manager.slice(manager.indexOf('function suspend('), manager.indexOf('function snapshot')), /entries\.delete\(id\);\s*emit\(\);\s*try \{ entry\.handle\.destroy\(\)/, 'listeners (observers) are told before the page is destroyed');
+  const suspension = manager.slice(manager.indexOf('async function suspend('), manager.indexOf('function snapshot'));
+  assert.match(suspension, /entry\.suspending = true;\s*emit\(\)/, 'in-progress state is visible to observers');
+  assert.match(suspension, /const confirmed = entry\.handle\.isDestroyed\(\) \|\| entry\.page === PageLifecycle\.DESTROYED/);
+  assert.match(suspension, /return destroyed \? \{ ok: false, code: 'closed' \} : \{ ok: true, record \}/);
   const win = code(path.join(SRC, 'main', 'window.js'));
   assert.equal([...win.matchAll(/destroyAll\(\)/g)].length, 1, 'only when the window closes');
   assert.match(win, /mainWindow\.on\('closed'[\s\S]*manager\?\.destroyAll\(\)/);
@@ -561,7 +567,8 @@ test('M01-I3B-1 (amended by I3C-1): no pool, no eviction, no automatic suspensio
       assert.doesNotMatch(text, /\.create\(|loadURL|\.reload\(|\.destroy\(\)|\.show\(|\.hide\(|setAttached|executeJavaScript|webContents|session\./);
     }
     // `suspend` exists in exactly the three files that implement the explicit action; nothing else in this folder may mention it.
-    assert.doesNotMatch(text, /MAX_VIEWS|poolSize|evict|\bLRU\b|setTimeout|setInterval|backgroundThrottling|lifecycleAdvice|setAudioMuted|\.close\(\)/, path.relative(ROOT, f));
+    const allowedTimeout = path.basename(f) === 'manager.js' ? text.replace('setTimeout(resolve, destructionTimeoutMs)', '') : text;
+    assert.doesNotMatch(allowedTimeout, /MAX_VIEWS|poolSize|evict|\bLRU\b|setTimeout|setInterval|backgroundThrottling|lifecycleAdvice|setAudioMuted|\.close\(\)/, path.relative(ROOT, f));
     if (!['manager.js', 'lifecycle.js', 'navigator.js'].includes(path.basename(f))) assert.doesNotMatch(text, /suspend/i, path.relative(ROOT, f));
   }
   // The suspension is reachable only through the lifecycle's suspend(), which only the IPC handler (a user's click) calls: no timer, no

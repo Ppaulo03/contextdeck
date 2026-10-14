@@ -36,10 +36,24 @@ terminating that instance.
 
 ## Automated results
 
-Record the exact test output, installer byte size, SHA-256, executable version,
-and the packaged smoke result after building the stable artifact. The smoke
-uses a disposable `CONTEXTDECK_USER_DATA` profile and does not claim ChatGPT
-authentication or real Herdr behavior.
+Recorded results:
+
+- `npm test`: 710 passed.
+- `npm run check`: passed (710 tests and renderer build).
+- `npm run smoke`: passed with a disposable profile.
+- Isolated `dist:dir` and `dist:check`: passed.
+- Isolated `smoke:packaged`: passed for 15 seconds without startup errors.
+- Isolated `dist:win`: passed.
+- Installer: `dist/win/ContextDeck-1.0.0-win.exe`, 118,830,448 bytes.
+- SHA-256: `BD311ACA63773335C2F79EA46AFCDEF05ACF737132CA96D7F04A2D0DD7924223`.
+- Executable version: `1.0.0.0` / file version `1.0.0`.
+
+The default `dist/win` directory was locked by an existing installed
+ContextDeck process during the final build. The equivalent builder commands
+were run in `dist/r3-win`, validated there, and the resulting installer was
+copied to the expected `dist/win` artifact path without terminating that
+process. The smoke uses a disposable `CONTEXTDECK_USER_DATA` profile and does
+not claim ChatGPT authentication or real Herdr behavior.
 
 ## RC to stable update procedure
 

@@ -9,13 +9,13 @@ const { ARTIFACTS_DIRNAME } = require('../persistence/identity');
 
 // Git tools: a fixed set of IPC channels, each validating its arguments. There is no generic
 // "run command" channel, and nothing here is reachable from the remote ChatGPT page (no preload).
-function registerGitIpc({ ipcMain, clipboard, dialog, trusted, win, settings, uiState, persist, userDataDir }) {
+function registerGitIpc({ ipcMain, clipboard, dialog, trusted, win, settings, selection, uiState, persist, userDataDir }) {
   const artifactsDir = path.join(userDataDir, ARTIFACTS_DIRNAME);
   const gitActions = createGitActions({
     artifactsDir,
     clipboard: { writeText: (text) => clipboard.writeText(text), writeFile: copyFileToClipboard }
   });
-  const ctx = createGitContext({ state: uiState, persist, suggestedDir: settings.workingDirectory });
+  const ctx = createGitContext({ state: uiState, persist, suggestedDir: settings.workingDirectory, selection, session: settings.herdrSession });
   let busy = false;
 
   function zipInfo() {
@@ -28,14 +28,22 @@ function registerGitIpc({ ipcMain, clipboard, dialog, trusted, win, settings, ui
   }
 
   async function status() {
-    const dir = ctx.effectiveDir();
+    const choice = ctx.choice();
+    const dir = choice.dir;
     const info = await gitActions.inspectRepo(dir);
+    const suggestedDir = choice.workspace?.directory || settings.workingDirectory;
+    const suggestion = choice.source === 'manual' && suggestedDir ? await gitActions.inspectRepo(suggestedDir) : null;
     return {
       configured: info.ok,
       root: info.root,
       name: info.name,
-      error: info.ok ? undefined : (dir ? info.error : 'Repositorio nao configurado. Use "Repo..." para escolher a pasta.'),
-      suggested: info.ok && !uiState.git.repoDir,
+      branch: info.branch,
+      source: choice.source,
+      connection: selection?.getState?.().connection || 'disconnected',
+      workspace: choice.workspace,
+      suggestedRoot: suggestion?.ok ? suggestion.root : undefined,
+      error: info.ok ? undefined : (dir && choice.source === 'manual' ? info.error : undefined),
+      suggested: info.ok && choice.source === 'herdr',
       zip: zipInfo()
     };
   }
@@ -62,17 +70,21 @@ function registerGitIpc({ ipcMain, clipboard, dialog, trusted, win, settings, ui
 
   ipcMain.handle('git:pick-repo', async (event) => {
     if (!trusted(event)) return denied;
+    const target = ctx.choice();
     const picked = await dialog.showOpenDialog(win.getWindow(), {
-      title: 'Escolha a pasta do repositorio Git',
-      defaultPath: ctx.effectiveDir(),
+      title: 'Escolha a pasta do repositório Git',
+      defaultPath: target.dir,
       properties: ['openDirectory']
     });
     if (picked.canceled || !picked.filePaths[0]) return { ok: false, cancelled: true };
-    const info = await gitActions.inspectRepo(picked.filePaths[0]);
+    const info = await ctx.chooseRepo(picked.filePaths[0], target);
     if (!info.ok) return { ok: false, error: info.error };
-    uiState.git.repoDir = info.root;
-    persist();
     return { ok: true, message: `Repositorio: ${info.root}` };
+  });
+
+  ipcMain.handle('git:use-automatic', (event) => {
+    if (!trusted(event)) return denied;
+    return ctx.useAutomatic();
   });
 
   ipcMain.handle('git:set-refs', (event, args) => {

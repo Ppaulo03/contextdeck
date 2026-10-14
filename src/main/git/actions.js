@@ -18,7 +18,8 @@ function createGitActions({ artifactsDir, clipboard }) {
   async function inspectRepo(dir) {
     const repo = await git.resolveRepoRoot(dir);
     if (!repo.ok) return repo;
-    return { ok: true, root: repo.root, name: path.basename(repo.root) };
+    const branch = await git.runGit(repo.root, ['branch', '--show-current'], { maxBytes: 4096 });
+    return { ok: true, root: repo.root, name: path.basename(repo.root), branch: branch.code === 0 ? branch.stdout.toString('utf8').trim() || undefined : undefined };
   }
 
   async function copyText(kind, repoDir, ref, label) {

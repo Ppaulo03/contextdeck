@@ -290,3 +290,106 @@ test('ui-state: per-repository prefs, bounded, and files from M00-I2 are migrate
   assert.equal(Object.keys(sanitize({ git: { repos: many } }).git.repos).length, 50);
 });
 
+test('workspace Git: Herdr directories resolve nested paths with spaces to distinct real roots', async () => {
+  const parentA = tmp('dock-workspace-A-');
+  const parentB = tmp('dock-workspace-B-');
+  const a = path.join(parentA, 'same repo');
+  const b = path.join(parentB, 'same repo');
+  fs.mkdirSync(a); fs.mkdirSync(b);
+  run(a, 'init', '-q', '-b', 'feature/a');
+  run(b, 'init', '-q', '-b', 'feature/b');
+  commit(a, 'a.txt'); commit(b, 'b.txt');
+  const nested = path.join(a, 'src', 'nested folder');
+  fs.mkdirSync(nested, { recursive: true });
+  const state = sanitize(undefined);
+  let selected = { session: 'contextdeck', connection: 'connected', selected: { workspaceId: 'w1' }, options: [{ id: 'w1', label: 'Alpha', directory: nested }] };
+  const ctx = createGitContext({ state, persist() {}, suggestedDir: undefined, selection: { getState: () => selected }, session: 'contextdeck' });
+  assert.equal((await ctx.activeRepo()).root, a);
+  selected = { ...selected, selected: { workspaceId: 'w2' }, options: [{ id: 'w2', label: 'Beta', directory: b }] };
+  assert.equal((await ctx.activeRepo()).root, b);
+  const info = await require('../src/main/git/actions').createGitActions({ artifactsDir: tmp('dock-artifacts-'), clipboard: {} }).inspectRepo(b);
+  assert.equal(info.name, 'same repo');
+  assert.equal(info.branch, 'feature/b');
+});
+
+test('workspace Git: manual override wins visibly, persists per identity, and automatic mode restores Herdr', async () => {
+  const a = repo('auto-branch');
+  const b = repo('manual-branch');
+  const state = sanitize(undefined);
+  let saves = 0;
+  let selected = { session: 'contextdeck', connection: 'connected', selected: { workspaceId: 'w1' }, options: [{ id: 'w1', label: 'Bicho', directory: a }] };
+  const ctx = createGitContext({ state, persist: () => { saves++; }, selection: { getState: () => selected }, session: 'contextdeck' });
+  assert.equal((await ctx.activeRepo()).source, 'herdr');
+  await ctx.chooseRepo(b);
+  assert.equal((await ctx.activeRepo()).root, b);
+  assert.equal((await ctx.activeRepo()).source, 'manual');
+  selected = { ...selected, connection: 'disconnected' };
+  assert.equal((await ctx.activeRepo()).root, b, 'manual choice remains available while Herdr is disconnected');
+  selected = { ...selected, connection: 'connected', selected: { workspaceId: 'w2' }, options: [{ id: 'w2', label: 'Other', directory: a }] };
+  assert.equal((await ctx.activeRepo()).root, a, 'another workspace uses its own suggestion');
+  selected = { ...selected, selected: { workspaceId: 'w1' }, options: [{ id: 'w1', label: 'Bicho', directory: a }] };
+  assert.equal((await ctx.activeRepo()).root, b, 'switching back restores the manual choice');
+  ctx.useAutomatic();
+  assert.equal((await ctx.activeRepo()).root, a);
+  assert.ok(saves >= 2);
+});
+
+test('workspace Git: choosing a folder is bound to the workspace where the picker opened', async () => {
+  const a = repo('a');
+  const b = repo('b');
+  const manual = repo('manual');
+  const state = sanitize(undefined);
+  let selected = { session: 'contextdeck', connection: 'connected', selected: { workspaceId: 'w1' }, options: [{ id: 'w1', label: 'Alpha', directory: a }] };
+  const ctx = createGitContext({ state, persist() {}, selection: { getState: () => selected }, session: 'contextdeck' });
+  const openedFor = ctx.choice();
+  selected = { ...selected, selected: { workspaceId: 'w2' }, options: [{ id: 'w2', label: 'Beta', directory: b }] };
+  await ctx.chooseRepo(manual, openedFor);
+  assert.equal((await ctx.activeRepo()).root, b, 'the new selection remains automatic');
+  selected = { ...selected, selected: { workspaceId: 'w1' }, options: [{ id: 'w1', label: 'Alpha', directory: a }] };
+  assert.equal((await ctx.activeRepo()).root, manual, 'the picker choice belongs to its opening workspace');
+});
+
+test('workspace Git: reused ID with changed evidence does not inherit an old manual repository', async () => {
+  const oldRepo = repo('old');
+  const newRepo = repo('new');
+  const manual = repo('manual');
+  const state = sanitize(undefined);
+  let selected = { session: 'contextdeck', connection: 'connected', selected: { workspaceId: 'w9' }, options: [{ id: 'w9', label: 'Old name', directory: oldRepo }] };
+  const ctx = createGitContext({ state, persist() {}, selection: { getState: () => selected }, session: 'contextdeck' });
+  await ctx.chooseRepo(manual);
+  selected = { ...selected, options: [{ id: 'w9', label: 'Recreated', directory: newRepo }] };
+  assert.equal((await ctx.activeRepo()).root, newRepo);
+  assert.equal((await ctx.activeRepo()).source, 'herdr');
+});
+
+test('workspace Git: manual association and repository refs survive ui-state restart', async () => {
+  const workspaceRepo = repo('workspace');
+  const chosen = repo('chosen');
+  const folder = tmp('dock-state-restart-');
+  const file = path.join(folder, 'ui-state.json');
+  const identity = { session: 'contextdeck', connection: 'connected', selected: { workspaceId: 'w4' }, options: [{ id: 'w4', label: 'Bicho', directory: workspaceRepo }] };
+  const firstState = sanitize(undefined);
+  const first = createGitContext({ state: firstState, persist() {}, selection: { getState: () => identity }, session: 'contextdeck' });
+  await first.chooseRepo(chosen);
+  firstState.git.repos[repoKey(chosen)] = { baseRef: 'refs/heads/chosen', revision: 'HEAD' };
+  require('../src/main/persistence/ui-state').saveUiState(file, firstState);
+  const restored = require('../src/main/persistence/ui-state').loadUiState(file);
+  const second = createGitContext({ state: restored, persist() {}, selection: { getState: () => identity }, session: 'contextdeck' });
+  const repoInfo = await second.activeRepo();
+  assert.equal(repoInfo.root, chosen);
+  assert.equal(repoInfo.source, 'manual');
+  assert.equal((await second.loadRefs()).selection.base.value, 'refs/heads/chosen');
+});
+
+test('workspace Git: a stale renderer root cannot redirect an operation after workspace switch', async () => {
+  const a = repo('a');
+  const b = repo('b');
+  const state = sanitize(undefined);
+  let selected = { session: 'contextdeck', connection: 'connected', selected: { workspaceId: 'w1' }, options: [{ id: 'w1', label: 'A', directory: a }] };
+  const ctx = createGitContext({ state, persist() {}, selection: { getState: () => selected }, session: 'contextdeck' });
+  selected = { ...selected, selected: { workspaceId: 'w2' }, options: [{ id: 'w2', label: 'B', directory: b }] };
+  const result = await ctx.activeRepo(a);
+  assert.equal(result.ok, false);
+  assert.equal(result.stale, true);
+});
+

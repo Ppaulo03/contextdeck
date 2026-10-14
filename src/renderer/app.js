@@ -23,7 +23,7 @@ initWorkspaceSelector({ dock, store, feedback });
 const chatLink = initChatLink({ dock, feedback });
 initActivityIndicator({ dock, feedback });
 initChatStrip({ dock, feedback, openChatsPanel: (trigger) => void chatLink.openPanel(trigger) });
-initGitPanel({ dock, feedback });
+initGitPanel({ dock, feedback, store });
 
 dock.onMode((mode) => {
   header.setMode(mode);

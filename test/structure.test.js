@@ -232,7 +232,7 @@ test('preload only bridges named functions through contextBridge and never expos
 
 const HANDLE_CHANNELS = [
   'clipboard:read', 'clipboard:write', 'dock:chat-home', 'dock:external-chat', 'dock:info', 'dock:layout',
-  'dock:reload-chat', 'dock:switch', 'git:delete-zip', 'git:diff', 'git:pick-repo', 'git:refs', 'git:set-refs',
+  'dock:reload-chat', 'dock:switch', 'git:delete-zip', 'git:diff', 'git:pick-repo', 'git:refs', 'git:set-refs', 'git:use-automatic',
   'herdr:refresh', 'herdr:select-workspace', 'herdr:set-sync-mode', 'herdr:state',
   'overlay:choose', 'overlay:close', 'overlay:open-chats-panel', 'overlay:open-workspace-menu', 'overlay:state',
   'chats:bind', 'chats:reassign', 'chats:state', 'chats:suspend', 'chats:unbind', 'chats:update', 'projects:link', 'projects:unlink',
@@ -425,7 +425,7 @@ test('IPC: a trusted sender reaches the handlers and validation still applies', 
   assert.deepEqual(calls.syncMode, ['manual']);
   const git = await handlers.get('git:status')(ui);
   assert.equal(git.configured, false);
-  assert.match(git.error, /nao configurado/);
+  assert.equal(git.error, undefined, 'an unset repository is a normal empty state');
 });
 
 // ---- compatibility with Project Dock M00 data ------------------------------------------------------

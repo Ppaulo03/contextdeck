@@ -27,7 +27,7 @@ function registerIpc({ electron, win, herdr, observer, selection, activity, acti
   registerChatNavIpc({ ipcMain, trusted, trustedOverlay: (event) => win.isOverlay(event), win, newConversation, resolve: resolveChat });
   // Global activity: state for the UI window and the overlay; "open" and "dismiss" only from the overlay's activity center / notices.
   registerActivityIpc({ ipcMain, trustedUi: trusted, trustedOverlay: (event) => win.isOverlay(event), ...activityIpc });
-  registerGitIpc({ ipcMain, clipboard, dialog, trusted, win, settings, uiState, persist, userDataDir });
+  registerGitIpc({ ipcMain, clipboard, dialog, trusted, win, settings, selection, uiState, persist, userDataDir });
 }
 
 module.exports = { registerIpc };

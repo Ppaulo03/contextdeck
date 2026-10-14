@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { loadUiState, saveUiState, sanitize } = require('../src/main/persistence/ui-state');
 
-const DEFAULT_GIT = { repoDir: undefined, lastZip: undefined, repos: {} };
+const DEFAULT_GIT = { repoDir: undefined, lastZip: undefined, repos: {}, workspaceRepos: {} };
 const DEFAULT_HERDR = { mode: 'auto', lastWorkspace: null };
 const DEFAULT_CHAT = { last: {} };
 
@@ -18,10 +18,18 @@ test('sanitize rejects unknown modes and absurd bounds', () => {
 });
 
 test('sanitize keeps valid git preferences and drops unsafe ones', () => {
-  const good = { repoDir: 'C:\\repo', lastZip: 'C:\\a\\x.zip', repos: { 'c:\\repo': { baseRef: 'main', revision: 'HEAD~1' } } };
+  const good = { repoDir: 'C:\\repo', lastZip: 'C:\\a\\x.zip', repos: { 'c:\\repo': { baseRef: 'main', revision: 'HEAD~1' } }, workspaceRepos: {} };
   assert.deepEqual(sanitize({ git: good }).git, good);
   const bad = sanitize({ git: { repoDir: 5, baseRef: '--output=x', revision: 'a b', lastZip: '', repos: 7 } }).git;
   assert.deepEqual(bad, DEFAULT_GIT);
+});
+
+test('workspace Git selections persist only with recovery evidence and legacy repoDir remains readable', () => {
+  const selection = { root: 'C:\\repos\\api', label: 'Bicho', directory: 'C:\\repos\\api\\src' };
+  const state = sanitize({ git: { repoDir: 'C:\\legacy', workspaceRepos: { 'contextdeck/w1': selection, junk: { root: 'C:\\r' } } } });
+  assert.equal(state.git.repoDir, 'C:\\legacy');
+  assert.deepEqual(state.git.workspaceRepos['contextdeck/w1'], selection);
+  assert.equal(state.git.workspaceRepos.junk, undefined);
 });
 
 test('state round-trips (including git prefs) and tolerates missing or corrupt files', () => {
@@ -32,7 +40,7 @@ test('state round-trips (including git prefs) and tolerates missing or corrupt f
     assert.deepEqual(loadUiState(file).git, DEFAULT_GIT);
     const state = { lastMode: 'chat', bounds: { width: 1000, height: 700 }, git: { repoDir: 'C:\\r', lastZip: undefined, repos: { 'c:\\r': { baseRef: 'develop', revision: 'abc1234' } } }, herdr: { mode: 'manual', lastWorkspace: { session: 'contextdeck', workspaceId: 'w4' } }, chat: { last: { 'contextdeck/w4': 'b_00000000000000aa' } } };
     saveUiState(file, state);
-    assert.deepEqual(loadUiState(file), state);
+    assert.deepEqual(loadUiState(file), sanitize(state));
     fs.writeFileSync(file, '{not json');
     assert.equal(loadUiState(file).lastMode, 'terminal');
   } finally {

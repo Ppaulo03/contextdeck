@@ -7,6 +7,7 @@ const { WORKSPACE_ID_RE } = require('../herdr/api-client');
 
 const MODES = new Set(['terminal', 'chat']);
 const MAX_REPOS = 50;
+const MAX_WORKSPACE_REPOS = 100;
 
 // Identity of a repository for preferences: its resolved root, case-folded (Windows paths).
 function repoKey(root) {
@@ -37,11 +38,27 @@ function sanitizeGit(value) {
     }
   }
   const repoDir = pathOrUndefined(g.repoDir);
+  const workspaceRepos = {};
+  if (g.workspaceRepos && typeof g.workspaceRepos === 'object' && !Array.isArray(g.workspaceRepos)) {
+    for (const [key, record] of Object.entries(g.workspaceRepos).slice(0, MAX_WORKSPACE_REPOS)) {
+      if (key.length > 0 && key.length <= 512 && record && typeof record === 'object') {
+        const root = pathOrUndefined(record.root);
+        const label = typeof record.label === 'string' && record.label.length <= 200 ? record.label : undefined;
+        const directory = pathOrUndefined(record.directory);
+        if (root && label && directory) workspaceRepos[key] = { root, label, directory };
+      }
+    }
+  }
   const legacyKey = repoKey(repoDir);
   if (legacyKey && !repos[legacyKey] && (g.baseRef !== undefined || g.revision !== undefined)) {
     repos[legacyKey] = sanitizeRepoPrefs({ baseRef: g.baseRef, revision: g.revision });
   }
-  return { repoDir, lastZip: pathOrUndefined(g.lastZip), repos };
+  return { repoDir, lastZip: pathOrUndefined(g.lastZip), repos, workspaceRepos };
+}
+
+function workspaceRepoKey(session, workspace) {
+  if (typeof session !== 'string' || !workspace || typeof workspace.workspaceId !== 'string' || !workspace.label || !workspace.directory) return undefined;
+  return JSON.stringify([session, workspace.workspaceId, workspace.label, path.resolve(workspace.directory).toLowerCase()]);
 }
 
 // Herdr workspace selector (M01-I2): sync mode and the last workspace the user picked *explicitly*
@@ -113,4 +130,4 @@ function saveUiState(file, state) {
   } catch { /* Best-effort preference; never block shutdown. */ }
 }
 
-module.exports = { loadUiState, saveUiState, sanitize, repoKey, getRepoPrefs, setRepoPref };
+module.exports = { loadUiState, saveUiState, sanitize, repoKey, workspaceRepoKey, getRepoPrefs, setRepoPref };

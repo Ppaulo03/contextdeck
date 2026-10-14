@@ -10,11 +10,12 @@ import { $, el } from './dom.js';
 const BADGES = { head: 'HEAD', commit: 'commit', local: 'local', remote: 'remota', tag: 'tag', manual: 'manual' };
 const MAX_RENDERED = 150;
 
-export function initGitPanel({ dock, feedback }) {
+export function initGitPanel({ dock, feedback, store }) {
   const setNotice = (message, level) => feedback.notice(message, level);
   const footer = $('footer');
   const repoLabel = $('git-repo');
   const pickButton = $('git-pick');
+  const autoButton = $('git-auto');
   const refreshButton = $('git-refresh');
   const diffButton = $('git-diff');
   const showButton = $('git-show');
@@ -72,9 +73,12 @@ export function initGitPanel({ dock, feedback }) {
   }
 
   function render() {
-    repoLabel.textContent = status.configured ? `Git: ${status.name}${status.suggested ? ' (sugerido)' : ''}` : 'Git: nao configurado';
-    repoLabel.title = status.configured ? status.root : (status.error || '');
+    const branch = status.branch ? ` · ${status.branch}` : '';
+    const origin = status.source === 'manual' ? (status.connection === 'connected' ? ' · Manual' : ' · Manual · Herdr desconectado') : status.source === 'herdr' ? ' · Automático (Herdr)' : status.configured ? ' · Configuração' : '';
+    repoLabel.textContent = status.configured ? `Git: ${status.name}${branch}${origin}` : 'Git: Nenhum repositório selecionado';
+    repoLabel.title = status.configured ? `${status.root}${status.workspace ? `\nWorkspace: ${status.workspace.label} (${status.workspace.workspaceId})` : ''}${status.source === 'manual' && status.suggestedRoot ? `\nSugestão Herdr: ${status.suggestedRoot}` : ''}` : (status.error || 'Selecione uma pasta de repositório Git.');
     repoLabel.classList.toggle('is-unset', !status.configured);
+    autoButton.hidden = status.source !== 'manual';
     const ready = status.configured && Boolean(data);
     diffButton.disabled = busy || !ready || !selected.base;
     showButton.disabled = busy || !ready || !selected.revision;
@@ -83,6 +87,7 @@ export function initGitPanel({ dock, feedback }) {
     showButton.title = selected.revision ? `git show ${selected.revision.short}` : 'Selecione uma revisao valida';
     zipButton.title = selected.revision ? `git archive ${selected.revision.short} ${selected.revision.subject} → ZIP copiado como arquivo` : 'Selecione uma revisao valida';
     pickButton.disabled = busy;
+    autoButton.disabled = busy;
     refreshButton.disabled = busy || !status.configured;
     deleteButton.disabled = busy || !status.zip;
     deleteButton.title = status.zip ? `Excluir ${status.zip.name} (${status.zip.sizeText})` : 'Nenhum ZIP gerado por esta aplicacao';
@@ -92,14 +97,19 @@ export function initGitPanel({ dock, feedback }) {
 
   // ---- data -------------------------------------------------------------------------------
 
+  let refreshToken = 0;
   async function refresh() {
+    const token = ++refreshToken;
     closePicker();
-    status = (await dock.gitStatus()) || { configured: false };
+    const nextStatus = (await dock.gitStatus()) || { configured: false };
+    if (token !== refreshToken) return;
+    status = nextStatus;
     data = undefined;
     selected = { base: null, revision: null };
     messages = { base: '', revision: '', repo: '' };
     if (status.configured) {
       const result = await dock.gitRefs();
+      if (token !== refreshToken) return;
       if (result?.ok) {
         data = result;
         selected = { base: result.selection.base, revision: result.selection.revision };
@@ -109,7 +119,7 @@ export function initGitPanel({ dock, feedback }) {
       } else {
         messages.repo = result?.error || 'Falha ao ler referencias.';
       }
-    } else if (status.error) {
+    } else if (status.error && status.source === 'manual') {
       messages.repo = status.error;
     }
     render();
@@ -278,6 +288,7 @@ export function initGitPanel({ dock, feedback }) {
   // ---- actions ----------------------------------------------------------------------------
 
   pickButton.addEventListener('click', () => void run(() => dock.gitPickRepo()));
+  autoButton.addEventListener('click', () => void run(() => dock.gitUseAutomatic()));
   refreshButton.addEventListener('click', () => void run(async () => ({ ok: true, message: 'Referencias atualizadas (sem fetch).' })));
   diffButton.addEventListener('click', () => void run(() => dock.gitCopyDiff(args('base'))));
   showButton.addEventListener('click', () => void run(() => dock.gitCopyShow(args('revision'))));
@@ -304,6 +315,18 @@ export function initGitPanel({ dock, feedback }) {
     void refresh();
   });
 
+  let workspaceSignature = '';
+  const offWorkspace = store?.subscribe((state) => {
+    const selected = state?.selection?.selected;
+    const option = selected && (state?.options || []).find((item) => item.id === selected.workspaceId);
+    const signature = JSON.stringify([state?.session || '', selected?.workspaceId || '', option?.label || '', option?.directory || '', state?.connection || '']);
+    if (signature !== workspaceSignature) {
+      workspaceSignature = signature;
+      // Keep the repository label pinned to the operation's captured root until it finishes.
+      if (!busy) void refresh();
+    }
+  });
+
   let reportedHeight = -1;
   new ResizeObserver(() => {
     const height = footer.offsetHeight;
@@ -314,6 +337,5 @@ export function initGitPanel({ dock, feedback }) {
 
   void (async () => {
     await refresh();
-    if (!status.configured) setNotice(status.error || 'Repositorio nao configurado.');
   })();
 }

@@ -70,7 +70,7 @@ Every handler first checks `event.sender` is the local UI window; strangers get 
 | `pty:start` | invoke | (Re)start the Herdr client with the terminal size. |
 | `pty:write`, `pty:resize` | send | Keystrokes (≤ 1 MiB, string) and size (cols 20–500, rows 5–200). |
 | `clipboard:read`, `clipboard:write` | invoke | Text clipboard for the terminal (≤ 1 MiB). |
-| `git:status`, `git:refs`, `git:pick-repo`, `git:set-refs` | invoke | Repository state, discovered refs + validated selection, folder picker, store refs. |
+| `git:status`, `git:refs`, `git:pick-repo`, `git:use-automatic`, `git:set-refs` | invoke | Active repository state, discovered refs + validated selection, manual folder picker, return to Herdr suggestion, store refs. |
 | `git:diff`, `git:show`, `git:zip`, `git:delete-zip` | invoke | The four actions. `delete-zip` takes **no path**. |
 | `herdr:state`, `herdr:refresh` | invoke | Observer + selection state for the selector and diagnostics panel; refresh re-reads. Read-only. |
 | `herdr:select-workspace`, `herdr:set-sync-mode` | invoke | The user's explicit workspace choice (`workspace.focus`, validated again in main) and the Auto/Manual preference. No other Herdr write exists. |
@@ -92,7 +92,7 @@ Every handler first checks `event.sender` is the local UI window; strangers get 
 
 **Terminal.** xterm.js → `pty:write` → node-pty → `herdr.exe --session <name>`; output returns by `pty:data`. Closing or reconnecting kills only the client; Herdr's server and agents survive. `HERDR_*` variables are removed from the PTY environment (otherwise Herdr refuses to nest and could attach to the outer server).
 
-**Git action.** The renderer sends `{repoRoot, ref}`. Main re-resolves the active repository (refusing if it is not `repoRoot`), re-validates the ref (`isSafeRef` + `rev-parse --verify <ref>^{commit}`), then runs git with an argument array and the resolved SHA. Outputs are capped at 10 MB; empty or failed results never reach the clipboard.
+**Git action.** Automatic discovery starts at the selected workspace's observed active-pane directory and resolves its actual root with `git rev-parse --show-toplevel`; paths are passed as process `cwd`, never interpolated into a shell. A manual root is persisted with Herdr session, workspace ID, label and normalized directory evidence. Changed identity evidence does not inherit that override. The compact footer identifies repository, current branch, source and full path (tooltip); a manual choice wins over the visible Herdr suggestion. The renderer sends `{repoRoot, ref}`. Main captures and re-resolves the active repository (refusing if it is not `repoRoot`), re-validates the ref (`isSafeRef` + `rev-parse --verify <ref>^{commit}`), then runs git with an argument array and the resolved SHA. A workspace switch cannot redirect an in-flight operation to a new root. Outputs are capped at 10 MB; empty or failed results never reach the clipboard.
 
 ### Git rules
 

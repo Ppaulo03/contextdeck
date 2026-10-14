@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('dock', {
   reportLayout: (layout) => ipcRenderer.invoke('dock:layout', layout),
   gitStatus: () => ipcRenderer.invoke('git:status'),
   gitPickRepo: () => ipcRenderer.invoke('git:pick-repo'),
+  gitUseAutomatic: () => ipcRenderer.invoke('git:use-automatic'),
   gitRefs: () => ipcRenderer.invoke('git:refs'),
   gitSetRefs: (args) => ipcRenderer.invoke('git:set-refs', args),
   gitCopyDiff: (args) => ipcRenderer.invoke('git:diff', args),

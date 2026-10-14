@@ -42,6 +42,12 @@ test('state round-trips (including git prefs) and tolerates missing or corrupt f
     saveUiState(file, state);
     assert.deepEqual(loadUiState(file), sanitize(state));
     fs.writeFileSync(file, '{not json');
+    const recovered = loadUiState(file);
+    assert.equal(recovered.lastMode, 'terminal');
+    const backup = fs.readdirSync(path.dirname(file)).find((name) => name.startsWith('ui-state.json.corrupt-'));
+    assert.ok(backup, 'corrupt original is preserved before recovery writes');
+    assert.equal(fs.readFileSync(path.join(path.dirname(file), backup), 'utf8'), '{not json');
+    assert.equal(saveUiState(file, recovered), true);
     assert.equal(loadUiState(file).lastMode, 'terminal');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

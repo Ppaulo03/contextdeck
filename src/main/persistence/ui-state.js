@@ -8,6 +8,7 @@ const { WORKSPACE_ID_RE } = require('../herdr/api-client');
 const MODES = new Set(['terminal', 'chat']);
 const MAX_REPOS = 50;
 const MAX_WORKSPACE_REPOS = 100;
+const recovery = new WeakMap();
 
 // Identity of a repository for preferences: its resolved root, case-folded (Windows paths).
 function repoKey(root) {
@@ -120,14 +121,37 @@ function setRepoPref(state, root, name, value) {
 }
 
 function loadUiState(file) {
-  try { return sanitize(JSON.parse(fs.readFileSync(file, 'utf8'))); } catch { return sanitize(undefined); }
+  let text;
+  try { text = fs.readFileSync(file, 'utf8'); }
+  catch (error) {
+    const state = sanitize(undefined);
+    if (!error || error.code !== 'ENOENT') recovery.set(state, { writable: false });
+    return state;
+  }
+  try { return sanitize(JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text)); }
+  catch {
+    const backup = `${file}.corrupt-${Date.now()}`;
+    let preserved = false;
+    try { fs.copyFileSync(file, backup, fs.constants.COPYFILE_EXCL); preserved = true; } catch { /* Keep original and remain read-only. */ }
+    const state = sanitize(undefined);
+    recovery.set(state, { writable: preserved, backup: preserved ? backup : null });
+    return state;
+  }
 }
 
 function saveUiState(file, state) {
+  const status = state && recovery.get(state);
+  if (status && !status.writable) return false;
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(sanitize(state)), 'utf8');
-  } catch { /* Best-effort preference; never block shutdown. */ }
+    fs.writeFileSync(tmp, JSON.stringify(sanitize(state)), { encoding: 'utf8', flag: 'wx' });
+    fs.renameSync(tmp, file);
+    return true;
+  } catch {
+    try { fs.rmSync(tmp, { force: true }); } catch { /* Best effort. */ }
+    return false; // Best-effort preference; never block shutdown.
+  }
 }
 
 module.exports = { loadUiState, saveUiState, sanitize, repoKey, workspaceRepoKey, getRepoPrefs, setRepoPref };

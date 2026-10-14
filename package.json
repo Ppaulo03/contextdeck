@@ -1,6 +1,6 @@
 {
   "name": "contextdeck",
-  "version": "0.0.1",
+  "version": "1.0.0-rc.1",
   "private": true,
   "description": "ContextDeck: Windows desktop workspace that puts Herdr (terminal agents) and ChatGPT Web in one window",
   "main": "src/main/index.js",
@@ -9,7 +9,11 @@
     "start": "npm run build && electron .",
     "test": "node --test test/*.test.js",
     "check": "npm test && npm run build",
-    "smoke": "node test/electron/smoke-start.js"
+    "smoke": "node test/electron/smoke-start.js",
+    "dist:win": "npm run build && electron-builder --win nsis",
+    "dist:dir": "npm run build && electron-builder --win dir",
+    "dist:check": "node scripts/check-distribution.js",
+    "smoke:packaged": "node scripts/smoke-packaged.js"
   },
   "dependencies": {
     "@xterm/addon-fit": "0.11.0",
@@ -18,6 +22,32 @@
   },
   "devDependencies": {
     "electron": "44.7.0",
+    "electron-builder": "26.0.12",
     "esbuild": "0.25.12"
+  },
+  "build": {
+    "appId": "com.contextdeck.app",
+    "productName": "ContextDeck",
+    "copyright": "Copyright (C) 2026 ContextDeck contributors",
+    "artifactName": "ContextDeck-${version}-win.${ext}",
+    "asar": true,
+    "npmRebuild": false,
+    "asarUnpack": ["node_modules/node-pty/**"],
+    "files": ["src/**", "dist/renderer/**", "config.example.json", "package.json"],
+    "directories": { "output": "dist/win" },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ContextDeck",
+      "runAfterFinish": false
+    }
   }
 }

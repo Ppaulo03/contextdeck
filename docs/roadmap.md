@@ -41,6 +41,10 @@ Starts with M01-I1. Out of scope: automatic prompt transfer, reading conversatio
 
 - **M01-R1 — audit complete, manual homologation pending.** No feature scope added. Automated regressions and disposable-profile startup smoke pass. The audit, risk matrix, known lifecycle limitation, manual checklist and M01-R2 Windows packaging requirements are in [validation/m01-r1-release-hardening.md](validation/m01-r1-release-hardening.md). Do not begin R2 automatically.
 
+## M01-R2 — Windows release candidate
+
+- **M01-R2 — packaging implemented, installer homologation pending.** The unsigned x64 NSIS candidate is built with `npm run dist:win`; install, update, authentication, and uninstall scenarios remain in [validation/m01-r2-windows-release.md](validation/m01-r2-windows-release.md).
+
 ## M02 — Not defined yet
 
 No scope has been decided. It will be defined after M01 is homologated. Items noted during M00 that are *not* commitments:

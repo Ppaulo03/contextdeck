@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.log
+*.exe
 
 # Local, machine-specific files (copy config.example.json to config.json)
 config.json

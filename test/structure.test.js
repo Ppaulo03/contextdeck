@@ -36,11 +36,21 @@ test('package.json: ContextDeck identity, entrypoint and scripts', () => {
   assert.match(pkg.scripts.start, /npm run build/, 'start builds before launching');
   assert.match(pkg.scripts.start, /electron \./);
   assert.ok(pkg.scripts.build && pkg.scripts.test && pkg.scripts.check);
-  assert.doesNotMatch(JSON.stringify(pkg), /project-dock|Project Dock|rebuild/i);
+  assert.equal(pkg.version, '1.0.0-rc.1');
+  assert.equal(pkg.build.productName, 'ContextDeck');
+  assert.equal(pkg.build.appId, 'com.contextdeck.app');
+  assert.ok(pkg.build.files.includes('src/**'));
+  assert.ok(pkg.build.files.includes('dist/renderer/**'));
+  assert.ok(pkg.build.asarUnpack.includes('node_modules/node-pty/**'));
+  assert.equal(pkg.build.npmRebuild, false);
+  assert.equal(pkg.build.nsis.deleteAppDataOnUninstall, false);
+  assert.match(pkg.scripts['dist:win'], /electron-builder --win nsis/);
+  assert.match(pkg.scripts['smoke:packaged'], /smoke-packaged/);
+  assert.doesNotMatch(JSON.stringify(pkg), /project-dock|Project Dock/i);
 });
 
 test('every source file is syntactically valid', () => {
-  for (const file of [...sourceFiles, path.join(ROOT, 'scripts', 'build.js')]) {
+  for (const file of [...sourceFiles, path.join(ROOT, 'scripts', 'build.js'), path.join(ROOT, 'scripts', 'check-distribution.js'), path.join(ROOT, 'scripts', 'smoke-packaged.js')]) {
     const r = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });
     assert.equal(r.status, 0, `${path.relative(ROOT, file)}: ${r.stderr}`);
   }

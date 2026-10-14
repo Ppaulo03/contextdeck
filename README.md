@@ -27,6 +27,19 @@ copy config.example.json config.json   # optional; the example is used if config
 npm start                              # builds dist/ and launches the app
 ```
 
+### Windows release candidate
+
+`npm run dist:win` builds an unsigned x64 NSIS installer at
+`dist/win/ContextDeck-1.0.0-rc.1-win.exe`. The packaged app includes its
+renderer and preload resources and does not require Node.js or the repository
+to launch. `npm run dist:dir` creates an unpacked directory for smoke tests;
+`npm run smoke:packaged` starts that directory build with a disposable profile.
+
+The installer keeps `%APPDATA%\\Project Dock M00` and the existing Chromium
+partition. Uninstall does not remove that profile. Herdr remains an external
+dependency. The installer is unsigned and has no publisher identity, so
+Windows SmartScreen may show its normal warning.
+
 `npm run check` runs the automated tests and the build. First start: open the **ChatGPT** tab and sign in manually; the login persists across restarts.
 
 ### Configuration
@@ -77,7 +90,8 @@ Details of every rule are in [docs/architecture.md](docs/architecture.md).
 
 - Embedded login can be blocked by the identity provider in the future; the app does not try to bypass it. **Abrir no navegador** opens chatgpt.com in your default browser (cookies are not shared).
 - One instance at a time; a second launch focuses the first window.
-- No packaged installer; run from source.
+- The Windows installer is an unsigned release candidate; authenticated and
+  install/update validation remains a manual step.
 - ChatGPT conversations can be bound to Herdr workspaces (M01-I3A: top-bar indicator → panel); the app does not yet switch conversations by itself (M01-I3B).
 
 ## Documentation

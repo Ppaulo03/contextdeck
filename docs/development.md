@@ -1,6 +1,6 @@
 # Development (Windows)
 
-For release readiness, use the [M01-R1 audit and homologation checklist](validation/m01-r1-release-hardening.md). `npm run smoke` starts Electron against disposable `CONTEXTDECK_USER_DATA`; it does not validate ChatGPT authentication or real Herdr behavior.
+For release readiness, use the [M01-R1 audit and homologation checklist](validation/m01-r1-release-hardening.md) and the [M01-R2 Windows release checklist](validation/m01-r2-windows-release.md). `npm run smoke` starts Electron against disposable `CONTEXTDECK_USER_DATA`; it does not validate ChatGPT authentication or real Herdr behavior.
 
 ## Setup
 
@@ -10,6 +10,10 @@ git --version
 herdr --version       # needed to run the app, not to run the tests
 npm install
 npm start             # = npm run build && electron .
+npm run dist:dir      # build an unpacked Windows app for inspection
+npm run dist:win      # build the unsigned x64 NSIS installer
+npm run dist:check    # verify the unpacked distribution contents
+npm run smoke:packaged # launch the unpacked app with a disposable profile
 ```
 
 | Script | Does |

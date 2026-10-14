@@ -10,7 +10,7 @@ const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 const { EventEmitter } = require('node:events');
-const { probeSource, structureSource, sanitizeProbe, sanitizeStructure } = require('../src/main/chat/state-detector');
+const { probeSource, structureSource, sanitizeProbe, sanitizeStructure, sanitizeUnsentTrace } = require('../src/main/chat/state-detector');
 const { createStateObserver } = require('../src/main/chat/state-observer');
 const { startChatObservation } = require('../src/main/chat');
 
@@ -78,6 +78,113 @@ test('known selector still wins and is reported as such', () => {
   const out = probe(dom({ lists: { 'textarea[data-octane-input]': [element({}, { value: 'x' })] } }), { diagnostic: true });
   assert.equal(out.via, 'candidate');
   assert.equal(out.draft, true);
+});
+
+test('composer trace scopes a staged-file hint to the form and marks a historical image separately', () => {
+  const neighborhoodSelector = 'input[type="file"], [role="progressbar"], [aria-busy="true"], [role="listitem"], img, button, [role="button"], [data-testid], [data-attachment], [data-file-id], [data-upload-state], [aria-label], [title]';
+  const all = (root) => {
+    const out = [];
+    const visit = (node) => { for (const child of node.children || []) { out.push(child); visit(child); } };
+    visit(root);
+    return out;
+  };
+  const matches = (node, selector) => {
+    if (selector === neighborhoodSelector) return node.tagName === 'BUTTON' || node.tagName === 'IMG' || node.tagName === 'INPUT' || node.getAttribute('role') === 'listitem' || node.getAttribute('role') === 'progressbar' || node.getAttribute('aria-busy') === 'true' || node.getAttribute('aria-label') !== null || node.getAttribute('title') !== null || node.getAttribute('data-testid') !== null || node.hasAttribute('data-attachment') || node.hasAttribute('data-file-id') || node.hasAttribute('data-upload-state');
+    if (selector === 'button') return node.tagName === 'BUTTON';
+    if (selector === 'input[type="file"]') return node.tagName === 'INPUT' && node.type === 'file';
+    if (selector === '[role="progressbar"]') return node.getAttribute('role') === 'progressbar';
+    if (selector === '[aria-busy="true"]') return node.getAttribute('aria-busy') === 'true';
+    if (selector === 'img, [role="img"]') return node.tagName === 'IMG' || node.getAttribute('role') === 'img';
+    if (selector.startsWith('textarea, [contenteditable')) return node.getAttribute('role') === 'textbox';
+    if (selector.includes('button[type="submit"]')) return node.tagName === 'BUTTON' && node.type === 'submit';
+    if (selector === 'button, [role="button"]') return node.tagName === 'BUTTON' || node.getAttribute('role') === 'button';
+    return false;
+  };
+  const make = (tag, attrs = {}, childNodes = [], extra = {}) => {
+    const node = element(attrs, { tagName: tag.toUpperCase(), type: attrs.type || '', children: childNodes, ...extra });
+    node.parentElement = null;
+    for (const child of childNodes) child.parentElement = node;
+    node.matches = (selector) => matches(node, selector);
+    node.closest = (selector) => {
+      for (let current = node; current; current = current.parentElement) {
+        if (selector === 'form' && current.tagName === 'FORM') return current;
+        if (selector.startsWith('article,') && (current.tagName === 'ARTICLE' || current.hasAttribute('data-message-author-role') || (current.getAttribute('data-testid') || '').includes('message'))) return current;
+      }
+      return null;
+    };
+    node.querySelectorAll = (selector) => all(node).filter((candidate) => matches(candidate, selector));
+    node.querySelector = (selector) => node.querySelectorAll(selector)[0] || null;
+    node.contains = (candidate) => node === candidate || all(node).includes(candidate);
+    return node;
+  };
+  const composer = make('div', { role: 'textbox', contenteditable: 'true' }, [], { textContent: '' });
+  const fileInput = make('input', { type: 'file' }, [], { files: { length: 0 }, hidden: true, getClientRects: () => [] });
+  const removeChip = make('button', { 'aria-label': 'Remove confidential-disposable.txt attachment' });
+  const submit = make('button', { type: 'submit', 'data-testid': 'send-button', 'aria-label': 'Send' });
+  const form = make('form', {}, [composer, fileInput, removeChip, submit]);
+  const historyImage = make('img', { alt: 'do not log this label' });
+  const oldTurn = make('article', { 'data-testid': 'conversation-turn' }, [historyImage]);
+  const main = make('main', {}, [form, oldTurn]);
+  const document = {
+    body: {}, querySelector: () => null,
+    querySelectorAll: (selector) => selector.startsWith('textarea, [contenteditable') ? [composer]
+      : selector === 'form' ? [form]
+        : selector === 'input[type="file"]' ? [fileInput]
+          : selector === '[role="progressbar"]' || selector === '[aria-busy="true"]' || selector === 'button, [role="button"]' ? all(main).filter((node) => matches(node, selector))
+            : selector === '*' ? [] : []
+  };
+  const out = probe(document, { composerTrace: true });
+  const evidence = sanitizeUnsentTrace(out.unsentTrace);
+  assert.equal(evidence.unsentState, 'unknown', 'the empty file input and no progressbar cannot prove empty');
+  assert.ok(evidence.attachmentCandidates.some((candidate) => candidate.inComposerForm && candidate.signals.includes('remove-hint')));
+  assert.ok(evidence.attachmentCandidates.some((candidate) => candidate.tag === 'img' && candidate.messageRelation === 'candidate-marked'));
+  assert.ok(evidence.attachmentCandidates.every((candidate) => candidate.selectedComposer));
+  assert.doesNotMatch(JSON.stringify(evidence), /confidential|do not log|alt|https?:/);
+});
+
+test('six ambiguous editable candidates get structural attachment evidence without selecting a composer', () => {
+  const editableSelector = 'textarea, [contenteditable="true"], [contenteditable=""], [role="textbox"]';
+  const neighborhoodSelector = 'input[type="file"], [role="progressbar"], [aria-busy="true"], [role="listitem"], img, button, [role="button"], [data-testid], [data-attachment], [data-file-id], [data-upload-state], [aria-label], [title]';
+  const all = (root) => { const out = []; const visit = (node) => { for (const child of node.children || []) { out.push(child); visit(child); } }; visit(root); return out; };
+  const make = (tag, attrs = {}, children = [], extra = {}) => {
+    const node = element(attrs, { tagName: tag.toUpperCase(), type: attrs.type || '', children, ...extra });
+    node.parentElement = null;
+    for (const child of children) child.parentElement = node;
+    node.matches = (selector) => selector === editableSelector
+      ? (node.tagName === 'TEXTAREA' || node.getAttribute('contenteditable') === 'true' || node.getAttribute('contenteditable') === '' || node.getAttribute('role') === 'textbox')
+      : selector === neighborhoodSelector
+        ? (node.tagName === 'BUTTON' || node.tagName === 'INPUT' || node.getAttribute('role') === 'listitem' || node.getAttribute('role') === 'progressbar' || node.getAttribute('aria-label') !== null || node.getAttribute('title') !== null || node.hasAttribute('data-attachment') || node.hasAttribute('data-file-id') || node.hasAttribute('data-upload-state'))
+        : selector === 'input[type="file"]' ? node.tagName === 'INPUT' && node.type === 'file'
+          : selector === '[role="progressbar"]' ? node.getAttribute('role') === 'progressbar'
+            : selector === '[aria-busy="true"]' ? node.getAttribute('aria-busy') === 'true'
+              : selector.includes('button[type="submit"]') ? node.tagName === 'BUTTON' && node.type === 'submit'
+                : selector === 'button' ? node.tagName === 'BUTTON'
+                  : selector === '[role="button"]' ? node.getAttribute('role') === 'button'
+                    : selector === 'img, [role="img"]' ? node.tagName === 'IMG' || node.getAttribute('role') === 'img' : false;
+    node.closest = (selector) => { for (let current = node; current; current = current.parentElement) if (selector === 'form' && current.tagName === 'FORM') return current; return null; };
+    node.querySelectorAll = (selector) => all(node).filter((candidate) => candidate.matches(selector));
+    node.querySelector = (selector) => node.querySelectorAll(selector)[0] || null;
+    node.contains = (candidate) => node === candidate || all(node).includes(candidate);
+    return node;
+  };
+  const editables = Array.from({ length: 6 }, () => make('div', { role: 'textbox', contenteditable: 'true' }));
+  const chip = make('button', { 'aria-label': 'Remove disposable attachment' });
+  const form = make('form', {}, [...editables, chip]);
+  const document = {
+    body: {}, querySelector: () => null,
+    querySelectorAll: (selector) => selector === editableSelector ? editables
+      : selector === 'form' ? [form]
+        : selector === '*' ? [] : []
+  };
+  const raw = probe(document, { composerTrace: true }).unsentTrace;
+  const evidence = sanitizeUnsentTrace(raw);
+  assert.equal(evidence.composerState, 'ambiguous');
+  assert.equal(evidence.locatorReason, 'multiple-editables-no-submit-form');
+  assert.equal(evidence.unsentState, 'unknown');
+  assert.equal(evidence.visibleEditableCount, 6);
+  assert.ok(evidence.attachmentCandidates.some((candidate) => candidate.scope === 'candidate-form' && candidate.editableIndex === null && candidate.signals.includes('remove-hint')));
+  assert.ok(evidence.attachmentCandidates.every((candidate) => !candidate.selectedComposer));
+  assert.doesNotMatch(JSON.stringify(evidence), /disposable attachment/);
 });
 
 test('stop is read from ANY button of the composer form (label, test id, state attribute), not only from known selectors', () => {
@@ -236,9 +343,10 @@ test('composer trace is opt-in, uses the existing observer poll, and writes only
     assert.equal(await o.pollNow(), true);
     const text = fs.readFileSync(path.join(dir, 'diagnostics', 'composer-trace.jsonl'), 'utf8');
     const rows = text.trim().split('\n').map(JSON.parse);
+    assert.equal(rows.find((row) => row.type === 'trace-started').schema, 4);
     assert.equal(rows.filter((row) => row.type === 'probe').length, 1);
     assert.deepEqual(Object.keys(rows.find((row) => row.type === 'probe').evidence).sort(), [
-      'candidateHits', 'composerState', 'composerVia', 'documentEvidence', 'draftState', 'editableStructure', 'fileInputCount', 'fileInputEvidence', 'formButtonCount', 'formPresent', 'locatorReason', 'otherEditableCount', 'populatedFileInputCount', 'progressbarCount', 'reason', 'unsentState', 'uploadState', 'viewVisible', 'visibleEditableCount'
+      'attachmentCandidates', 'candidateHits', 'composerState', 'composerVia', 'documentEvidence', 'draftState', 'editableStructure', 'fileInputCount', 'fileInputEvidence', 'formButtonCount', 'formPresent', 'locatorReason', 'otherEditableCount', 'populatedFileInputCount', 'progressbarCount', 'reason', 'unsentState', 'uploadState', 'viewVisible', 'visibleEditableCount'
     ].sort());
     assert.doesNotMatch(text, /DO NOT LOG|private-name|token=secret|https?:/);
     o.stop();

@@ -26,15 +26,32 @@ The evidence is for comparing structure around operator-marked state changes. Ca
 
 The probe does not return text or attribute values for the new structure. It does not read `innerHTML`, filenames, file bytes, URLs, cookies, tokens or message text. Tag and role names are allowlisted; counts and arrays are bounded. Existing generation/draft protections and the final lifecycle revalidation remain in place. The trace uses the existing observer poll and adds no observer or timer.
 
+## Schema 4 diagnostic additions
+
+The 85-event schema-1 collection found that `v2` was ambiguous because six editable nodes had no qualifying submit form. The later schema-2 collection resolved `v2` to one visible `div[role=textbox]` inside a qualifying form. It still did not identify staged-file chips. In the appended schema-2 observations, `v3` also had long ambiguous stretches with six visible editables and no eligible submit form; a single positive progress observation is useful for upload activity, but the surrounding zero counts do not establish an empty composer.
+
+Schema 3 added bounded attachment candidate inspection only after the locator had selected a composer. That could not help explain `v3`, where six editables remain ambiguous.
+
+Schema 4 applies the same bounded structural scan to each of up to eight visible editable candidates when the composer is ambiguous. Candidates carry the editable index only when a single editable is associated with the relevant form; a form shared by multiple candidates is marked `candidate-form` with no editable index. `selectedComposer=false` explicitly means the locator did not select that editable. Ancestor counts include submit controls, so the collection can compare each editable with nearby send controls and candidate attachment structures without choosing one.
+
+Each candidate contains only an allowlisted tag/role, visibility, bounded depth, structural scope (`composer-form`, `candidate-form` or `editable-parent`), relation to a detected message boundary, and category hints such as `attachment-hint`, `upload-hint`, `remove-hint`, `file-input`, `progressbar`, `busy`, `list-item`, and `image`. Labels, test IDs, titles, class values, filenames, URLs, text and HTML are never emitted. Category matching happens locally and outputs only enums. A candidate hint is observational only; it never changes lifecycle state.
+
+Candidates outside the selected form or inside a distinct message boundary are observations only; they are not classified as pending composer attachments. An absent boundary is `null`/unknown, not proof that the candidate belongs to the composer. Candidate presence does not itself change `unsentState`, and an empty candidate list never changes it from `unknown`. The instrumentation uses the existing per-view probe and adds no observer, polling timer, lifecycle action or suspension rule.
+
+Automated DOM fixtures validate the category sanitizer and bounds only. They are not evidence of authenticated ChatGPT markup or attachment behavior.
+
 ## Authenticated collection protocol
 
-This collection is discovery only. Do not suspend the tested conversation. Use one authenticated conversation and a disposable file. Start the app with only `CONTEXTDECK_COMPOSER_TRACE=1`; leave `CONTEXTDECK_CHAT_TRACE` and `CONTEXTDECK_CHAT_OBSERVER` unset. Schema 2 appears in a `trace-started` event. Keep a separate note of the UTC timestamp when each step begins so the corresponding probes can be grouped.
+This collection is discovery only. Do not suspend the tested conversation. Use one authenticated conversation and a disposable file. Start the app with only `CONTEXTDECK_COMPOSER_TRACE=1`; leave `CONTEXTDECK_CHAT_TRACE` and `CONTEXTDECK_CHAT_OBSERVER` unset. Schema 4 appears in a `trace-started` event. Keep a separate note of the local time and A–E label for each step so the corresponding probes can be grouped.
 
-1. **Empty:** leave the composer empty and unchanged for at least three accepted probes.
-2. **Selected attachment:** add a disposable file. Note the instant the file appears in the composer and leave it there for at least three probes.
-3. **Upload:** if the UI shows upload activity, note its start and finish separately. Keep the attachment staged after upload and collect at least three probes.
-4. **Removed:** remove the staged file and collect at least three probes after the UI is settled.
-5. **Text draft:** type a short disposable draft (do not send), collect three probes, then clear it and collect three more.
+1. **A — Empty baseline:** leave the composer empty and unchanged until three accepted probes arrive.
+2. **B — Text draft:** type a short disposable draft without sending; wait for three accepted probes.
+3. **C — Uploaded attachment staged:** add a disposable file, wait until upload is complete, leave it attached and unsent, then wait for three accepted probes.
+4. **D — Attachment removed:** remove the staged file and wait for three accepted probes after the UI settles.
+5. **E — Empty after removal:** leave the composer empty and unchanged for three accepted probes.
+6. **Historical attachment (if already available in the disposable conversation):** while the composer is empty, mark a probe window with the old sent attachment visible in history. Do not send a new message solely for this comparison. This distinguishes message-history candidates from composer candidates.
+
+For every state transition, use the exact A–E label in the operator message and identify the view by its trace view ID. Count accepted probes, not merely elapsed time or discarded stale probes. Do not suspend during this discovery collection. If no schema-4 candidate changes consistently between staged and removed while staying distinct from historical attachments, preserve `unsentState=unknown` and stop adding heuristics.
 
 Do not paste private content into the draft. The detector discards text locally and the trace only records `draftState`.
 
@@ -55,7 +72,7 @@ In the latest ambiguous samples, the document had one form and six visible edita
 
 This live run confirms one positive signal during upload and confirms text-draft detection. It does **not** establish a structural marker for a completed staged attachment, does not establish trustworthy `unsentState=empty`, and did not attempt suspension or restoration. Keep the conservative block. A future collection should focus on the composer locator ambiguity and the upload-complete/removal transition; it must not infer empty from missing file inputs, progressbars, or chips.
 
-When sharing results, provide only schema-2 lines for the test view plus the UTC scenario marker times. Do not provide screenshots, conversation content, filenames or the full profile. Existing schema-1 and schema-2 entries may coexist because the trace is append-only.
+When sharing results, provide only schema-4 lines for the test view plus the A–E operator markers. Do not provide screenshots, conversation content, filenames or the full profile. Existing schema-1 through schema-4 entries may coexist because the trace is append-only.
 
 ## Decision gate
 

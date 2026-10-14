@@ -23,7 +23,7 @@ function startChatObservation({ contents, userDataDir, env = process.env, viewId
   const composerTrace = env.CONTEXTDECK_COMPOSER_TRACE === '1';
   const diagnostics = env.CONTEXTDECK_CHAT_OBSERVER === '1' || trace;
   const composerLog = composerTrace ? (sharedComposerLog || createDiagnosticsLog({ file: path.join(userDataDir, 'diagnostics', 'composer-trace.jsonl'), tag: viewId, maxBytes: 4 * 1024 * 1024 })) : null;
-  if (composerLog) composerLog.note({ type: 'trace-started', schema: 2, ...(sharedComposerLog ? { view: viewId } : {}) });
+  if (composerLog) composerLog.note({ type: 'trace-started', schema: 4, ...(sharedComposerLog ? { view: viewId } : {}) });
   if (!diagnostics && !status && !composerTrace) return null;
   if (!diagnostics) {
     return createStateObserver({

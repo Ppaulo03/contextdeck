@@ -91,7 +91,7 @@ const COMPOSER_STRUCTURE_TRACE = `
     buttons: count(root, 'button'), roleButtons: count(root, '[role="button"]'), images: count(root, 'img, [role="img"]'),
     fileInputs: count(root, 'input[type="file"]'), progressbars: count(root, '[role="progressbar"]'), busyNodes: count(root, '[aria-busy="true"]'),
     testIdNodes: count(root, '[data-testid]'), labeledNodes: count(root, '[aria-label]'), listItems: count(root, '[role="listitem"]'),
-    attachmentAttrNodes: count(root, '[data-attachment], [data-file-id], [data-upload-state]')
+    attachmentAttrNodes: count(root, '[data-attachment], [data-file-id], [data-upload-state]'), submitControls: count(root, ${JSON.stringify(SUBMIT_IN_FORM)})
   });
   const editableNodes = [...document.querySelectorAll(${JSON.stringify(EDITABLE)})];
   const visibleEditableNodes = editableNodes.filter(visible);
@@ -114,6 +114,74 @@ const COMPOSER_STRUCTURE_TRACE = `
     visibleProgressbars: [...document.querySelectorAll('[role="progressbar"]')].filter(visible).length,
     visibleBusyNodes: [...document.querySelectorAll('[aria-busy="true"]')].filter(visible).length };
 `;
+const COMPOSER_NEIGHBORHOOD_TRACE = `
+  const neighborhoodSelector = 'input[type="file"], [role="progressbar"], [aria-busy="true"], [role="listitem"], img, button, [role="button"], [data-testid], [data-attachment], [data-file-id], [data-upload-state], [aria-label], [title]';
+  const matches = (value, pattern) => typeof value === 'string' && pattern.test(value);
+  const semanticSignals = (e) => {
+    const values = ['data-testid', 'aria-label', 'title'].map((name) => e.getAttribute ? e.getAttribute(name) : '');
+    const attachment = !!(e.hasAttribute && (e.hasAttribute('data-attachment') || e.hasAttribute('data-file-id'))) || values.some((value) => matches(value, /(attach|file|upload|document)/i));
+    const upload = !!(e.hasAttribute && e.hasAttribute('data-upload-state')) || values.some((value) => matches(value, /(upload|progress|processing)/i));
+    const remove = values.some((value) => matches(value, /(remove|delete|clear|detach)/i));
+    const role = e.getAttribute ? e.getAttribute('role') : '';
+    return [
+      ...(e.matches && e.matches('input[type="file"]') ? ['file-input'] : []),
+      ...(role === 'progressbar' ? ['progressbar'] : []),
+      ...(e.getAttribute && e.getAttribute('aria-busy') === 'true' ? ['busy'] : []),
+      ...(attachment ? ['attachment-hint'] : []), ...(upload ? ['upload-hint'] : []), ...(remove ? ['remove-hint'] : []),
+      ...(role === 'listitem' ? ['list-item'] : []), ...(e.tagName === 'IMG' || role === 'img' ? ['image'] : []),
+      ...((e.tagName === 'BUTTON' || role === 'button') && (attachment || upload || remove) ? ['labeled-button'] : [])
+    ];
+  };
+  const messageBoundary = (e) => e && e.closest ? e.closest('article, [data-message-author-role], [data-testid*="conversation-turn"], [data-testid*="message"]') : null;
+  const visibleCandidates = visibleEditableNodes.slice(0, 8);
+  const targets = composer
+    ? [{ node: composer, editableIndex: visibleCandidates.indexOf(composer), selected: true }]
+    : visibleCandidates.map((node, editableIndex) => ({ node, editableIndex, selected: false }));
+  const candidates = new Map();
+  for (const target of targets) {
+    const targetForm = target.node.closest ? target.node.closest('form') : null;
+    const targetBoundary = messageBoundary(target.node);
+    const roots = [];
+    if (targetForm) roots.push({ node: targetForm, depth: 0 });
+    let parent = target.node.parentElement;
+    for (let depth = 1; parent && depth <= 3; depth += 1, parent = parent.parentElement) roots.push({ node: parent, depth });
+    for (const root of roots) {
+      const pending = [{ node: root.node, depth: 0 }];
+      let visited = 0;
+      while (pending.length && visited < 48) {
+        const current = pending.pop();
+        const node = current.node;
+        visited += 1;
+        if (node !== target.node && node.matches && node.matches(neighborhoodSelector)) {
+          const signals = semanticSignals(node);
+          if (signals.length) {
+            const inTargetForm = !!(targetForm && targetForm.contains && targetForm.contains(node));
+            const scope = target.selected && inTargetForm ? 'composer-form' : inTargetForm ? 'candidate-form' : 'editable-parent';
+            const priority = inTargetForm ? 0 : root.depth;
+            const sharedForm = !target.selected && inTargetForm && visibleCandidates.filter((editable) => editable.closest && editable.closest('form') === targetForm).length > 1;
+            const existing = candidates.get(node);
+            if (existing && !target.selected && existing.evidence.editableIndex !== target.editableIndex) existing.evidence.editableIndex = null;
+            if (!existing || existing.priority > priority) {
+              const boundary = messageBoundary(node);
+              const messageRelation = targetBoundary && boundary ? (targetBoundary === boundary ? 'same' : 'different')
+                : targetBoundary ? 'composer-marked' : boundary ? 'candidate-marked' : 'unmarked';
+              candidates.set(node, { priority, evidence: {
+                editableIndex: sharedForm || (existing && existing.evidence.editableIndex === null) ? null : target.editableIndex,
+                selectedComposer: target.selected, scope, depth: current.depth,
+                tag: tagName(node), role: roleName(node), visible: visible(node), signals, inComposerForm: target.selected && inTargetForm,
+                sameMessageBoundary: targetBoundary && boundary ? targetBoundary === boundary : null, messageRelation
+              } });
+            }
+          }
+        }
+        if (current.depth >= 4) continue;
+        const children = node.children ? [...node.children].slice(0, 12) : [];
+        for (let index = children.length - 1; index >= 0; index -= 1) pending.push({ node: children[index], depth: current.depth + 1 });
+      }
+    }
+  }
+  const attachmentCandidates = [...candidates.values()].sort((a, b) => a.priority - b.priority).slice(0, 16).map(({ evidence }) => evidence);
+`;
 const unsentSource = () => `(() => {
   const C = ${JSON.stringify(CANDIDATES)};
   ${FIND_COMPOSER}
@@ -130,7 +198,7 @@ const sanitizeUnsentTrace = (raw, viewVisible = false) => {
   const draftState = ['present', 'empty', 'unknown'].includes(raw.draftState) ? raw.draftState : 'unknown';
   const reason = ['file-selected', 'upload-progress', 'absence-unverified', 'composer-not-found', 'composer-form-missing'].includes(raw.reason) ? raw.reason : 'absence-unverified';
   const locatorReason = ['found', 'multiple-editables-no-selected-form', 'multiple-editables-no-submit-form', 'no-visible-editable'].includes(raw.locatorReason) ? raw.locatorReason : 'unknown';
-  const metricKeys = ['buttons', 'roleButtons', 'images', 'fileInputs', 'progressbars', 'busyNodes', 'testIdNodes', 'labeledNodes', 'listItems', 'attachmentAttrNodes'];
+  const metricKeys = ['buttons', 'roleButtons', 'images', 'fileInputs', 'progressbars', 'busyNodes', 'testIdNodes', 'labeledNodes', 'listItems', 'attachmentAttrNodes', 'submitControls'];
   const counts = (value, keys) => Object.fromEntries(keys.map((key) => [key, safeInt(value && value[key])]));
   const editableStructure = safeList(raw.editableStructure, 8, (e) => ({
     index: safeInt(e && e.index), tag: ['textarea', 'input', 'div', 'span'].includes(e && e.tag) ? e.tag : 'other',
@@ -145,13 +213,26 @@ const sanitizeUnsentTrace = (raw, viewVisible = false) => {
   if (raw.candidateHits && typeof raw.candidateHits === 'object') for (const key of Object.keys(CANDIDATES)) candidateHits[key] = safeList(raw.candidateHits[key], 8, safeInt);
   const fileInputEvidence = counts(raw.fileInputEvidence, ['total', 'visible', 'populated', 'inComposerForm']);
   const documentEvidence = counts(raw.documentEvidence, ['formCount', 'eligibleFormCount', 'visibleEditableCount', 'totalEditableCount', 'visibleProgressbars', 'visibleBusyNodes']);
+  const attachmentCandidates = safeList(raw.attachmentCandidates, 16, (candidate) => ({
+    editableIndex: Number.isInteger(candidate && candidate.editableIndex) && candidate.editableIndex >= 0 ? safeInt(candidate.editableIndex) : null,
+    selectedComposer: candidate && candidate.selectedComposer === true,
+    scope: ['composer-form', 'candidate-form', 'editable-parent'].includes(candidate && candidate.scope) ? candidate.scope : 'unknown',
+    depth: safeInt(candidate && candidate.depth),
+    tag: ['form', 'div', 'section', 'main', 'article', 'button', 'span', 'img', 'li', 'input'].includes(candidate && candidate.tag) ? candidate.tag : 'other',
+    role: ['textbox', 'button', 'listitem', 'group', 'progressbar', 'toolbar', 'presentation', 'img'].includes(candidate && candidate.role) ? candidate.role : 'other',
+    visible: !!(candidate && candidate.visible),
+    signals: safeList(candidate && candidate.signals, 8, (signal) => ['file-input', 'progressbar', 'busy', 'attachment-hint', 'upload-hint', 'remove-hint', 'list-item', 'image', 'labeled-button'].includes(signal) ? signal : null).filter(Boolean),
+    inComposerForm: !!(candidate && candidate.inComposerForm),
+    sameMessageBoundary: typeof (candidate && candidate.sameMessageBoundary) === 'boolean' ? candidate.sameMessageBoundary : null,
+    messageRelation: ['same', 'different', 'candidate-marked', 'composer-marked', 'unmarked'].includes(candidate && candidate.messageRelation) ? candidate.messageRelation : 'unknown'
+  })).filter((candidate) => candidate.signals.length > 0);
   const uploadState = raw.progressbarCount > 0 ? 'present' : 'unknown';
   return {
     composerState, composerVia: VIA.has(raw.composerVia) ? raw.composerVia : null, locatorReason, draftState, unsentState: state, reason,
     visibleEditableCount: safeInt(raw.visibleEditableCount), otherEditableCount: safeInt(raw.otherEditableCount), formPresent: raw.formPresent === true,
     formButtonCount: safeInt(raw.formButtonCount), fileInputCount: safeInt(raw.fileInputCount),
     populatedFileInputCount: safeInt(raw.populatedFileInputCount), progressbarCount: safeInt(raw.progressbarCount),
-    uploadState, editableStructure, candidateHits, fileInputEvidence, documentEvidence,
+    uploadState, editableStructure, candidateHits, fileInputEvidence, documentEvidence, attachmentCandidates,
     viewVisible: Boolean(viewVisible)
   };
 };
@@ -219,6 +300,7 @@ const probeSource = ({ diagnostic = false, composerTrace = false } = {}) => `(()
   };
   ${composerTrace ? `${UNSENT_SCAN}
   ${COMPOSER_STRUCTURE_TRACE}
+  ${COMPOSER_NEIGHBORHOOD_TRACE}
   const visibleEditableCount = [...document.querySelectorAll(${JSON.stringify(EDITABLE)})].filter(visible).length;
   out.unsentTrace = {
     composerState: composer ? 'found' : (visibleEditableCount ? 'ambiguous' : 'absent'), composerVia: via,
@@ -229,7 +311,7 @@ const probeSource = ({ diagnostic = false, composerTrace = false } = {}) => `(()
     visibleEditableCount, otherEditableCount: Math.max(0, visibleEditableCount - (composer && visible(composer) ? 1 : 0)), formPresent: !!form, formButtonCount: form ? form.querySelectorAll('button').length : 0,
     fileInputCount: form ? form.querySelectorAll('input[type="file"]').length : 0,
     populatedFileInputCount: populatedFileInputs, progressbarCount: progressbars,
-    editableStructure, candidateHits, fileInputEvidence, documentEvidence
+    editableStructure, candidateHits, fileInputEvidence, documentEvidence, attachmentCandidates
   };` : ''}
   ${diagnostic ? `out.via = via;
   out.wide = wideHit ? { by: wideHit.by, label: wideHit.label.length <= 40 ? wideHit.label : '', testid: wideHit.testid.length <= 40 ? wideHit.testid : '' } : null;

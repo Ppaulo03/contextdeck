@@ -1,0 +1,26 @@
+﻿[
+    {
+        "run":  1,
+        "durationSeconds":  56.1,
+        "exitCode":  0,
+        "checks":  24,
+        "failed":  "",
+        "report":  "C:\\Users\\Pichau\\Desktop\\project-dock-m00\\docs\\validation\\harness-reports\\m01-r1-multiview-run1\\multiview-report.json"
+    },
+    {
+        "run":  2,
+        "durationSeconds":  54,
+        "exitCode":  0,
+        "checks":  24,
+        "failed":  "",
+        "report":  "C:\\Users\\Pichau\\Desktop\\project-dock-m00\\docs\\validation\\harness-reports\\m01-r1-multiview-run2\\multiview-report.json"
+    },
+    {
+        "run":  3,
+        "durationSeconds":  55.7,
+        "exitCode":  0,
+        "checks":  24,
+        "failed":  "",
+        "report":  "C:\\Users\\Pichau\\Desktop\\project-dock-m00\\docs\\validation\\harness-reports\\m01-r1-multiview-run3\\multiview-report.json"
+    }
+]

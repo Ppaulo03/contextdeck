@@ -22,6 +22,7 @@ const ROOT = path.join(__dirname, '..', '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'contextdeck-mv-'));
 app.setPath('userData', tmp);
 const outDir = process.env.HARNESS_OUT || tmp;
+fs.mkdirSync(outDir, { recursive: true });
 
 const { createWindowController } = require(path.join(ROOT, 'src/main/window'));
 const { registerIpc } = require(path.join(ROOT, 'src/main/ipc'));
@@ -43,7 +44,12 @@ const round = (n, d = 2) => (n === null ? null : Number(n.toFixed(d)));
 
 const progress = (m) => { try { fs.appendFileSync(path.join(outDir, 'progress.log'), `${new Date().toISOString().slice(11, 19)} ${m}
 `); } catch { /* Diagnostics only. */ } };
-process.on('uncaughtException', (e) => progress(`UNCAUGHT ${e && e.stack}`));
+process.on('uncaughtException', (e) => {
+  process.exitCode = 1;
+  progress(`UNCAUGHT ${e && e.stack}`);
+  console.error('UNCAUGHT', e);
+  app.quit(); // No success report is written; the caller treats a missing report as failure.
+});
 
 function metrics() {
   const m = app.getAppMetrics();
@@ -70,6 +76,7 @@ app.on('window-all-closed', () => {});   // the harness decides when to quit (cl
 app.whenReady().then(async () => {
   progress('ready');
   const report = { electron: process.versions.electron, chromium: process.versions.chrome, steps: {}, checks: [], errors: [] };
+  const startedAt = Date.now();
   const check = (name, ok, detail) => { report.checks.push({ name, ok: Boolean(ok), detail }); progress(`${ok ? 'ok  ' : 'FAIL'} ${name}${ok ? '' : ' :: ' + detail}`); };
   process.on('unhandledRejection', (e) => { report.errors.push(String(e && e.stack || e)); console.error('UNHANDLED', e); });
 
@@ -105,7 +112,7 @@ app.whenReady().then(async () => {
   });
   chatsPusher = startChatsPusher({ bindings, observer, selection, getUrl: () => win.getChatUrl(), send: (c, d) => { win.send(c, d); win.sendToOverlay('overlay:chats-push', d); } });
   navPusher = startChatNavPusher({ getState: () => win.getNavigator()?.getState(), send: (c, d) => win.send(c, d) });
-  registerIpc({ electron, win, herdr: { start: () => { calls.ptyStart += 1; return { ok: true }; }, isRunning: () => false, write() {}, resize() {}, stop() {} }, observer, selection, bindings, notifyChats: () => { chatsPusher.notify(); win.getNavigator()?.reconcile(); }, settings: { herdrSession: 'contextdeck' }, uiState, persist() {}, userDataDir: tmp });
+  registerIpc({ electron, win, herdr: { start: () => { calls.ptyStart += 1; return { ok: true }; }, isRunning: () => false, write() {}, resize() {}, stop() {} }, observer, selection, bindings, activityIpc: { getPayload: () => ({ global: {}, notices: { items: [], more: 0 } }), directOpen: { open: async () => ({ ok: false }) }, notices: { dismiss() {} }, unbound: null }, notifyChats: () => { chatsPusher.notify(); win.getNavigator()?.reconcile(); }, settings: { herdrSession: 'contextdeck' }, uiState, persist() {}, userDataDir: tmp });
   const t0 = Date.now();
   await win.create();
   report.steps.windowCreateMs = Date.now() - t0;
@@ -339,7 +346,11 @@ app.whenReady().then(async () => {
   check('closing the window closes every ChatGPT view', chatContents().length === 0, JSON.stringify(report.steps.shutdown));
   report.errors = report.errors.filter((e) => !/Autofill|UnknownVizError/.test(e));
   report.failed = report.checks.filter((c) => !c.ok).map((c) => c.name);
+  report.startedAt = new Date(startedAt).toISOString();
+  report.durationMs = Date.now() - startedAt;
+  report.exitCode = report.failed.length || report.errors.length ? 1 : 0;
   fs.writeFileSync(path.join(outDir, 'multiview-report.json'), JSON.stringify(report, null, 2));
-  console.log(JSON.stringify({ failed: report.failed, steps: report.steps }, null, 1));
+  console.log(JSON.stringify({ checks: report.checks.length, failed: report.failed, errors: report.errors.length, durationMs: report.durationMs, report: path.join(outDir, 'multiview-report.json'), steps: report.steps }, null, 1));
+  process.exitCode = report.exitCode;
   setTimeout(() => { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* Best effort. */ } app.quit(); }, 500);
 });

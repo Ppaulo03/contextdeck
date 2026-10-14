@@ -49,13 +49,26 @@ Status: audit and automated checks complete on 2026-10-14; manual authenticated 
 - `npm run check` after the recovery change: 707 passed and renderer build succeeded.
 - `npm run build`: succeeded.
 - `npm run smoke`: actual Electron application remained running for 15 seconds on a throwaway profile.
+- Follow-up after the harness correction: `npm test` 708 passed, 0 failed; `npm run check` 708 passed and build succeeded; `npm run smoke` stayed alive for 15 seconds on throwaway storage.
 - Existing suites cover settings, UI-state legacy shapes, atomic binding stores, Herdr reconnect and stale events, multi-chat/activity, navigation policy, Git context switching, Diff/Show/ZIP, and lifecycle refusal/restore models.
 
 **Validated by harness**
 
-- Start-up smoke passed with `CONTEXTDECK_USER_DATA` throwaway storage (15 seconds).
-- Attempted `npx electron test/electron/multiview-harness.js`: the harness produced an IPC handler error because its `registerIpc` call omits the now-required `activityIpc.getPayload`, then failed to write its final report because the chosen `HARNESS_OUT` directory did not exist. This is a harness setup defect; the run is inconclusive, not a product pass or product failure. Existing reports remain untouched.
-- Activity and lifecycle real-Electron harnesses were not run in this pass. Unit coverage and startup smoke pass; they need separate clean runs with a pre-created report directory.
+The multi-view harness root causes were both in test setup: `registerIpc` accepts the activity handler dependencies via a separate `activityIpc` object, which the harness omitted; and the harness attempted to write `progress.log` and the final report without creating `HARNESS_OUT`. The harness now creates its output directory first, supplies a harmless fake activity payload/open/dismiss implementation, writes checks/errors/duration/exit code into its report, and exits nonzero on any failed check or recorded error. It still uses the real window, views, navigator, manager and IPC with fake Herdr and logged-out ChatGPT; no production source changed.
+
+Three consecutive real-Electron multi-view runs, with the main app confirmed closed and each run using a fresh disposable profile:
+
+| Run | Checks | Failed | Errors | Duration | Exit | Report |
+|---|---:|---:|---:|---:|---:|---|
+| 1 | 24/24 | 0 | 0 | 52.6 s | 0 | [run 1 report](harness-reports/m01-r1-multiview-run1/multiview-report.json) |
+| 2 | 24/24 | 0 | 0 | 52.4 s | 0 | [run 2 report](harness-reports/m01-r1-multiview-run2/multiview-report.json) |
+| 3 | 24/24 | 0 | 0 | 53.8 s | 0 | [run 3 report](harness-reports/m01-r1-multiview-run3/multiview-report.json) |
+
+Harness output summary: [m01-r1-multiview-runs.json](harness-reports/m01-r1-multiview-runs.json). Reports include all named checks, check details, errors, startup time, view/process/memory observations, idle CPU sample and shutdown counts. All three runs confirmed 400 random context switches without violations and closed all ChatGPT views. They validate logged-out control behavior only.
+
+Prior failed attempt: it emitted an IPC handler error (`getPayload is not a function`) and could not write the report because the output directory did not exist. It is superseded by the three successful runs above; the original untracked reports were left untouched.
+
+Activity and lifecycle real-Electron harnesses were not run as part of this follow-up. Unit coverage and startup smoke pass.
 - Authenticated manual and prolonged session behavior is not inferred from logged-out harnesses.
 
 **Pending manual validation**
@@ -96,6 +109,7 @@ Use the real account only with the user's direct observation. Record app version
 - Restore reloads the conversation URL; it does not preserve unsent attachments, scroll position, or transient page state.
 - ChatGPT login, Projects, real clipboard/Explorer paste, and long-session memory behavior remain manual.
 - `ui-state.json` save errors are swallowed by the best-effort preference writer; bindings have stronger visible read-only/corruption notices. No failure reproduced in this audit.
+- Harness passes use logged-out ChatGPT and fake Herdr. They do not validate authenticated login, Project routes, real Herdr reconnection, clipboard/Explorer paste, or long-session memory/listener growth.
 - Invalid `config.json` blocks startup rather than silently changing Herdr target. Correct the file and retry.
 
 ## Windows packaging requirements for M01-R2

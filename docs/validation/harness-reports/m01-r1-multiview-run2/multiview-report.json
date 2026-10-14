@@ -1,0 +1,508 @@
+{
+  "electron": "44.7.0",
+  "chromium": "152.0.7977.130",
+  "steps": {
+    "windowCreateMs": 194,
+    "startupChatViews": 1,
+    "metrics0": {
+      "processes": 5,
+      "workingSetMB": 433,
+      "cpuPercent": 0
+    },
+    "memoryByConversationViews": [
+      {
+        "views": 0,
+        "processes": 5,
+        "workingSetMB": 445,
+        "cpuPercent": 5.62
+      },
+      {
+        "views": 1,
+        "processes": 6,
+        "workingSetMB": 594,
+        "cpuPercent": 2.41
+      },
+      {
+        "views": 2,
+        "processes": 7,
+        "workingSetMB": 729,
+        "cpuPercent": 1.03
+      },
+      {
+        "views": 3,
+        "processes": 8,
+        "workingSetMB": 866,
+        "cpuPercent": 1.22
+      },
+      {
+        "views": 4,
+        "processes": 9,
+        "workingSetMB": 1002,
+        "cpuPercent": 1.05
+      }
+    ],
+    "createMs": [
+      345,
+      353,
+      217,
+      340
+    ],
+    "eventTrace": {
+      "1": [
+        "25ms start file:///C:/Users/Pichau/Desktop/project-dock-m00/d",
+        "64ms navigate file:///C:/Users/Pichau/Desktop/project-dock-m00/d",
+        "174ms stop-loading"
+      ],
+      "2": [
+        "4ms start https://chatgpt.com/",
+        "303ms navigate https://chatgpt.com/",
+        "692ms stop-loading"
+      ],
+      "3": [
+        "2ms start https://chatgpt.com/c/11111111-1111-4111-8111-1111",
+        "142ms navigate https://chatgpt.com/c/11111111-1111-4111-8111-1111",
+        "277ms stop-loading",
+        "653ms start inplace https://chatgpt.com/",
+        "653ms inpage https://chatgpt.com/",
+        "654ms stop-loading",
+        "35341ms start inplace https://chatgpt.com/c/11111111-1111-4111-8111-1111",
+        "35342ms inpage https://chatgpt.com/c/11111111-1111-4111-8111-1111",
+        "35343ms stop-loading",
+        "35657ms start inplace https://chatgpt.com/c/22222222-2222-4222-8222-2222",
+        "35658ms inpage https://chatgpt.com/c/22222222-2222-4222-8222-2222",
+        "35659ms stop-loading",
+        "35965ms start inplace https://chatgpt.com/c/99999999-9999-4999-8999-9999",
+        "35965ms inpage https://chatgpt.com/c/99999999-9999-4999-8999-9999",
+        "35966ms stop-loading"
+      ],
+      "4": [
+        "2ms start https://chatgpt.com/c/22222222-2222-4222-8222-2222",
+        "157ms navigate https://chatgpt.com/c/22222222-2222-4222-8222-2222",
+        "260ms stop-loading",
+        "344ms start inplace https://chatgpt.com/",
+        "345ms inpage https://chatgpt.com/",
+        "345ms stop-loading"
+      ],
+      "5": [
+        "2ms start https://chatgpt.com/c/33333333-3333-4333-8333-3333",
+        "146ms navigate https://chatgpt.com/c/33333333-3333-4333-8333-3333",
+        "209ms stop-loading",
+        "345ms start inplace https://chatgpt.com/",
+        "345ms inpage https://chatgpt.com/",
+        "346ms stop-loading"
+      ],
+      "6": [
+        "2ms start https://chatgpt.com/c/44444444-4444-4444-8444-4444",
+        "167ms navigate https://chatgpt.com/c/44444444-4444-4444-8444-4444",
+        "267ms stop-loading",
+        "354ms start inplace https://chatgpt.com/",
+        "354ms inpage https://chatgpt.com/",
+        "355ms stop-loading"
+      ],
+      "8": [
+        "4ms start https://chatgpt.com/",
+        "192ms navigate https://chatgpt.com/",
+        "310ms stop-loading"
+      ],
+      "9": [
+        "3ms start https://chatgpt.com/",
+        "208ms navigate https://chatgpt.com/",
+        "342ms stop-loading"
+      ],
+      "10": [
+        "2ms start https://chatgpt.com/",
+        "171ms navigate https://chatgpt.com/",
+        "289ms stop-loading"
+      ],
+      "11": [
+        "2ms start https://chatgpt.com/c/55555555-5555-4555-8555-5555",
+        "598ms navigate https://chatgpt.com/c/55555555-5555-4555-8555-5555",
+        "703ms stop-loading",
+        "1037ms start inplace https://chatgpt.com/",
+        "1037ms inpage https://chatgpt.com/",
+        "1038ms stop-loading"
+      ],
+      "12": [
+        "2ms start https://chatgpt.com/",
+        "628ms navigate https://chatgpt.com/",
+        "830ms stop-loading"
+      ],
+      "13": [
+        "2ms start https://chatgpt.com/",
+        "688ms navigate https://chatgpt.com/",
+        "867ms stop-loading"
+      ],
+      "14": [
+        "2ms start https://chatgpt.com/c/11111111-1111-4111-8111-1111",
+        "489ms navigate https://chatgpt.com/c/11111111-1111-4111-8111-1111",
+        "693ms stop-loading",
+        "921ms start inplace https://chatgpt.com/",
+        "922ms inpage https://chatgpt.com/",
+        "922ms stop-loading"
+      ]
+    },
+    "managerViews": [
+      "v1 scope=null exp=null id=pending rel=temporary reached=false page=ready",
+      "v2 scope=contextdeck/w1 exp=111 id=pending rel=left reached=false page=ready",
+      "v3 scope=contextdeck/w1 exp=222 id=pending rel=left reached=false page=ready",
+      "v4 scope=contextdeck/w1 exp=333 id=pending rel=left reached=false page=ready",
+      "v5 scope=contextdeck/w2 exp=444 id=pending rel=left reached=false page=ready"
+    ],
+    "snapshotBeforeLoop": {
+      "pages": [
+        "6:/",
+        "5:/",
+        "4:/",
+        "3:/",
+        "2:/"
+      ],
+      "tabs": [
+        [
+          "Arquitetura",
+          true,
+          false,
+          "left"
+        ],
+        [
+          "Review",
+          true,
+          false,
+          "left"
+        ],
+        [
+          "Planejamento",
+          true,
+          true,
+          "left"
+        ]
+      ],
+      "temporaries": []
+    },
+    "snapshotAfterLoop": {
+      "pages": [
+        "6:/",
+        "5:/",
+        "4:/",
+        "3:/",
+        "2:/"
+      ],
+      "tabs": [
+        [
+          "Arquitetura",
+          true,
+          false,
+          "left"
+        ],
+        [
+          "Review",
+          true,
+          false,
+          "left"
+        ],
+        [
+          "Planejamento",
+          true,
+          true,
+          "left"
+        ]
+      ],
+      "temporaries": []
+    },
+    "switchMs": {
+      "count": 100,
+      "medianMs": 4.926,
+      "p95Ms": 7.583
+    },
+    "afterSwitching": [
+      {
+        "id": 6,
+        "samePid": true,
+        "sameMarker": true,
+        "sameOrigin": true,
+        "draft": true,
+        "ticks": 1,
+        "raf": 0,
+        "mc": 140724,
+        "loading": false
+      },
+      {
+        "id": 5,
+        "samePid": true,
+        "sameMarker": true,
+        "sameOrigin": true,
+        "draft": true,
+        "ticks": 1,
+        "raf": 0,
+        "mc": 145124,
+        "loading": false
+      },
+      {
+        "id": 4,
+        "samePid": true,
+        "sameMarker": true,
+        "sameOrigin": true,
+        "draft": true,
+        "ticks": 1,
+        "raf": 0,
+        "mc": 140169,
+        "loading": false
+      },
+      {
+        "id": 3,
+        "samePid": true,
+        "sameMarker": true,
+        "sameOrigin": true,
+        "draft": true,
+        "ticks": 1,
+        "raf": 0,
+        "mc": 142184,
+        "loading": false
+      },
+      {
+        "id": 2,
+        "samePid": true,
+        "sameMarker": true,
+        "sameOrigin": true,
+        "draft": true,
+        "ticks": 1,
+        "raf": 0,
+        "mc": 142361,
+        "loading": false
+      }
+    ],
+    "detachedVsVisibleRates5s": [
+      {
+        "visible": false,
+        "timersPerSec": 1,
+        "rafPerSec": 0,
+        "messageChannelPerSec": 150266
+      },
+      {
+        "visible": true,
+        "timersPerSec": 1,
+        "rafPerSec": 0,
+        "messageChannelPerSec": 150961
+      },
+      {
+        "visible": false,
+        "timersPerSec": 1,
+        "rafPerSec": 0,
+        "messageChannelPerSec": 148733
+      },
+      {
+        "visible": false,
+        "timersPerSec": 1,
+        "rafPerSec": 0,
+        "messageChannelPerSec": 148240
+      },
+      {
+        "visible": false,
+        "timersPerSec": 1,
+        "rafPerSec": 0,
+        "messageChannelPerSec": 149553
+      }
+    ],
+    "hideMechanisms5s": {
+      "attachedVisible": {
+        "timersPerSec": 1,
+        "rafPerSec": 0,
+        "messageChannelPerSec": 98907,
+        "draftKept": true,
+        "sameOrigin": true
+      },
+      "attachedSetVisibleFalse": {
+        "timersPerSec": 1,
+        "rafPerSec": 0,
+        "messageChannelPerSec": 119825,
+        "draftKept": true,
+        "sameOrigin": true
+      },
+      "detached": {
+        "timersPerSec": 1,
+        "rafPerSec": 0,
+        "messageChannelPerSec": 144361,
+        "draftKept": true,
+        "sameOrigin": true
+      }
+    },
+    "reattach": {
+      "detachedDraft": "draft",
+      "hiddenDraft": "draft"
+    },
+    "randomOps": {
+      "ops": 400,
+      "violations": [],
+      "viewsCreatedByRandomOps": 0
+    },
+    "finalViews": 5,
+    "metricsAllViews": {
+      "processes": 9,
+      "workingSetMB": 1637,
+      "cpuPercent": 36.17
+    },
+    "viewCountDuringIdle": [
+      9,
+      9,
+      9,
+      9,
+      9
+    ],
+    "pageUrlsSample": [
+      "11:https://chatgpt.com/:window",
+      "6:https://chatgpt.com/:window",
+      "5:https://chatgpt.com/:window",
+      "4:https://chatgpt.com/:window",
+      "14:https://chatgpt.com/:window",
+      "3:https://chatgpt.com/c/99999999-9999-4999-8999-999999999999:window",
+      "13:https://chatgpt.com/:window",
+      "2:https://chatgpt.com/:window",
+      "12:https://chatgpt.com/:window"
+    ],
+    "stateAfterRandom": {
+      "tabs": [
+        [
+          "Arquitetura",
+          true,
+          true,
+          "left"
+        ],
+        [
+          "Review",
+          true,
+          false,
+          "left"
+        ],
+        [
+          "Planejamento",
+          true,
+          false,
+          "left"
+        ]
+      ],
+      "temporaries": 2,
+      "empty": null,
+      "duplicates": 0
+    },
+    "idleCpuPercent10s": 0.88,
+    "shutdown": {
+      "chatPagesBefore": 9,
+      "chatPagesAfter": 0
+    }
+  },
+  "checks": [
+    {
+      "name": "startup loads only the application's initial ChatGPT page",
+      "ok": true,
+      "detail": 1
+    },
+    {
+      "name": "entering the chat tab creates no conversation view by itself",
+      "ok": true,
+      "detail": "\"select-conversation\""
+    },
+    {
+      "name": "no view is attached while the empty state is shown",
+      "ok": true
+    },
+    {
+      "name": "open Arquitetura",
+      "ok": true,
+      "detail": "{\"ok\":true,\"viewId\":\"v2\"}"
+    },
+    {
+      "name": "open Review",
+      "ok": true,
+      "detail": "{\"ok\":true,\"viewId\":\"v3\"}"
+    },
+    {
+      "name": "open Planejamento",
+      "ok": true,
+      "detail": "{\"ok\":true,\"viewId\":\"v4\"}"
+    },
+    {
+      "name": "open B1",
+      "ok": true
+    },
+    {
+      "name": "4 conversation views + the initial page = 5 ChatGPT pages",
+      "ok": true,
+      "detail": 5
+    },
+    {
+      "name": "B shows B's remembered conversation (B1), not a conversation of A",
+      "ok": true
+    },
+    {
+      "name": "back in A: the last conversation is restored, same view",
+      "ok": true
+    },
+    {
+      "name": "no view was created or destroyed by switching",
+      "ok": true,
+      "detail": "5 -> 5"
+    },
+    {
+      "name": "every page kept its renderer process",
+      "ok": true
+    },
+    {
+      "name": "no page was reloaded (marker and navigation origin unchanged)",
+      "ok": true
+    },
+    {
+      "name": "drafts typed into hidden pages survived",
+      "ok": true
+    },
+    {
+      "name": "no navigation or load event happened during the whole switching sequence",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "detached pages keep running timers and message-channel work",
+      "ok": true,
+      "detail": "{\"visible\":false,\"timersPerSec\":1,\"rafPerSec\":0,\"messageChannelPerSec\":150266}"
+    },
+    {
+      "name": "re-attaching a detached view finds its page intact",
+      "ok": true
+    },
+    {
+      "name": "a page that is its conversation lights up its tab",
+      "ok": true
+    },
+    {
+      "name": "navigating inside ChatGPT: the tab of what is really shown lights up, not the old one",
+      "ok": true,
+      "detail": "[[\"Arquitetura\",false],[\"Review\",true],[\"Planejamento\",false]]"
+    },
+    {
+      "name": "navigating to an unbound conversation shows a warning chip, no tab",
+      "ok": true,
+      "detail": "[{\"viewId\":\"v2\",\"label\":\"Conversa\",\"relation\":\"diverged\",\"active\":true,\"loading\":false,\"failed\":false,\"activity\":{\"phase\":\"ready\",\"responding\":false,\"ended\":false,\"draft\":false,\"attention\":false,\"unknown\":true,\"idle\":false,\"stale\":false,\"uncertain\":false,\"evidence\":\"unknown\"},\"lifecycle\":{\"state\":\"active\",\"kind\":\"binding\",\"eligible\":false,\"canVerifyUnsent\":false,\"reasons\":[\"selected\",\"identity-unconfirmed\",\"unsent-unknown\",\"recovery-url\",\"state-unknown\",\"draft-unknown\"]},\"note\":\"\",\"warning\":true,\"bound\":false}]"
+    },
+    {
+      "name": "persistent bindings were not modified by any navigation",
+      "ok": true
+    },
+    {
+      "name": "400 random workspace/conversation/tab switches: no context leak, no stray attachment",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "no Herdr focus command was ever sent by any navigation",
+      "ok": true
+    },
+    {
+      "name": "closing the window closes every ChatGPT view",
+      "ok": true,
+      "detail": "{\"chatPagesBefore\":9,\"chatPagesAfter\":0}"
+    }
+  ],
+  "errors": [],
+  "failed": [],
+  "startedAt": "2026-10-14T11:01:22.805Z",
+  "durationMs": 52444,
+  "exitCode": 0
+}

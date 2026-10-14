@@ -48,10 +48,29 @@ test('state round-trips (including git prefs) and tolerates missing or corrupt f
     assert.ok(backup, 'corrupt original is preserved before recovery writes');
     assert.equal(fs.readFileSync(path.join(path.dirname(file), backup), 'utf8'), '{not json');
     assert.equal(saveUiState(file, recovered), true);
+    assert.equal(fs.readdirSync(path.dirname(file)).some((name) => name.includes('.tmp-')), false, 'atomic temp file is renamed or cleaned up');
     assert.equal(loadUiState(file).lastMode, 'terminal');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('corrupt state stays read-only when its backup cannot be created', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dock-ui-backup-fail-'));
+  const file = path.join(dir, 'ui-state.json');
+  const stamp = 123456789;
+  const collision = `${file}.corrupt-${stamp}`;
+  try {
+    fs.writeFileSync(file, '{recover me');
+    fs.mkdirSync(collision); // COPYFILE_EXCL cannot replace an existing path.
+    const realNow = Date.now;
+    Date.now = () => stamp;
+    try {
+      const state = loadUiState(file);
+      assert.equal(saveUiState(file, state), false);
+      assert.equal(fs.readFileSync(file, 'utf8'), '{recover me');
+    } finally { Date.now = realNow; }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('herdr selector preferences: only valid explicit selections are kept, bound to their session', () => {

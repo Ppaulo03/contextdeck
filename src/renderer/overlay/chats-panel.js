@@ -123,7 +123,7 @@ export function createChatsPanel({ api, closeOverlay }) {
     render();
   }
 
-  // ---- Project of the workspace (experimental: only when main says projectsEnabled) ------------------------------------------
+  // ---- Project of the workspace (shown only when main says projectsEnabled) -------------------------------------------------
   async function linkProject(source, extra = {}) {
     const args = { source, ...common(), ...extra };
     if (projectLabel.trim()) args.label = projectLabel.trim();
@@ -154,7 +154,7 @@ export function createChatsPanel({ api, closeOverlay }) {
 
   function projectSection(m, writable) {
     const p = state.projects;
-    const sec = section('Project ChatGPT (experimental)');
+    const sec = section('Project ChatGPT');
     const record = p ? p.records.find((r) => r.workspaceIdentity.session === state.session && r.workspaceIdentity.workspaceId === m.targetId) : null;
     if (p && p.store && p.store.notice) sec.append(el('p', 'chats-note is-warning', p.store.notice.message));
     if (record) {

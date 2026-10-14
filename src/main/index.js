@@ -26,6 +26,7 @@ const { createSessionLocator } = require('./herdr/session-locator');
 const { createWorkspaceObserver } = require('./herdr/workspace-observer');
 const { createWorkspaceSelection } = require('./herdr/workspace-selection');
 const { PROJECT_ROOT, PRELOAD, OVERLAY_PRELOAD, RENDERER_HTML, OVERLAY_HTML } = require('./paths');
+const { projectsEnabled } = require('./projects-enabled');
 
 const { app } = electron;
 
@@ -67,9 +68,8 @@ async function bootstrap() {
     observer,
     selection
   });
-  // Project links (M01-I3B-3) are EXPERIMENTAL and off by default: the Project URL shape has not been validated on a real
-  // account (docs/validation/m01-i3b-3.md). Off means no file is read or written and "Nova conversa" is unchanged.
-  const projectsOn = process.env.CONTEXTDECK_PROJECTS === '1';
+  // One startup decision feeds the Project store, creation flow, IPC and renderer state. Off means the file is untouched.
+  const projectsOn = projectsEnabled();
   const projects = projectsOn
     ? createProjectBindings({ store: createBindingsStore({ file: path.join(userDataDir, PROJECT_BINDINGS_FILE), model: projectModel }), session: settings.herdrSession, bindings, observer, selection })
     : null;

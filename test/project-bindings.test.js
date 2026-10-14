@@ -9,6 +9,7 @@ const { createWorld, ws } = require('./helpers/bindings-world');
 const { createBindingsStore } = require('../src/main/chat-bindings/store');
 const projectModel = require('../src/main/project-bindings/model');
 const { createProjectBindings } = require('../src/main/project-bindings/service');
+const { projectsEnabled } = require('../src/main/projects-enabled');
 
 const HEX = (c) => String(c).repeat(32);
 const PID = (c) => `g-p-${HEX(c)}`;
@@ -47,6 +48,21 @@ test('restart: the link is read back from disk', () => run((t) => {
   t.projects.link(t.pa(1, { label: 'Meu Bicho' }));
   const again = createProjectBindings({ store: t.open(), session: t.session, bindings: t.bindings, observer: t.observer, selection: t.selection });
   assert.deepEqual(again.all().map((r) => [r.projectId, r.label]), [[PID(1), 'Meu Bicho']]);
+}));
+
+test('disabling Projects preserves the file; default re-enable reads the previous link', () => run((t) => {
+  const linked = t.projects.link(t.pa(1));
+  assert.equal(linked.ok, true);
+  const before = fs.readFileSync(t.file, 'utf8');
+
+  const disabled = projectsEnabled({ CONTEXTDECK_PROJECTS: '0' }) ? createProjectBindings({ store: t.open(), session: t.session, bindings: t.bindings, observer: t.observer, selection: t.selection }) : null;
+  assert.equal(disabled, null);
+  assert.equal(fs.readFileSync(t.file, 'utf8'), before);
+
+  assert.equal(projectsEnabled({}), true);
+  const enabledAgain = createProjectBindings({ store: t.open(), session: t.session, bindings: t.bindings, observer: t.observer, selection: t.selection });
+  assert.deepEqual(enabledAgain.all().map((r) => [r.projectId, r.workspaceIdentity.workspaceId]), [[PID(1), 'w1']]);
+  assert.equal(fs.readFileSync(t.file, 'utf8'), before);
 }));
 
 test('only a Project URL is accepted: conversations, other hosts and unknown shapes are refused, nothing is written', () => run((t) => {

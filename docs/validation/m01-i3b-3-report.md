@@ -1,6 +1,6 @@
 # M01-I3B-3 - final review report
 
-Branch `feature/m01-i3b-3-project-integration`, base `8061d60`. Code HEAD at the time of the measurements below: `b947beb` (this report and the harness reports were committed after it, docs only). No push, no merge. Projects stay **off by default** (`CONTEXTDECK_PROJECTS=1`). I3C not started.
+Historical report: Branch `feature/m01-i3b-3-project-integration`, base `8061d60`. Code HEAD at the time of the measurements below: `b947beb` (this report and the harness reports were committed after it, docs only). No push, no merge. At that time Projects were **off by default** (`CONTEXTDECK_PROJECTS=1`); M01-R1 later enabled them by default. I3C not started at the time of this report.
 
 ## 1. State by component
 | Component | State | Evidence |

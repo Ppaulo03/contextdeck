@@ -12,7 +12,7 @@ module.exports = Object.freeze({
   UI_STATE_FILE: 'ui-state.json',
   // Chat <-> workspace bindings (M01-I3A): a file of its own next to ui-state.json, see docs/decisions/0002-chat-bindings.md.
   CHAT_BINDINGS_FILE: 'chat-bindings.json',
-  // Workspace <-> ChatGPT Project links (M01-I3B-3, experimental): own file, only created when CONTEXTDECK_PROJECTS=1 links one.
+  // Workspace <-> ChatGPT Project links (M01-I3B-3): own file; disabled launches leave it untouched.
   PROJECT_BINDINGS_FILE: 'project-bindings.json',
   ARTIFACTS_DIRNAME: 'artifacts',
   CHAT_HOME: 'https://chatgpt.com/'

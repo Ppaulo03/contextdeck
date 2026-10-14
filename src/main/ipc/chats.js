@@ -21,7 +21,7 @@ function pickTarget(value) {
 // string | null are the only valid answers; a missing/odd value stays undefined so the service refuses it.
 const pickSelected = (v) => (v === null || typeof v === 'string' ? v : undefined);
 
-// Project links (M01-I3B-3, experimental, off unless CONTEXTDECK_PROJECTS=1): `projects` is null when off.
+// Project links (M01-I3B-3): `projects` is null only when the explicit startup opt-out is set.
 // "Link the current Project" never trusts the renderer for the address: main reads it from the ChatGPT view, like for chats.
 // `onUnbind(conversationKey)` (optional): told when the user removed a binding, so the page that still shows that conversation is
 // not bound again by the workspace-first rule (unbinding is a decision, not a state to be "repaired").

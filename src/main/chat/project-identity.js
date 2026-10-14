@@ -4,9 +4,8 @@ const { parseChatUrl, CHAT_HOST } = require('./conversation-identity');
 
 // Identity of a ChatGPT Project, from its URL only (M01-I3B-3). Never from a title, the DOM or message content.
 //
-// STATUS OF THE SHAPE - read before relying on it: the routes below are NOT validated against a logged-in account
-// (docs/validation/m01-i3b-3.md lists what was and was not observed). They are a strict hypothesis, and the product keeps
-// the whole Projects feature off (CONTEXTDECK_PROJECTS) until a person records the real routes. Nothing here guesses:
+// STATUS OF THE SHAPE - read before relying on it: the routes below are NOT exhaustively validated against a logged-in account
+// (docs/validation/m01-i3b-3.md lists what was and was not observed). They are a strict hypothesis; nothing here guesses:
 // a URL that does not match exactly is refused, it is never "close enough".
 //
 // Hypothesised shapes (https://chatgpt.com, no credentials, default port):

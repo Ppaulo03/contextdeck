@@ -29,7 +29,7 @@ Status: audit and automated checks complete on 2026-10-14; manual authenticated 
 | Chat navigation/auth | HTTPS ChatGPT main navigation and bounded auth popup allowlist; untrusted popups denied; policy tests cover accepted/rejected origins. | Login and provider redirects require authenticated check. |
 | Herdr | Read-only discovery/subscriptions, heartbeat reconciliation and reconnect backoff; only explicit selection sends `workspace.focus`. Unit tests cover pipe drop, reconnect, removal, ID reuse, and session unavailable. | Real start-after-app/reconnect remains manual. |
 | Multi-chat/activity | Views are lazy, hidden by detaching, observation is boolean/control metadata only, and shutdown destroys managed views. Unit tests cover concurrency, navigation and deduplication; real Electron harnesses exercise logged-out pages. | Logged-out harness cannot prove authenticated behavior. |
-| ChatBindings/ProjectBindings | Separate versioned stores, atomic sibling-temp writes, migrations backed up, corrupt files preserved, newer schemas read-only. Project support stays off unless opted in. | No data reset observed. Project route shape remains experimental. |
+| ChatBindings/ProjectBindings | Separate versioned stores, atomic sibling-temp writes, migrations backed up, corrupt files preserved, newer schemas read-only. Project integration is enabled by default; `CONTEXTDECK_PROJECTS=0` leaves its store untouched. | No data reset observed. Authenticated route behavior remains a manual check. |
 | Git per workspace | Every operation resolves active context and expected repo; manual choice is keyed to workspace identity evidence; refs validated/resolved; ZIPs managed under userData. Tests cover switch during operation and preference restart. | Clipboard and Explorer behavior need a person. |
 | Preferences | `ui-state.json` now backed up when corrupt and saves atomically; schema sanitizer keeps old shapes. | A write failure remains best-effort and not surfaced in UI. |
 | Lifecycle | Manual only, unknown unsent state blocks; destruction confirmed before record; restoration reloads URL and loses transient state. | Authenticated suspension remains disabled/unsupported for v1. |
@@ -42,6 +42,14 @@ Status: audit and automated checks complete on 2026-10-14; manual authenticated 
 `config.json` remains fail-fast on invalid content: falling back to `config.example.json` could silently attach to another Herdr session, while silently replacing it would discard user intent. The actionable message is printed by the existing bootstrap error handler; the local file remains untouched.
 
 ## Validation results
+
+### Projects availability default (M01-R1 follow-up)
+
+- Startup policy is centralized in `src/main/projects-enabled.js`: unset and `1` enable; explicit `0` disables. One `projectsOn` value gates Project store loading, creation wiring, IPC/state and renderer controls.
+- Unit coverage verifies the three environment states, that disabling leaves the persisted ProjectBindings file byte-for-byte unchanged, that default re-enable reads the prior link, and that the main startup value is shared with renderer state. Existing suites continue to cover workspaces without a Project, workspace-first adoption, Project creation and general conversations.
+- `npm run smoke` with `CONTEXTDECK_PROJECTS` removed: app remained running 15 seconds on throwaway profile.
+- `CONTEXTDECK_PROJECTS=0 npm run smoke`: app remained running 15 seconds on throwaway profile.
+- Both smoke runs verify startup only. Authenticated UI visibility, linking, creation and links reappearing after restart remain in the manual checklist; this change is not manually homologated.
 
 **Validated automatically**
 
@@ -90,7 +98,7 @@ Use the existing real profile only for these human-driven checks; do not clear i
 - [ ] E. Switch repeatedly among multiple workspaces and multiple conversations; verify labels and bindings.
 - [ ] F. Generate simultaneous responses and verify background indicators/attention without navigation or reload.
 - [ ] G. Preserve a draft while switching views/workspaces; verify conflict flow and no accidental reassignment.
-- [ ] H. Verify Project routes and creation only if `CONTEXTDECK_PROJECTS=1` has been deliberately enabled.
+- [ ] H. With normal startup, verify Projects appears, link an existing Project, create a conversation there, then restart once with `CONTEXTDECK_PROJECTS=0` and once with the variable unset to confirm links disappear/reappear without file changes.
 - [ ] I. Verify Git repository name, branch and path against each workspace; exercise automatic, manual, disconnected, return-to-auto, and repo missing.
 - [ ] J. Exercise Diff, Show, ZIP, text clipboard, and Explorer file paste; verify ZIP export failure leaves the generated ZIP selectable.
 - [ ] K. Close normally and relaunch; verify ChatGPT session, bindings, Git prefs and selected UI state.
@@ -108,6 +116,7 @@ Use the real account only with the user's direct observation. Record app version
 - Lifecycle authenticated suspension is not homologated because the detector cannot prove absence of attachments or other unsent content. Unknown blocks suspension. No automatic or forced suspension; this is a known v1 limitation, not an application error.
 - Restore reloads the conversation URL; it does not preserve unsent attachments, scroll position, or transient page state.
 - ChatGPT login, Projects, real clipboard/Explorer paste, and long-session memory behavior remain manual.
+- Projects now default on, but the short authenticated A–E Project check is pending; the prior manual homologation applies to the integration behavior, not this default-availability switch.
 - `ui-state.json` save errors are swallowed by the best-effort preference writer; bindings have stronger visible read-only/corruption notices. No failure reproduced in this audit.
 - Harness passes use logged-out ChatGPT and fake Herdr. They do not validate authenticated login, Project routes, real Herdr reconnection, clipboard/Explorer paste, or long-session memory/listener growth.
 - Invalid `config.json` blocks startup rather than silently changing Herdr target. Correct the file and retry.

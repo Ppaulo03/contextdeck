@@ -420,7 +420,7 @@ test('markup: the indicator is a button in the top bar, chat-only, and the panel
   assert.match(overlayHtml, /id="chats"[^>]*role="dialog"[^>]*aria-modal="true"/);
 });
 
-// ---- Project section (M01-I3B-3, experimental) ------------------------------------------------------------------------------------
+// ---- Project section (M01-I3B-3) -------------------------------------------------------------------------------------------------
 
 const PID = `g-p-${'a'.repeat(32)}`;
 const projectState = (extra = {}, records = []) => chatsState({ projectsEnabled: true, projects: { store: { status: 'ok', writable: true, notice: null }, records, current: { projectId: PID, url: `https://chatgpt.com/g/${PID}-x/project`, label: 'x', source: 'project-page', linkedTo: null } }, ...extra });

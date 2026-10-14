@@ -21,6 +21,8 @@ npm start             # = npm run build && electron .
 
 `node-pty` 1.1.0 is N-API with Windows prebuilds: it loads in Electron as is. `electron-rebuild` fails on a plain machine (winpty `GetCommitHash.bat` needs Python + VS Build Tools) and is not needed.
 
+ChatGPT Projects are enabled by default. `CONTEXTDECK_PROJECTS=0` opts out for a launch; unset or `1` enables them. The single decision is read at startup and shared by Project persistence, IPC, conversation creation and renderer state. Opting out does not read, rewrite or delete `project-bindings.json`; enabling again loads its existing links.
+
 ## Repository workflow
 
 - Branches: `feature/<ticket>-<short-name>` or `fix/<ticket>-<short-name>`; never commit to `main`; rebase on `origin/main` before a PR.

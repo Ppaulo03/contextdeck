@@ -66,10 +66,18 @@ test('switched off: the channels exist but do nothing', async () => {
   assert.equal(t.calls.notified, 0);
 });
 
-test('the feature is off by default and wired only behind CONTEXTDECK_PROJECTS=1', () => {
+test('Projects is on by default, accepts the explicit on value, and only 0 disables it', () => {
+  const { projectsEnabled } = require('../src/main/projects-enabled');
+  assert.equal(projectsEnabled({}), true);
+  assert.equal(projectsEnabled({ CONTEXTDECK_PROJECTS: '1' }), true);
+  assert.equal(projectsEnabled({ CONTEXTDECK_PROJECTS: '0' }), false);
+});
+
+test('one startup flag result drives the Project store, creation flow and renderer state', () => {
   const fs = require('node:fs');
   const index = fs.readFileSync('src/main/index.js', 'utf8');
-  assert.match(index, /const projectsOn = process\.env\.CONTEXTDECK_PROJECTS === '1'/);
+  assert.match(index, /const projectsOn = projectsEnabled\(\)/);
   assert.match(index, /projectsOn\s*\n?\s*\? createProjectBindings/);
   assert.match(index, /creation = projectsOn \? createProjectCreation/);
+  assert.match(index, /projectsEnabled: projectsOn/);
 });

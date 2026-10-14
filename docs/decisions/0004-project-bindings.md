@@ -1,6 +1,8 @@
 # 0004 — Project bindings: a workspace's ChatGPT Project, never inferred
 
-- Status: **Proposed / experimental** (behind `CONTEXTDECK_PROJECTS=1`). The Project/conversation URL shapes were observed on a real account (see validation); rename behaviour and a verified sign of a first send are NOT.
+- Status: **Implemented; Projects enabled by default since M01-R1.** The Project/conversation URL shapes were manually homologated for M01-I3B-3; `CONTEXTDECK_PROJECTS=0` is the current opt-out. This record's original opt-in policy below is historical.
+
+> Historical status: the original opt-in policy below describes the implementation when this decision was written. The product decision for M01-R1 is to enable Projects by default; `CONTEXTDECK_PROJECTS=0` is now the opt-out. The binding model and conservative URL validation remain unchanged.
 - Date: 2026-10-11
 - Applies to: M01-I3B-3 (builds on [0002](0002-chat-bindings.md) and [0003](0003-multi-view-navigation.md))
 

@@ -45,6 +45,10 @@ Starts with M01-I1. Out of scope: automatic prompt transfer, reading conversatio
 
 - **M01-R2 — packaging implemented, installer homologation pending.** The unsigned x64 NSIS candidate is built with `npm run dist:win`; install, update, authentication, and uninstall scenarios remain in [validation/m01-r2-windows-release.md](validation/m01-r2-windows-release.md).
 
+## M01-R3 — Final v1.0.0 preparation
+
+- **M01-R3 — stable installer prepared, final installer homologation pending.** The RC was reported as 7/7 manual scenarios passed; this branch produces the stable `1.0.0` installer and records the residual installation and update checklist.
+
 ## M02 — Not defined yet
 
 No scope has been decided. It will be defined after M01 is homologated. Items noted during M00 that are *not* commitments:

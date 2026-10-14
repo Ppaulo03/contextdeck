@@ -4,7 +4,7 @@ const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
-const executable = path.join(ROOT, 'dist', 'win', 'win-unpacked', 'ContextDeck.exe');
+const executable = path.resolve(process.env.CONTEXTDECK_PACKAGED_EXECUTABLE || path.join(ROOT, 'dist', 'win', 'win-unpacked', 'ContextDeck.exe'));
 if (!fs.existsSync(executable)) throw new Error('run npm run dist:dir before packaged smoke');
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'contextdeck-packaged-'));

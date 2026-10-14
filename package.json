@@ -1,6 +1,6 @@
 {
   "name": "contextdeck",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0",
   "private": true,
   "description": "ContextDeck: Windows desktop workspace that puts Herdr (terminal agents) and ChatGPT Web in one window",
   "main": "src/main/index.js",
@@ -32,11 +32,27 @@
     "artifactName": "ContextDeck-${version}-win.${ext}",
     "asar": true,
     "npmRebuild": false,
-    "asarUnpack": ["node_modules/node-pty/**"],
-    "files": ["src/**", "dist/renderer/**", "config.example.json", "package.json"],
-    "directories": { "output": "dist/win" },
+    "asarUnpack": [
+      "node_modules/node-pty/**"
+    ],
+    "files": [
+      "src/**",
+      "dist/renderer/**",
+      "config.example.json",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist/win"
+    },
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {

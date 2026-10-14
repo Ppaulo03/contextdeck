@@ -30,7 +30,7 @@ npm start                              # builds dist/ and launches the app
 ### Windows release candidate
 
 `npm run dist:win` builds an unsigned x64 NSIS installer at
-`dist/win/ContextDeck-1.0.0-rc.1-win.exe`. The packaged app includes its
+`dist/win/ContextDeck-1.0.0-win.exe`. The packaged app includes its
 renderer and preload resources and does not require Node.js or the repository
 to launch. `npm run dist:dir` creates an unpacked directory for smoke tests;
 `npm run smoke:packaged` starts that directory build with a disposable profile.

@@ -5,7 +5,7 @@ const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
 const packageJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
-const output = path.join(ROOT, packageJson.build.directories.output);
+const output = path.resolve(process.env.CONTEXTDECK_DISTRIBUTION_DIR || path.join(ROOT, packageJson.build.directories.output));
 const appDir = path.join(output, 'win-unpacked');
 const appAsar = path.join(appDir, 'resources', 'app.asar');
 for (const file of [path.join(appDir, 'ContextDeck.exe'), appAsar]) {

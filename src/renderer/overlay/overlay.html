@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; frame-src 'none'">
+  <title>ContextDeck menu</title>
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./overlay.css">
+</head>
+<body class="overlay">
+  <!-- The scrim covers the window so any click outside the menu closes it. -->
+  <div id="scrim" class="scrim" hidden>
+    <section id="menu" class="menu-panel" role="dialog" aria-modal="true" aria-label="Workspaces do Herdr">
+      <input id="menu-search" class="control" type="text" role="combobox" aria-controls="menu-list" aria-expanded="true" aria-autocomplete="list" aria-label="Buscar workspace" placeholder="Buscar workspace" maxlength="80" spellcheck="false" autocomplete="off" hidden>
+      <ul id="menu-list" class="menu" role="listbox" tabindex="0" aria-label="Workspaces"></ul>
+      <p id="menu-message" class="menu-message" role="status" hidden></p>
+    </section>
+    <!-- Global activity center (modal) and, outside the scrim, the notice cards. -->
+    <section id="activity" class="menu-panel activity-panel" role="dialog" aria-modal="true" aria-labelledby="activity-title" tabindex="-1" hidden>
+      <header class="chats-head"><strong id="activity-title">Atividade dos chats</strong><span class="spacer"></span><button id="activity-close" class="btn" type="button" aria-label="Fechar">&times;</button></header>
+      <div id="activity-body" class="chats-body"></div>
+      <p id="activity-message" class="menu-message" role="status" hidden></p>
+    </section>
+    <!-- Conflict modal (M01-I3B-3): not dismissible; main closes it when the conflict is resolved. -->
+    <section id="conflict" class="menu-panel conflict-panel" role="alertdialog" aria-modal="true" aria-labelledby="conflict-title" aria-describedby="conflict-text" tabindex="-1" hidden>
+      <header class="chats-head"><strong id="conflict-title"></strong></header>
+      <p id="conflict-text" class="conflict-text"></p>
+      <div id="conflict-actions" class="conflict-actions"></div>
+      <p id="conflict-message" class="menu-message" role="status" hidden></p>
+    </section>
+    <!-- Chat bindings panel: same view, second mode (opened from the top-bar indicator). -->
+    <section id="chats" class="menu-panel chats-panel" role="dialog" aria-modal="true" aria-labelledby="chats-title" hidden>
+      <header class="chats-head"><strong id="chats-title">Conversas vinculadas</strong><span class="spacer"></span><button id="chats-close" class="btn" type="button" aria-label="Fechar">&times;</button></header>
+      <div id="chats-body" class="chats-body"></div>
+      <p id="chats-message" class="menu-message" role="status" hidden></p>
+    </section>
+  </div>
+  <div id="notices" class="notices" aria-live="polite" hidden></div>
+  <script src="./overlay.bundle.js"></script>
+</body>
+</html>

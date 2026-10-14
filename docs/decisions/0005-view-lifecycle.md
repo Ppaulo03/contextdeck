@@ -1,0 +1,52 @@
+# 0005 — View lifecycle and resource management: release a page only when that cannot cost the user's work
+
+- Status: **Accepted for the explicit action; automatic release is explicitly NOT decided** (see "What blocks an automatic policy").
+- Date: 2026-10-11
+- Applies to: M01-I3C-1, I3C-1H and I3C-1H2 (builds on [0002](0002-chat-bindings.md), [0003](0003-multi-view-navigation.md) and the I3B-2 observation hub)
+
+## Context
+
+Until I3B-3 a ChatGPT `WebContentsView` was created on demand and then lived until the window closed ([0003](0003-multi-view-navigation.md): "no pool, no eviction"). That was the safe default and it is what the user relied on, but it has a cost that is now measured (see [validation/m01-i3c-1.md](../validation/m01-i3c-1.md)): on this machine, logged out, every conversation view is its own renderer process of about **135 MB** (working set), and it keeps that memory while hidden, whether the Terminal or the ChatGPT tab is showing. Ten conversations cost about 1.5 GB. Pages left over after an unbind, a transfer or a deduplication behave the same and are never reclaimed.
+
+What is NOT known, and decides how careful this has to be: how a real, logged-in conversation behaves when it is reloaded (scroll position, attachments, canvas / tool state, long background operations), and whether the observation (a boolean probe of the composer) can ever prove that nothing is going on in a page.
+
+## Decisions
+
+1. **The binding stays the source of truth; suspension is not a state of the binding.** A suspended conversation is a conversation without a page. `ChatBinding`, `ProjectBinding`, preferences and the Chromium session are not touched, and nothing about a conversation being responding or idle is ever persisted. The manager keeps one in-memory record per suspended conversation (`key -> recovery address, id, time`) and nothing else; it is dropped as soon as the conversation has a page again and at shutdown. There is no second registry of views.
+2. **Only an explicit user action releases a page.** `ViewLifecycle.suspend()` is reachable from one IPC handler (`chats:suspend`, the user's click on *Suspender conversa* in "Gerenciar" or on *Suspender* in the exceptional list). There is no timer, no listener of activity events, no pool and no LRU; tests pin it (`test/structure.test.js`). The destroy of a view happens in exactly two places: `destroyAll()` (shutdown) and `manager.suspend()`.
+3. **Eligibility is a closed list of blockers; every doubt blocks.** Only a bound conversation can be suspended. A residual unbound page remains live because its in-memory record is not a restart-safe recovery path. A bound page must be unselected, loaded, show the conversation it stands for and have shown it, have no pending decision / creation / conflict / duplicate or workspace switch, and have a fresh reading with no response, draft, attention or uncertainty. The current DOM has no validated authenticated signal proving that no staged attachment or upload exists, so the unsent-state check returns `unknown` and blocks real views. Presence indicators are checked without reading file names, file data or message content.
+4. **Judge twice, then confirm destruction.** The user action gets one fresh observer reading and an independent one-shot unsent-state check. No `await` occurs between the final judgement and the destroy request. The manager enters `SUSPENDING`, keeps the entry and observer managed, and waits for the `destroyed` event or `isDestroyed()`. A timeout or exception while the handle is alive returns an error and restores the active entry. Selection and duplicate suspension are refused while it is suspending.
+5. **Cleanup follows physical destruction.** A destroyed event removes the entry and detaches its handle; hub and navigator listeners clean their observers, timers and per-view bookkeeping. Late and duplicate events are ignored. Suspended metadata is recorded only after destruction is confirmed, while the durable binding remains the restart recovery source.
+6. **Restoration is the normal path, not a new one.** Selecting a suspended tab runs `viewFor()` → `manager.create()` with the binding's stored address on the same persistent partition. The new page is `loading` (the strip's spinner) and `restoring` in the lifecycle; the record is consumed on creation, so repeated requests find the loading page and never make a second canonical view. Observation restarts by the usual rule (a new view gets an observer). Association stays passive: a restored page is a view of an existing binding (`linked`), no `workspace.focus` is sent, and a conversation that cannot be opened for lack of verification still needs the same confirmation (`suspect`, Herdr offline).
+7. **A suspended conversation is not monitored and says so.** It is marked by shape and words ("Suspensa (não monitorada)"), never "ociosa", contributes nothing to activity or attention, raises no notice, and a lifecycle action never clears anyone's pending attention. Totals report `suspended` separately from `loaded`.
+8. **Residual pages are not disposable.** A page that left its workspace (unbind, transfer, deduplication, conflict resolution, cancelled creation) is kept live. Without a persistent binding, destroying it would remove its only local recovery path after restart. Binding and suspension remain separate explicit actions.
+9. **Measurement is a first-class, on-demand feature.** `resource-report.js` (pure) joins the inventory with Electron's process metrics; it never attributes a process to a single view, marks processes that host several views as shared, and states its limits ([validation/m01-i3c-1.md](../validation/m01-i3c-1.md)). Nothing polls for it; `CONTEXTDECK_LIFECYCLE_LOG=1` appends each suspension / refusal / restoration with a snapshot to `diagnostics\lifecycle.jsonl`.
+
+## Consequences
+
+- Positive: the first reclaim of memory (measured −120 to −145 MB per released view, 15 → 10 processes for 5 views) with no way for the app to surprise the user; every refusal is explained; nothing about bindings or the session changes.
+- Negative: authenticated views currently cannot be suspended because absence of staged attachments cannot be proved. Restoration is a reload (scroll position, expanded UI, a not-yet-sent attachment and transient page state are lost). A conversation that is only a temporary or residual page (no binding) cannot be suspended.
+- Not decided: any automatic suspension.
+
+## What blocks an automatic policy (do not remove these conditions without new evidence)
+
+1. **The reading is not proof.** `ended-unclassified` carries no evidence by definition; the draft probe sees the composer only (not an edit-message box, a pending upload, a dictation, a canvas); a ChatGPT redesign turns every reading into `unknown` (which blocks, correctly, but also means "never suspends"). Automatic release needs readings that are robust, versioned and validated on a real account.
+2. **Reload is lossy and unvalidated on real conversations.** Scroll position, in-page state, attachments, long-running tools / agent runs and any server-side state tied to the open page are unknown quantities. All numbers here come from a logged-out profile.
+3. **No signal of intent.** An automatic policy would release pages the user did not choose; nothing yet tells it which ones the user is about to need (the explicit action is the signal).
+4. **Memory is not guaranteed to come back and shared processes exist.** Chromium may keep memory after a view is destroyed and may host several views in one renderer; savings must be measured per policy, not assumed.
+5. **Pending attention, conflicts, creations and decisions** would have to be re-derived on restoration; today they simply block.
+6. Any automatic trigger would need its own decision record, user-visible controls (off by default, thresholds, a list of what was released and why), an undo that is a real restoration, and a harness run on a logged-in profile. The test that forbids timers, activity listeners and a second caller of `suspend` must be changed deliberately, in that same decision.
+
+## I3C-1H identity and navigation addendum
+
+The available Herdr snapshot exposes an opaque workspace id, label and a directory derived from an active pane's `cwd`. It exposes no durable workspace generation and that `cwd` is mutable. Therefore any mismatch in recorded label or directory, or missing identity evidence, is `suspect`; automatic adoption and selection are blocked until explicit reconfirmation. Existing ChatBindings and ProjectBindings are preserved. Matching all observed fields still cannot prove that Herdr did not recreate a workspace with the same id, label and directory; this is a documented residual limitation.
+
+Main-frame ChatGPT navigation is limited to HTTPS origins currently used for ChatGPT and supported login providers (`chatgpt.com`, `auth.openai.com`, Google, Microsoft and Apple login). Other origins and non-HTTPS URLs are blocked in the embedded view. Popup authentication remains sandboxed; other popup targets are denied. This policy requires authenticated manual validation before the I3C-1H navigation gate is considered verified.
+
+## Composer validation follow-up (M01-I3C-1H2)
+
+- The production unsent probe returns `present` only for positive evidence inside the selected composer form (a populated file input or visible progress bar); all other structures remain `unknown`. It does not currently return `empty`. Fixtures verify this conservative contract, not the authenticated ChatGPT markup.
+- An unknown cached hint no longer prevents the explicit action from requesting a fresh one-shot check. The final decision still blocks `unknown`; this is not a force-suspend path.
+- If unknown unsent state is the only blocker, the UI offers **Verificar e suspender** to run that fresh check. The page remains ineligible until the final check is `empty`; any other blocker keeps the action hidden.
+- Observer results discarded for an old navigation epoch or sequence cannot refresh `lastPollAt`. A lifecycle fresh reading must be accepted before its summary can pass the timestamp gate.
+- `CONTEXTDECK_COMPOSER_TRACE=1` writes an allowlisted sanitized trace through the existing observer poll. It excludes draft/message text, filenames, file data, cookies, tokens and full URLs. Only a validated authenticated DOM surface may add an `empty` result.

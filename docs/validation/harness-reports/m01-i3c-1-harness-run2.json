@@ -1,0 +1,846 @@
+{
+  "electron": "44.7.0",
+  "chromium": "152.0.7977.130",
+  "platform": "win32 10.0.26200",
+  "steps": {
+    "samples": [
+      {
+        "label": "terminal-active-initial-page-only",
+        "views": {
+          "created": 1,
+          "selected": 0,
+          "hidden": 1,
+          "residual": 0,
+          "observed": 1,
+          "suspended": 0,
+          "eligible": 0,
+          "unrecoverable": 1
+        },
+        "observers": 1,
+        "processes": 5,
+        "allMB": 467.7,
+        "viewHosts": 1,
+        "viewHostsMB": 131,
+        "sharedHosts": 0,
+        "allCpuPercent": 0.99,
+        "byType": {
+          "Browser": {
+            "processes": 1,
+            "workingSetMB": 109.8
+          },
+          "GPU": {
+            "processes": 1,
+            "workingSetMB": 87.7
+          },
+          "Utility": {
+            "processes": 1,
+            "workingSetMB": 57.2
+          },
+          "Tab": {
+            "processes": 2,
+            "workingSetMB": 213
+          }
+        }
+      },
+      {
+        "label": "chat-active-1-conversation-views",
+        "views": {
+          "created": 2,
+          "selected": 1,
+          "hidden": 1,
+          "residual": 0,
+          "observed": 2,
+          "suspended": 0,
+          "eligible": 0,
+          "unrecoverable": 1
+        },
+        "observers": 2,
+        "processes": 6,
+        "allMB": 606.9,
+        "viewHosts": 2,
+        "viewHostsMB": 265.9,
+        "sharedHosts": 0,
+        "allCpuPercent": 0.13,
+        "byType": {
+          "Browser": {
+            "processes": 1,
+            "workingSetMB": 112.9
+          },
+          "GPU": {
+            "processes": 1,
+            "workingSetMB": 87.8
+          },
+          "Utility": {
+            "processes": 1,
+            "workingSetMB": 57.5
+          },
+          "Tab": {
+            "processes": 3,
+            "workingSetMB": 348.7
+          }
+        }
+      },
+      {
+        "label": "chat-active-3-conversation-views",
+        "views": {
+          "created": 4,
+          "selected": 1,
+          "hidden": 3,
+          "residual": 0,
+          "observed": 4,
+          "suspended": 0,
+          "eligible": 2,
+          "unrecoverable": 1
+        },
+        "observers": 4,
+        "processes": 8,
+        "allMB": 880.3,
+        "viewHosts": 4,
+        "viewHostsMB": 535.9,
+        "sharedHosts": 0,
+        "allCpuPercent": 0.18,
+        "byType": {
+          "Browser": {
+            "processes": 1,
+            "workingSetMB": 115.3
+          },
+          "GPU": {
+            "processes": 1,
+            "workingSetMB": 88.1
+          },
+          "Utility": {
+            "processes": 1,
+            "workingSetMB": 57.9
+          },
+          "Tab": {
+            "processes": 5,
+            "workingSetMB": 619
+          }
+        }
+      },
+      {
+        "label": "chat-active-5-conversation-views",
+        "views": {
+          "created": 6,
+          "selected": 1,
+          "hidden": 5,
+          "residual": 0,
+          "observed": 6,
+          "suspended": 0,
+          "eligible": 4,
+          "unrecoverable": 1
+        },
+        "observers": 6,
+        "processes": 10,
+        "allMB": 1150.4,
+        "viewHosts": 6,
+        "viewHostsMB": 802.4,
+        "sharedHosts": 0,
+        "allCpuPercent": 0.24,
+        "byType": {
+          "Browser": {
+            "processes": 1,
+            "workingSetMB": 118.1
+          },
+          "GPU": {
+            "processes": 1,
+            "workingSetMB": 88.3
+          },
+          "Utility": {
+            "processes": 1,
+            "workingSetMB": 58.4
+          },
+          "Tab": {
+            "processes": 7,
+            "workingSetMB": 885.6
+          }
+        }
+      },
+      {
+        "label": "chat-active-10-conversation-views",
+        "views": {
+          "created": 11,
+          "selected": 1,
+          "hidden": 10,
+          "residual": 0,
+          "observed": 11,
+          "suspended": 0,
+          "eligible": 9,
+          "unrecoverable": 1
+        },
+        "observers": 11,
+        "processes": 15,
+        "allMB": 1833.2,
+        "viewHosts": 11,
+        "viewHostsMB": 1475.7,
+        "sharedHosts": 0,
+        "allCpuPercent": 0.1,
+        "byType": {
+          "Browser": {
+            "processes": 1,
+            "workingSetMB": 125.7
+          },
+          "GPU": {
+            "processes": 1,
+            "workingSetMB": 88.5
+          },
+          "Utility": {
+            "processes": 1,
+            "workingSetMB": 59.6
+          },
+          "Tab": {
+            "processes": 12,
+            "workingSetMB": 1559.4
+          }
+        }
+      },
+      {
+        "label": "terminal-active-10-conversation-views",
+        "views": {
+          "created": 11,
+          "selected": 1,
+          "hidden": 10,
+          "residual": 0,
+          "observed": 11,
+          "suspended": 0,
+          "eligible": 9,
+          "unrecoverable": 1
+        },
+        "observers": 11,
+        "processes": 15,
+        "allMB": 1821.2,
+        "viewHosts": 11,
+        "viewHostsMB": 1465.4,
+        "sharedHosts": 0,
+        "allCpuPercent": 0.26,
+        "byType": {
+          "Browser": {
+            "processes": 1,
+            "workingSetMB": 123.7
+          },
+          "GPU": {
+            "processes": 1,
+            "workingSetMB": 88.5
+          },
+          "Utility": {
+            "processes": 1,
+            "workingSetMB": 59.6
+          },
+          "Tab": {
+            "processes": 12,
+            "workingSetMB": 1549.4
+          }
+        }
+      },
+      {
+        "label": "before-suspending-5-of-10",
+        "views": {
+          "created": 11,
+          "selected": 1,
+          "hidden": 10,
+          "residual": 0,
+          "observed": 11,
+          "suspended": 0,
+          "eligible": 9,
+          "unrecoverable": 1
+        },
+        "observers": 11,
+        "processes": 15,
+        "allMB": 1812,
+        "viewHosts": 11,
+        "viewHostsMB": 1453,
+        "sharedHosts": 0,
+        "allCpuPercent": 0.28,
+        "byType": {
+          "Browser": {
+            "processes": 1,
+            "workingSetMB": 125.9
+          },
+          "GPU": {
+            "processes": 1,
+            "workingSetMB": 88.6
+          },
+          "Utility": {
+            "processes": 1,
+            "workingSetMB": 59.6
+          },
+          "Tab": {
+            "processes": 12,
+            "workingSetMB": 1537.9
+          }
+        }
+      },
+      {
+        "label": "after-suspending-+0s",
+        "views": {
+          "created": 6,
+          "selected": 1,
+          "hidden": 5,
+          "residual": 0,
+          "observed": 6,
+          "suspended": 5,
+          "eligible": 4,
+          "unrecoverable": 1
+        },
+        "observers": 6,
+        "processes": 10,
+        "allMB": 1149.9,
+        "viewHosts": 6,
+        "viewHostsMB": 792.2,
+        "sharedHosts": 0,
+        "allCpuPercent": 0.25,
+        "byType": {
+          "Browser": {
+            "processes": 1,
+            "workingSetMB": 124.7
+          },
+          "GPU": {
+            "processes": 1,
+            "workingSetMB": 88.5
+          },
+          "Utility": {
+            "processes": 1,
+            "workingSetMB": 59.5
+          },
+          "Tab": {
+            "processes": 7,
+            "workingSetMB": 877.2
+          }
+        }
+      },
+      {
+        "label": "after-suspending-+3s",
+        "views": {
+          "created": 6,
+          "selected": 1,
+          "hidden": 5,
+          "residual": 0,
+          "observed": 6,
+          "suspended": 5,
+          "eligible": 4,
+          "unrecoverable": 1
+        },
+        "observers": 6,
+        "processes": 10,
+        "allMB": 1141,
+        "viewHosts": 6,
+        "viewHostsMB": 786.6,
+        "sharedHosts": 0,
+        "allCpuPercent": 0.22,
+        "byType": {
+          "Browser": {
+            "processes": 1,
+            "workingSetMB": 122.2
+          },
+          "GPU": {
+            "processes": 1,
+            "workingSetMB": 88.2
+          },
+          "Utility": {
+            "processes": 1,
+            "workingSetMB": 59
+          },
+          "Tab": {
+            "processes": 7,
+            "workingSetMB": 871.6
+          }
+        }
+      },
+      {
+        "label": "after-suspending-+10s",
+        "views": {
+          "created": 6,
+          "selected": 1,
+          "hidden": 5,
+          "residual": 0,
+          "observed": 6,
+          "suspended": 5,
+          "eligible": 4,
+          "unrecoverable": 1
+        },
+        "observers": 6,
+        "processes": 10,
+        "allMB": 1134.5,
+        "viewHosts": 6,
+        "viewHostsMB": 780.7,
+        "sharedHosts": 0,
+        "allCpuPercent": 0.06,
+        "byType": {
+          "Browser": {
+            "processes": 1,
+            "workingSetMB": 121.6
+          },
+          "GPU": {
+            "processes": 1,
+            "workingSetMB": 88.2
+          },
+          "Utility": {
+            "processes": 1,
+            "workingSetMB": 59
+          },
+          "Tab": {
+            "processes": 7,
+            "workingSetMB": 865.7
+          }
+        }
+      },
+      {
+        "label": "at-rest-with-suspended-conversations",
+        "views": {
+          "created": 6,
+          "selected": 1,
+          "hidden": 5,
+          "residual": 0,
+          "observed": 6,
+          "suspended": 5,
+          "eligible": 4,
+          "unrecoverable": 1
+        },
+        "observers": 6,
+        "processes": 10,
+        "allMB": 1134.2,
+        "viewHosts": 6,
+        "viewHostsMB": 781.5,
+        "sharedHosts": 0,
+        "allCpuPercent": 0.05,
+        "byType": {
+          "Browser": {
+            "processes": 1,
+            "workingSetMB": 120.4
+          },
+          "GPU": {
+            "processes": 1,
+            "workingSetMB": 88.3
+          },
+          "Utility": {
+            "processes": 1,
+            "workingSetMB": 59
+          },
+          "Tab": {
+            "processes": 7,
+            "workingSetMB": 866.5
+          }
+        }
+      }
+    ],
+    "baseline": {
+      "label": "terminal-active-initial-page-only",
+      "views": {
+        "created": 1,
+        "selected": 0,
+        "hidden": 1,
+        "residual": 0,
+        "observed": 1,
+        "suspended": 0,
+        "eligible": 0,
+        "unrecoverable": 1
+      },
+      "observers": 1,
+      "processes": 5,
+      "allMB": 467.7,
+      "viewHosts": 1,
+      "viewHostsMB": 131,
+      "sharedHosts": 0,
+      "allCpuPercent": 0.99,
+      "byType": {
+        "Browser": {
+          "processes": 1,
+          "workingSetMB": 109.8
+        },
+        "GPU": {
+          "processes": 1,
+          "workingSetMB": 87.7
+        },
+        "Utility": {
+          "processes": 1,
+          "workingSetMB": 57.2
+        },
+        "Tab": {
+          "processes": 2,
+          "workingSetMB": 213
+        }
+      }
+    },
+    "createMs": {
+      "medianMs": 323,
+      "all": [
+        312,
+        323,
+        317,
+        373,
+        260,
+        326,
+        270,
+        371,
+        377,
+        321
+      ]
+    },
+    "inventory": [
+      {
+        "viewId": "v1",
+        "state": "background",
+        "kind": "pristine",
+        "selected": false,
+        "observed": true,
+        "eligible": false,
+        "blockers": [
+          "initial-page",
+          "no-recoverable-identity"
+        ]
+      },
+      {
+        "viewId": "v2",
+        "state": "background",
+        "kind": "binding",
+        "selected": false,
+        "observed": true,
+        "eligible": true,
+        "blockers": []
+      },
+      {
+        "viewId": "v3",
+        "state": "background",
+        "kind": "binding",
+        "selected": false,
+        "observed": true,
+        "eligible": true,
+        "blockers": []
+      },
+      {
+        "viewId": "v4",
+        "state": "background",
+        "kind": "binding",
+        "selected": false,
+        "observed": true,
+        "eligible": true,
+        "blockers": []
+      },
+      {
+        "viewId": "v5",
+        "state": "background",
+        "kind": "binding",
+        "selected": false,
+        "observed": true,
+        "eligible": true,
+        "blockers": []
+      },
+      {
+        "viewId": "v6",
+        "state": "background",
+        "kind": "binding",
+        "selected": false,
+        "observed": true,
+        "eligible": true,
+        "blockers": []
+      },
+      {
+        "viewId": "v7",
+        "state": "background",
+        "kind": "binding",
+        "selected": false,
+        "observed": true,
+        "eligible": true,
+        "blockers": []
+      },
+      {
+        "viewId": "v8",
+        "state": "background",
+        "kind": "binding",
+        "selected": false,
+        "observed": true,
+        "eligible": true,
+        "blockers": []
+      },
+      {
+        "viewId": "v9",
+        "state": "background",
+        "kind": "binding",
+        "selected": false,
+        "observed": true,
+        "eligible": true,
+        "blockers": []
+      },
+      {
+        "viewId": "v10",
+        "state": "background",
+        "kind": "binding",
+        "selected": false,
+        "observed": true,
+        "eligible": true,
+        "blockers": []
+      },
+      {
+        "viewId": "v11",
+        "state": "active",
+        "kind": "binding",
+        "selected": true,
+        "observed": true,
+        "eligible": false,
+        "blockers": [
+          "selected"
+        ]
+      }
+    ],
+    "switchMs": {
+      "count": 60,
+      "medianMs": 5.758,
+      "maxMs": 9.7,
+      "note": "main-process time of selectBinding(); it does not include the compositor painting the page"
+    },
+    "releases": [
+      {
+        "binding": "A2",
+        "ok": true,
+        "judgeMs": 1.43,
+        "releaseMs": 1.41,
+        "untilDestroyedMs": 14.6
+      },
+      {
+        "binding": "A3",
+        "ok": true,
+        "judgeMs": 1.89,
+        "releaseMs": 0.56,
+        "untilDestroyedMs": 15.8
+      },
+      {
+        "binding": "A4",
+        "ok": true,
+        "judgeMs": 3.4,
+        "releaseMs": 0.59,
+        "untilDestroyedMs": 14.3
+      },
+      {
+        "binding": "A5",
+        "ok": true,
+        "judgeMs": 1.73,
+        "releaseMs": 0.49,
+        "untilDestroyedMs": 15.2
+      },
+      {
+        "binding": "A6",
+        "ok": true,
+        "judgeMs": 1.64,
+        "releaseMs": 0.35,
+        "untilDestroyedMs": 16.1
+      }
+    ],
+    "suspendDelta": {
+      "viewHostsMB": {
+        "before": 1453,
+        "after3s": 786.6,
+        "after10s": 780.7
+      },
+      "allMB": {
+        "before": 1812,
+        "after3s": 1141,
+        "after10s": 1134.5
+      },
+      "processes": {
+        "before": 15,
+        "after10s": 10
+      },
+      "note": "working set per process summed over distinct processes; shared pages are counted in each process, so read only the deltas"
+    },
+    "atRest": {
+      "navPushes": 0,
+      "chatsPushes": 0,
+      "observers": 6,
+      "polls": 19
+    },
+    "restore": {
+      "wallMs": 332,
+      "managerRestoreMs": 304,
+      "stateAfter": {
+        "bindingId": "b_5d8d227f66db64ba",
+        "label": "A2",
+        "status": "linked",
+        "hint": "",
+        "loaded": true,
+        "loading": false,
+        "failed": false,
+        "suspended": false,
+        "lifecycle": {
+          "state": "active",
+          "kind": "binding",
+          "eligible": false,
+          "reasons": [
+            "selected",
+            "state-unknown",
+            "draft-unknown"
+          ]
+        },
+        "activity": {
+          "phase": "ready",
+          "responding": false,
+          "ended": false,
+          "draft": false,
+          "attention": false,
+          "unknown": true,
+          "idle": false,
+          "stale": false,
+          "uncertain": false,
+          "evidence": "unknown"
+        },
+        "active": true,
+        "needsConfirm": false,
+        "relation": "match"
+      }
+    },
+    "finalSummary": {
+      "created": 9,
+      "selected": 1,
+      "hidden": 8,
+      "residual": 0,
+      "observed": 9,
+      "suspended": 4,
+      "eligible": 6,
+      "unrecoverable": 2
+    },
+    "shutdown": {
+      "before": 9,
+      "after": 0
+    }
+  },
+  "checks": [
+    {
+      "name": "10 conversation views + the initial page = 11 ChatGPT pages",
+      "ok": true,
+      "detail": 11
+    },
+    {
+      "name": "one observer per loaded view",
+      "ok": true,
+      "detail": "{\"observers\":11,\"polls\":39,\"probeTimeouts\":0,\"signalsLost\":0,\"sweepArmed\":true}"
+    },
+    {
+      "name": "the inventory sees 10 binding views + the initial page; exactly one selected",
+      "ok": true,
+      "detail": "{\"created\":11,\"selected\":1,\"hidden\":10,\"residual\":0,\"observed\":11,\"suspended\":0,\"eligible\":9,\"unrecoverable\":1}"
+    },
+    {
+      "name": "the initial page and the selected view are never eligible",
+      "ok": true
+    },
+    {
+      "name": "a response in progress: refused and the page is still alive",
+      "ok": true,
+      "detail": "[1791754473852,false,[\"responding\"]]"
+    },
+    {
+      "name": "an unsent draft: refused and the page is still alive",
+      "ok": true,
+      "detail": "[1791754474967,false,[\"uncertain\",\"responding\",\"draft\"]]"
+    },
+    {
+      "name": "every page still alive after the refusals",
+      "ok": true
+    },
+    {
+      "name": "activity that ended unseen (attention pending) blocks the suspension, and the refusal does not clear it",
+      "ok": true,
+      "detail": "[1791754476792,false]"
+    },
+    {
+      "name": "idle, observed, draft-free background conversations become eligible (5 of 5)",
+      "ok": true,
+      "detail": 5
+    },
+    {
+      "name": "the 5 eligible conversations were suspended",
+      "ok": true,
+      "detail": "[{\"binding\":\"A2\",\"ok\":true,\"judgeMs\":1.43,\"releaseMs\":1.41,\"untilDestroyedMs\":14.6},{\"binding\":\"A3\",\"ok\":true,\"judgeMs\":1.89,\"releaseMs\":0.56,\"untilDestroyedMs\":15.8},{\"binding\":\"A4\",\"ok\":true,\"judgeMs\":3.4,\"releaseMs\":0.59,\"untilDestroyedMs\":14.3},{\"binding\":\"A5\",\"ok\":true,\"judgeMs\":1.73,\"releaseMs\":0.49,\"untilDestroyedMs\":15.2},{\"binding\":\"A6\",\"ok\":true,\"judgeMs\":1.64,\"releaseMs\":0.35,\"untilDestroyedMs\":16.1}]"
+    },
+    {
+      "name": "their pages are destroyed (renderer closed)",
+      "ok": true
+    },
+    {
+      "name": "ChatGPT pages: 11 -> 6; observers follow",
+      "ok": true,
+      "detail": "6 {\"observers\":6,\"polls\":49,\"probeTimeouts\":0,\"signalsLost\":0,\"sweepArmed\":true}"
+    },
+    {
+      "name": "suspended conversations stay in the strip, marked suspended, with no status claimed",
+      "ok": true
+    },
+    {
+      "name": "bindings file is byte-identical after suspending",
+      "ok": true
+    },
+    {
+      "name": "nothing is pushed to the UI while at rest (12 s)",
+      "ok": true,
+      "detail": "{\"navPushes\":0,\"chatsPushes\":0,\"observers\":6,\"polls\":19}"
+    },
+    {
+      "name": "suspended conversations are not polled (observers = live pages)",
+      "ok": true
+    },
+    {
+      "name": "selecting a suspended conversation restores it (one new page, never two)",
+      "ok": true,
+      "detail": "true 6 -> 7"
+    },
+    {
+      "name": "the restored conversation showed a loading state",
+      "ok": true,
+      "detail": true
+    },
+    {
+      "name": "restored: relation match, one view for the conversation, observer running again",
+      "ok": true,
+      "detail": "{\"bindingId\":\"b_5d8d227f66db64ba\",\"label\":\"A2\",\"status\":\"linked\",\"hint\":\"\",\"loaded\":true,\"loading\":false,\"failed\":false,\"suspended\":false,\"lifecycle\":{\"state\":\"active\",\"kind\":\"binding\",\"eligible\":false,\"reasons\":[\"selected\",\"state-unknown\",\"draft-unknown\"]},\"activity\":{\"phase\":\"ready\",\"responding\":false,\"ended\":false,\"draft\":false,\"attention\":false,\"unknown\":true,\"idle\":false,\"stale\":false,\"uncertain\":false,\"evidence\":\"unknown\"},\"active\":true,\"needsConfirm\":false,\"relation\":\"match\"}"
+    },
+    {
+      "name": "restoring sent no Herdr command",
+      "ok": true,
+      "detail": 0
+    },
+    {
+      "name": "bindings file is still byte-identical",
+      "ok": true
+    },
+    {
+      "name": "an unbound conversation's page remains as a residual page, reported by the inventory",
+      "ok": true
+    },
+    {
+      "name": "an eligible residual page can be suspended and stays listed as suspended",
+      "ok": true,
+      "detail": "{\"ok\":true,\"viewId\":\"v9\",\"key\":\"c:08080808-0000-4000-8000-000000000008\",\"kind\":\"residual\",\"bindingId\":null,\"timings\":{\"judgeMs\":1.52,\"releaseMs\":0.31}}"
+    },
+    {
+      "name": "opening it from the list restores it",
+      "ok": true,
+      "detail": "{\"ok\":true,\"viewId\":\"v13\"}"
+    },
+    {
+      "name": "a conversation of another workspace can be suspended while that workspace is selected",
+      "ok": true,
+      "detail": "{\"ok\":true,\"viewId\":\"v14\",\"key\":\"c:21212121-0000-4000-8000-000000000021\",\"kind\":\"binding\",\"bindingId\":\"b_a5735cd28eea6ba0\",\"timings\":{\"judgeMs\":1.22,\"releaseMs\":0.62}}"
+    },
+    {
+      "name": "switching workspace never restores a suspended conversation by itself",
+      "ok": true,
+      "detail": "{\"restoredByItself\":[\"000000000022\",\"chatgpt.com/\",\"000000000002\",\"000000000010\",\"000000000009\",\"000000000007\",\"000000000001\",\"chatgpt.com/\"],\"b1\":[{\"viewId\":\"v14\",\"state\":\"suspended\",\"kind\":\"binding\",\"scope\":\"contextdeck/w2\",\"selected\":false,\"attached\":false,\"bindingId\":\"b_a5735cd28eea6ba0\",\"hasBinding\":true,\"stableUrl\":true,\"identity\":\"durable\",\"page\":\"none\",\"observed\":false,\"responding\":null,\"draft\":null,\"attention\":null,\"uncertain\":null,\"navigating\":false,\"conflict\":false,\"duplicate\":false,\"restoreMs\":null,\"eligible\":false,\"blockers\":[\"suspended\"]}],\"tabsInW1\":9}"
+    },
+    {
+      "name": "and selecting it in its own workspace restores it",
+      "ok": true
+    },
+    {
+      "name": "closing the window closes every ChatGPT view",
+      "ok": true,
+      "detail": "{\"before\":9,\"after\":0}"
+    },
+    {
+      "name": "no Herdr focus command was sent by any step",
+      "ok": true
+    }
+  ],
+  "errors": [],
+  "networkProbe": 200,
+  "lastCheck": "no Herdr focus command was sent by any step",
+  "exitCode": 0
+}

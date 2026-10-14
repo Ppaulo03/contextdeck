@@ -7,9 +7,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const git = require('../src/git');
-const { createGitActions } = require('../src/git-actions');
-const { decideShortcut } = require('../src/shortcuts');
+const git = require('../src/main/git/core');
+const { createGitActions } = require('../src/main/git/actions');
+const { decideShortcut } = require('../src/main/shortcuts');
 
 const G = ['-c', 'user.name=Test', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false'];
 const run = (cwd, ...args) => execFileSync('git', [...G, ...args], { cwd, encoding: 'utf8' });

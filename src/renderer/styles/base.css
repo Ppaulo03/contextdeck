@@ -1,0 +1,24 @@
+/* Reset and element defaults. */
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  color: var(--text);
+  font: var(--text-md)/var(--leading) var(--font-ui);
+  background: var(--bg-app);
+}
+
+button, input, select { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+
+/* One focus ring for everything interactive. */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.spacer { flex: 1; }
+.mono { font-family: var(--font-mono); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}

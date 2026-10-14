@@ -1,0 +1,800 @@
+'use strict';
+
+// M01-I3B-3, workspace-first: a conversation opened IN a workspace belongs to that workspace; a conversation bound elsewhere is
+// a conflict; passive events never bind; nothing is lost. Real bindings service, navigator, manager and adoption service.
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { createStatusWorld, bindMany } = require('./helpers/views-world');
+const { ws, chatUrl } = require('./helpers/bindings-world');
+const { createContextAdoption } = require('../src/main/chat-bindings/context-adoption');
+const { createBindingsStore } = require('../src/main/chat-bindings/store');
+const projectModel = require('../src/main/project-bindings/model');
+const { createProjectBindings } = require('../src/main/project-bindings/service');
+const { createProjectCreation } = require('../src/main/project-bindings/creation');
+const { barModel } = require('../src/shared/chat-nav-view');
+const { centerModel } = require('../src/shared/activity-view');
+const { registerChatNavIpc } = require('../src/main/ipc/chatnav');
+
+const WK = (id) => `contextdeck/${id}`;
+const PID = 'g-p-6ac6503eb7e881919958af060b1297a5';
+const PROJECT_HOME = `https://chatgpt.com/g/${PID}/project`;
+const inProject = (n) => `https://chatgpt.com/g/${PID}-system-framework/c/${chatUrl(n).slice(-36)}`;
+
+// w1 "api" (holds chat 1), w2 "app" (holds chat 4); chat tab showing, w1 selected by the user.
+function setup(opts = {}) {
+  const w = createStatusWorld({ workspaces: [ws('w1', 'api'), ws('w2', 'app')], ...opts });
+  w.select('w1'); w.A = bindMany(w, [1]);
+  w.select('w2'); w.B = bindMany(w, [4]);
+  w.select('w1');
+  w.navigator.setMode('chat');
+  w.adoption = createContextAdoption({ session: w.session, navigator: w.navigator, bindings: w.bindings, selection: w.selection });
+  w.navigator.setNoteProvider((id) => w.adoption.noteOf(id));
+  w.navigator.onChange(() => w.adoption.resolve());     // as in src/main/index.js
+  w.view = (id) => w.fake.views.find((v) => v.id === id);
+  w.newChat = (ws_ = 'w1') => { const r = w.navigator.newConversation({ workspaceKey: WK(ws_) }); assert.equal(r.ok, true); return w.view(r.viewId); };
+  w.bound = (n, url) => w.bindings.lookup(url || chatUrl(n));
+  w.fileBytes = () => fs.readFileSync(w.file, 'utf8');
+  return w;
+}
+const run = async (fn, opts) => { const w = setup(opts); try { await fn(w); } finally { w.cleanup0(); } };
+
+// ---- 1-2: a new conversation ---------------------------------------------------------------------------------------------------
+test('Nova conversa in A: the page shows "Nova conversa" until an id appears, then the conversation is bound to A (same view)', () => run(async (w) => {
+  const v = w.newChat();
+  v.finishLoad(w.HOME);
+  assert.equal(w.navigator.getState().temporaries[0].label, 'Nova conversa');
+  assert.equal(w.bindings.all().length, 2, 'no id: nothing bound, no invented id');
+  v.navigate(chatUrl(7));
+  const b = w.bound(7);
+  assert.deepEqual([b.workspaceIdentity.workspaceId, b.origin, b.status], ['w1', 'context', 'linked']);
+  assert.equal(w.manager.get(v.id).expectedKey, `c:${chatUrl(7).slice(-36)}`);
+  assert.equal(v.loads.length, 1, 'never reloaded');
+  assert.equal(w.manager.list().length, 1, 'one view');
+  assert.equal(w.navigator.getState().tabs.some((t) => t.loaded && t.bindingId === b.bindingId), true, 'it is a tab of A now');
+}));
+
+test('double click on Nova conversa: one page, one intent', () => run(async (w) => {
+  const a = w.newChat(); const b = w.newChat();
+  assert.equal(a, b);
+  assert.equal(w.fake.views.length, 1);
+}));
+
+// ---- 3-6: an old conversation opened inside A ------------------------------------------------------------------------------------
+test('an old unbound conversation opened (sidebar) in A\'s page on screen is bound to A', () => run(async (w) => {
+  const v = w.newChat();
+  v.finishLoad(w.HOME);
+  v.navigate(chatUrl(8));                                           // the user clicked it in ChatGPT's sidebar
+  assert.equal(w.bound(8).workspaceIdentity.workspaceId, 'w1');
+}));
+
+test('a conversation already bound to A is reused: no new binding, no second view', () => run(async (w) => {
+  const v = w.newChat();
+  v.navigate(w.A[0].url);
+  assert.equal(w.bindings.all().length, 2);
+  assert.equal(w.manager.get(v.id).expectedKey, w.A[0].conversationKey);
+  assert.equal(w.fake.views.length, 1);
+}));
+
+test('a page that shows a conversation of A\'s binding via its own tab stays unique after reload and re-navigation', () => run(async (w) => {
+  const r = w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') });
+  const v = w.view(r.viewId);
+  v.finishLoad(w.A[0].url);
+  v.finishLoad && v.navigate(w.A[0].url);
+  v.navigate(w.A[0].url);
+  assert.equal(w.bindings.all().length, 2);
+  assert.equal(w.fake.views.length, 1);
+}));
+
+// ---- 7-10: conflicts ---------------------------------------------------------------------------------------------------------------
+test('a conversation bound to B opened in A: never moved; a conflict is reported with where it lives', () => run(async (w) => {
+  const v = w.newChat();
+  const before = w.fileBytes();
+  v.navigate(w.B[0].url);
+  assert.equal(w.fileBytes(), before, 'binding untouched');
+  const c = w.navigator.getState().conflict;
+  assert.deepEqual([c.viewId, c.boundTo.id, c.boundTo.label, c.current.id, c.transferable, c.boundTo.openable], [v.id, 'w2', 'app', 'w1', true, true]);
+  const banner = barModel(w.navigator.getState()).banner;
+  assert.match(banner.text, /Esta conversa pertence ao workspace app \(w2\)\. Você está em api \(w1\)\./);
+  assert.deepEqual(banner.actions.map((a) => a.action), ['go', 'transfer', 'back']);
+  assert.equal(w.fake.views.length, 1, 'no duplicate view');
+  assert.deepEqual(w.selectCalls, [], 'detecting the conflict does not switch workspace');
+}));
+
+test('transfer is explicit and uses the I3A reassignment; the view keeps its page', () => run(async (w) => {
+  const v = w.newChat();
+  v.navigate(w.B[0].url);
+  const r = await w.adoption.transfer({ viewId: v.id });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(w.bound(4, w.B[0].url).workspaceIdentity.workspaceId, 'w1');
+  assert.equal(w.navigator.getState().conflict, null);
+  assert.equal(v.loads.length, 1);
+}));
+
+test('transfer only while the page\'s workspace is the selected one, and never for a conversation that is not bound', () => run(async (w) => {
+  const v = w.newChat();
+  v.navigate(w.B[0].url);
+  w.select('w2');
+  assert.equal((await w.adoption.transfer({ viewId: v.id })).error.code, 'context_changed');
+  assert.equal(w.bound(4, w.B[0].url).workspaceIdentity.workspaceId, 'w2');
+  w.select('w1');
+  const o = w.view(w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') }).viewId);
+  w.navigator.setMode('terminal');
+  o.navigate(chatUrl(5));                                           // hidden and not pending: passive, so unbound
+  assert.equal((await w.adoption.transfer({ viewId: o.id })).error.code, 'not_bound');
+}));
+
+test('Voltar: the page moves to the workspace the conversation belongs to; A shows what it showed before; the binding is unchanged', () => run(async (w) => {
+  const first = w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') });
+  const v = w.newChat();
+  v.navigate(w.B[0].url);
+  const r = w.adoption.back({ viewId: v.id });
+  assert.equal(r.ok, true);
+  assert.equal(w.manager.get(v.id).scope, WK('w2'));
+  assert.equal(w.navigator.getState().conflict, null);
+  assert.equal(w.bound(4, w.B[0].url).workspaceIdentity.workspaceId, 'w2');
+  assert.equal(w.manager.getVisibleId(), first.viewId, 'the earlier conversation of A is back on screen');
+  assert.equal(w.fake.views.length, 2, 'no view was destroyed or duplicated');
+}));
+
+test('a conflict with an orphan binding can be transferred but not opened', () => run(async (w) => {
+  w.setWorkspaces([ws('w1', 'api')]);                              // w2 disappears: chat 4 is an orphan
+  const v = w.newChat();
+  v.navigate(w.B[0].url);
+  const c = w.navigator.getState().conflict;
+  assert.deepEqual([c.boundTo.status, c.boundTo.openable], ['orphan', false]);
+  assert.deepEqual(barModel(w.navigator.getState()).banner.actions.map((a) => a.action), ['transfer', 'back']);
+}));
+
+// ---- 11-14: context captured at the click; passive events ---------------------------------------------------------------------------
+test('created in A, switched to B before the id: bound to A, never to B; Herdr untouched', () => run(async (w) => {
+  const v = w.newChat();
+  v.finishLoad(w.HOME);
+  w.select('w2');
+  v.navigate(chatUrl(7));
+  const b = w.bound(7);
+  assert.equal(b.workspaceIdentity.workspaceId, 'w1');
+  assert.equal(w.navigator.getState().tabs.length, 1, 'B shows only its own conversations');
+  assert.deepEqual(w.selectCalls, []);
+  assert.equal(w.manager.get(v.id).scope, WK('w1'));
+}));
+
+test('Auto mode: the click is the intent even when the selection is only an estimate', () => run(async (w) => {
+  w.select('w1', 'herdr');
+  const v = w.newChat();
+  v.navigate(chatUrl(7));
+  assert.equal(w.bound(7).workspaceIdentity.workspaceId, 'w1');
+}));
+
+test('passive events never bind: a hidden page changing route, a reload, a redirect, a late event', () => run(async (w) => {
+  const r = w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') });
+  const v = w.view(r.viewId);
+  v.finishLoad(w.A[0].url);
+  w.navigator.setMode('terminal');                                  // the page is not on screen
+  v.navigate(chatUrl(8));                                           // route change nobody looked at
+  assert.equal(w.bound(8), null, 'hidden, not pending: left alone');
+  v.finishLoad(chatUrl(8));                                         // reload / late completion
+  v.navigate(chatUrl(8));
+  assert.equal(w.bound(8), null);
+  assert.equal(w.adoption.pending().length, 0);
+}));
+
+test('a restored/started session has no pages: nothing to bind (views are created lazily)', () => run(async (w) => {
+  assert.deepEqual(w.navigator.contextViews(), []);
+  w.adoption.resolve();
+  assert.equal(w.bindings.all().length, 2);
+}));
+
+// ---- 15-18: failures keep the page --------------------------------------------------------------------------------------------------------
+test('a suspect workspace refuses the association: the page stays in A with a note and a retry that works after re-confirmation', () => run(async (w) => {
+  const v = w.newChat();
+  v.finishLoad(w.HOME);
+  w.setWorkspaces([ws('w1', 'other', 'D:/x'), ws('w2', 'app')]);
+  Object.assign(v.contents.signals, { draft: true });
+  v.navigate(chatUrl(7));
+  assert.equal(w.bound(7), null);
+  const s = w.navigator.getState();
+  assert.match(s.pending.text, /nao foi verificada/);
+  assert.deepEqual(barModel(s).banner.actions.map((a) => a.action), ['retry', 'skip']);
+  assert.equal(w.manager.get(v.id).scope, WK('w1'), 'still reachable in its workspace');
+  assert.equal(v.loads.length, 1);
+  assert.equal(w.adoption.retry({ viewId: v.id }).ok, false);
+  w.bindings.reassign({ bindingId: w.A[0].bindingId, target: w.target('w1'), selectedAtOpen: 'w1', confirmReassign: true });
+  assert.equal(w.adoption.retry({ viewId: v.id }).ok, true);
+  assert.equal(w.bound(7).workspaceIdentity.workspaceId, 'w1');
+  assert.equal(w.navigator.getState().pending, null);
+}));
+
+test('Herdr disconnected: the association waits (verifiable destination required) and completes by itself when it is back', () => run(async (w) => {
+  const v = w.newChat();
+  w.disconnect();
+  v.navigate(chatUrl(7));
+  assert.equal(w.bound(7), null);
+  assert.match(w.navigator.getState().pending.text, /Sem conexao/);
+  w.connect();
+  w.adoption.resolve();
+  assert.equal(w.bound(7).workspaceIdentity.workspaceId, 'w1', 'the pending creation still belongs to the workspace of the click');
+}));
+
+test('two pages showing the same new conversation: one binding, both pages kept', () => run(async (w) => {
+  const a = w.newChat();
+  a.navigate(chatUrl(7));
+  const b = w.newChat();                                            // the first now has an id, so this is a second page
+  assert.notEqual(a, b);
+  b.navigate(chatUrl(7));
+  assert.equal(w.bindings.all().filter((x) => x.conversationKey.endsWith(chatUrl(7).slice(-36))).length, 1);
+  assert.equal(w.manager.duplicates().length, 1);
+  assert.equal(w.fake.views.length, 2);
+}));
+
+test('drafts, activity and attention survive the association (same view)', () => run(async (w) => {
+  const v = w.newChat();
+  v.finishLoad(w.HOME);
+  Object.assign(v.contents.signals, { draft: true });
+  await w.clock.advance(6000);
+  v.navigate(chatUrl(7));
+  await w.clock.advance(6000);
+  assert.equal(w.bound(7).status, 'linked');
+  const g = w.navigator.getGlobalActivity();
+  assert.equal(g.groups.find((x) => x.id === 'w1').items.some((i) => i.draft), true);
+}));
+
+// ---- 19-21: no permanent "Sem workspace" ----------------------------------------------------------------------------------------------------
+test('the normal UI has no "Sem workspace" section: nothing unscoped exists after normal use', () => run(async (w) => {
+  const v = w.newChat();
+  v.navigate(chatUrl(7));
+  assert.deepEqual(w.navigator.getGlobalActivity().unbound, []);
+  const m = centerModel({ global: w.navigator.getGlobalActivity() });
+  assert.equal(m.unbound, null);
+  const strip = (f) => fs.readFileSync(f, 'utf8').replace(/^\s*\/\/.*$/gm, '');
+  const center = strip('src/renderer/overlay/activity-center.js') + strip('src/shared/activity-view.js');
+  assert.doesNotMatch(center, /Sem workspace/);
+  assert.doesNotMatch(fs.readFileSync('src/shared/chat-nav-view.js', 'utf8'), /Sem workspace|Conversa não vinculada/);
+}));
+
+test('a page opened while NO workspace was selected stays reachable (listed only because it exists); opening it with a workspace selected puts it there', () => run(async (w) => {
+  w.select(null);
+  w.navigator.openUnscoped();
+  const v = w.fake.views.at(-1);
+  v.finishLoad(chatUrl(9));
+  assert.equal(w.navigator.getUnbound().length, 1);
+  assert.equal(centerModel({ global: w.navigator.getGlobalActivity() }).unbound.items.length, 1);
+  w.select('w1');
+  const r = w.navigator.openUnbound({ viewId: v.id ? w.manager.list().find((x) => x.scope === null).id : '' });
+  assert.equal(r.ok, true);
+  assert.equal(w.bound(9).workspaceIdentity.workspaceId, 'w1', 'opened by the user in A\'s context: bound to A');
+  assert.equal(w.navigator.getUnbound().length, 0);
+}));
+
+// ---- 22-25: Projects ----------------------------------------------------------------------------------------------------------------------
+function withProject(w) {
+  const store = createBindingsStore({ file: path.join(w.root, 'project-bindings.json'), model: projectModel });
+  w.projects = createProjectBindings({ store, session: w.session, bindings: w.bindings, observer: w.observer, selection: w.selection });
+  w.creation = createProjectCreation({ session: w.session, navigator: w.navigator, projects: w.projects });
+  assert.equal(w.projects.link({ target: w.target('w1'), url: PROJECT_HOME, selectedAtOpen: 'w1', targetChosen: true }).ok, true);
+  w.projectBytes = () => fs.readFileSync(path.join(w.root, 'project-bindings.json'), 'utf8');
+}
+
+test('Project: Nova conversa opens the Project page in A; a conversation created there is bound to A; the ProjectBinding is untouched', () => run(async (w) => {
+  withProject(w);
+  const before = w.projectBytes();
+  const r = w.creation.start({ workspaceKey: WK('w1') });
+  const v = w.view(r.viewId);
+  assert.deepEqual([v.loads, r.entry], [[PROJECT_HOME], 'project-page']);
+  v.finishLoad(PROJECT_HOME);
+  assert.equal(w.bindings.all().length, 2, 'opening the Project page binds nothing');
+  v.navigate(inProject(7));
+  assert.equal(w.bound(7, inProject(7)).workspaceIdentity.workspaceId, 'w1');
+  assert.equal(w.projectBytes(), before);
+  assert.equal(w.bound(7, inProject(7)).url.includes(PID), true, 'the Project route is kept in the address');
+}));
+
+test('Project: an OLD conversation opened in that page is bound to A too (a local binding is not proof of creation in the Project)', () => run(async (w) => {
+  withProject(w);
+  const r = w.creation.start({ workspaceKey: WK('w1') });
+  w.view(r.viewId).navigate(inProject(8));
+  assert.equal(w.bound(8, inProject(8)).workspaceIdentity.workspaceId, 'w1');
+  assert.equal(w.bound(8, inProject(8)).origin, 'context', 'recorded as opened in context, not as created');
+}));
+
+test('Project: a conversation bound to B is a conflict, and Project creation switched in A->B keeps the origin', () => run(async (w) => {
+  withProject(w);
+  const r = w.creation.start({ workspaceKey: WK('w1') });
+  const v = w.view(r.viewId);
+  w.select('w2');
+  v.navigate(inProject(7));
+  assert.equal(w.bound(7, inProject(7)).workspaceIdentity.workspaceId, 'w1');
+  const r2 = (w.select('w1'), w.creation.start({ workspaceKey: WK('w1') }));
+  w.view(r2.viewId).navigate(w.B[0].url);
+  assert.equal(w.navigator.getState().conflict.boundTo.id, 'w2');
+}));
+
+test('Project: a workspace without Project, or whose Project cannot be verified, uses the plain flow', () => run(async (w) => {
+  withProject(w);
+  w.select('w2');
+  const plain = w.creation.start({ workspaceKey: WK('w2') });
+  assert.equal(w.view(plain.viewId).loads[0], w.HOME);
+  w.select('w1');
+  w.setWorkspaces([ws('w1', 'other', 'D:/x'), ws('w2', 'app')]);
+  const r = w.creation.start({ workspaceKey: WK('w1') });
+  assert.equal(r.note, 'project-suspect');
+  assert.equal(w.view(r.viewId).loads[0], w.HOME);
+}));
+
+// ---- 26-28: persistence, atomicity, IPC ------------------------------------------------------------------------------------------------------
+test('persistence: an adopted binding is read back after a restart with its origin; the file stays valid', () => run(async (w) => {
+  const v = w.newChat();
+  v.navigate(chatUrl(7));
+  const again = createBindingsStore({ file: w.file });
+  assert.equal(again.info().status, 'ok');
+  const b = again.get().bindings.find((x) => x.conversationKey.endsWith(chatUrl(7).slice(-36)));
+  assert.deepEqual([b.workspaceIdentity.workspaceId, b.origin, b.label], ['w1', 'context', '']);
+}));
+
+test('a failed write leaves memory and disk unchanged and the page pending', () => run(async (w) => {
+  const v = w.newChat();
+  const real = fs.writeFileSync;
+  const before = w.fileBytes();
+  fs.writeFileSync = () => { throw new Error('disk full'); };
+  try { v.navigate(chatUrl(7)); } finally { fs.writeFileSync = real; }
+  assert.equal(w.fileBytes(), before);
+  assert.equal(w.bound(7), null);
+  assert.equal(w.adoption.noteOf(v.id) !== '', true);
+  assert.equal(w.adoption.retry({ viewId: v.id }).ok, true, 'retry succeeds once writes work');
+}));
+
+test('adopt is not reachable from IPC: chatnav:resolve takes a page id and one of four actions, nothing else', async () => {
+  const handlers = new Map(); const calls = [];
+  registerChatNavIpc({ ipcMain: { handle: (c, fn) => handlers.set(c, fn) }, trusted: (e) => e.ui === true, win: { getNavigator: () => ({}) }, resolve: (a) => { calls.push(a); return { ok: true }; } });
+  const call = (args, e = { ui: true }) => handlers.get('chatnav:resolve')(e, args);
+  assert.equal((await call({ viewId: 'v3', action: 'retry', targetChosen: true, workspaceId: 'w9', url: 'https://evil.example' })).ok, true);
+  assert.deepEqual(calls, [{ viewId: 'v3', action: 'retry' }], 'only the two picked fields reach main');
+  for (const bad of [{ viewId: 'v3', action: 'adopt' }, { viewId: 'x', action: 'retry' }, { action: 'retry' }, { viewId: 'v3' }, null, 'x']) assert.equal((await call(bad)).error.code, 'invalid_request', JSON.stringify(bad));
+  assert.equal((await call({ viewId: 'v3', action: 'retry' }, { ui: false })).error.code, 'untrusted');
+  assert.equal(calls.length, 1);
+  const adoption = fs.readFileSync('src/main/chat-bindings/context-adoption.js', 'utf8');
+  assert.doesNotMatch(fs.readFileSync('src/main/ipc/chats.js', 'utf8') + fs.readFileSync('src/main/ipc/chatnav.js', 'utf8'), /\.adopt\(/);
+  assert.match(adoption, /bindings\.adopt\(/);
+});
+
+// ---- 29: banner model and keyboard ------------------------------------------------------------------------------------------------------------------
+test('banner model: transfer needs its own second click, pending offers one direct action, no banner otherwise', () => {
+  const base = { workspace: { key: WK('w1'), id: 'w1', label: 'api', pending: false }, tabs: [], temporaries: [], empty: null, duplicates: 0, activeViewId: 'v1' };
+  const conflict = { viewId: 'v1', boundTo: { id: 'w2', label: 'app', openable: true }, current: { id: 'w1', label: 'api' }, transferable: true };
+  assert.equal(barModel({ ...base }).banner, null);
+  const armed = barModel({ ...base, conflict }, null, true).banner.actions.find((a) => a.action === 'transfer');
+  assert.deepEqual([armed.armed, armed.label], [true, 'Confirmar transferência']);
+  assert.equal(barModel({ ...base, conflict }).banner.actions.find((a) => a.action === 'transfer').label, 'Transferir vínculo…');
+  assert.deepEqual(barModel({ ...base, pending: { kind: 'pending', code: 'x', text: 'Conversa ainda nao vinculada: x' } }).banner.actions.map((a) => a.action), ['retry', 'skip']);
+});
+
+// ---- unbinding the conversation that is open --------------------------------------------------------------------------------------------------
+// What main does on chats:unbind (index.js): decline the key, then release the pages that show it.
+const unbindOpen = (w, binding) => {
+  w.bindings.unbind({ bindingId: binding.bindingId });
+  w.adoption.decline(binding.conversationKey);
+  return w.navigator.releaseConversation(binding.conversationKey);
+};
+
+test('unbinding the open conversation removes its tab and leaves the workspace; the page is kept, not destroyed or rebound', () => run(async (w) => {
+  const r = w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') });
+  const v = w.view(r.viewId);
+  v.finishLoad(w.A[0].url);
+  Object.assign(v.contents.signals, { draft: true });
+  assert.equal(unbindOpen(w, w.A[0]), 1);
+  v.navigate(w.A[0].url);
+  w.adoption.resolve();
+  const s = w.navigator.getState();
+  assert.deepEqual([s.tabs.length, s.temporaries.length], [0, 0], 'no tab, no chip in the workspace');
+  assert.equal(w.bound(1, w.A[0].url), null, 'not bound again');
+  assert.equal(w.manager.get(v.id).scope, null);
+  assert.equal(w.manager.get(v.id).page !== 'destroyed', true);
+  assert.equal(w.fake.log.some((l) => l[0] === 'destroy'), false);
+  assert.equal(v.loads.length, 1);
+  assert.equal(w.manager.getAttachedId(), null, 'the page is no longer on screen under this workspace');
+  assert.equal(s.empty, 'no-conversations');
+  assert.deepEqual(w.navigator.getUnbound().map((u) => u.viewId), [v.id], 'still reachable (exceptional list)');
+}));
+
+test('after unbinding, the workspace shows its other conversations again', () => run(async (w) => {
+  w.bindings.bind({ target: w.target('w1'), url: chatUrl(2), origin: 'url', selectedAtOpen: 'w1', targetChosen: true });
+  const other = w.bindings.lookup(chatUrl(2));
+  w.navigator.selectBinding({ bindingId: other.bindingId, workspaceKey: WK('w1') });
+  const r = w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') });
+  w.view(r.viewId).finishLoad(w.A[0].url);
+  unbindOpen(w, w.A[0]);
+  assert.deepEqual(w.navigator.getState().tabs.map((t) => t.bindingId), [other.bindingId]);
+}));
+
+test('opening the released page again in a workspace is the user\'s act: it is bound again', () => run(async (w) => {
+  const r = w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') });
+  const v = w.view(r.viewId);
+  v.finishLoad(w.A[0].url);
+  unbindOpen(w, w.A[0]);
+  assert.equal(w.bound(1, w.A[0].url), null);
+  assert.equal(w.navigator.openUnbound({ viewId: v.id }).ok, true);
+  assert.equal(w.bound(1, w.A[0].url).workspaceIdentity.workspaceId, 'w1');
+  assert.equal(w.manager.get(v.id).scope, WK('w1'));
+}));
+
+test('chats:unbind tells main which conversation was unbound, only on success', () => {
+  const { registerChatsIpc } = require('../src/main/ipc/chats');
+  const handlers = new Map(); const told = [];
+  const bindings = { all: () => [{ bindingId: 'b_0000000000000001', conversationKey: 'c:abc' }], unbind: ({ bindingId }) => (bindingId === 'b_0000000000000001' ? { ok: true } : { ok: false, error: { code: 'binding_not_found' } }), getState: () => ({}) };
+  registerChatsIpc({ ipcMain: { handle: (c, fn) => handlers.set(c, fn) }, trusted: () => true, win: { getChatUrl: () => '' }, bindings, notify: () => {}, onUnbind: (k) => told.push(k) });
+  handlers.get('chats:unbind')({}, { bindingId: 'b_ffffffffffffffff' });
+  assert.deepEqual(told, []);
+  handlers.get('chats:unbind')({}, { bindingId: 'b_0000000000000001' });
+  assert.deepEqual(told, ['c:abc']);
+});
+
+// ---- transfer never leaves a duplicate tab -------------------------------------------------------------------------------------------------
+const tabsOf = (w, key) => w.navigator.getState().tabs.filter((t) => t.loaded && t.bindingId && w.bindings.all().find((b) => b.bindingId === t.bindingId && b.conversationKey === key));
+const showing = (w, key) => w.manager.list().filter((v) => v.identity.state === 'durable' && v.identity.key === key);
+
+test('transfer when the conversation already has a page in its old workspace: one tab, the old page, the clicked page goes back', () => run(async (w) => {
+  w.select('w2');
+  const own = w.view(w.navigator.selectBinding({ bindingId: w.B[0].bindingId, workspaceKey: WK('w2') }).viewId);
+  own.finishLoad(w.B[0].url);
+  w.select('w1');
+  const r = w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') });
+  const page = w.view(r.viewId);
+  page.finishLoad(w.A[0].url);
+  page.navigate(w.B[0].url);                                        // opened B's conversation in w1's page
+  assert.equal(showing(w, w.B[0].conversationKey).length, 2);
+  const t = await w.adoption.transfer({ viewId: page.id });
+  assert.equal(t.ok, true, JSON.stringify(t));
+  assert.equal(w.bound(4, w.B[0].url).workspaceIdentity.workspaceId, 'w1');
+  assert.equal(showing(w, w.B[0].conversationKey).length, 1, 'ONE page shows the conversation');
+  assert.equal(w.manager.get(own.id).scope, WK('w1'), 'the page it already had is the tab now');
+  assert.equal(tabsOf(w, w.B[0].conversationKey).length, 1);
+  assert.equal(w.navigator.getState().temporaries.length, 0, 'no duplicate chip');
+  assert.equal(w.manager.get(page.id).identity.key, w.A[0].conversationKey, 'the clicked page is back on its conversation');
+  assert.equal(w.manager.duplicates().length, 0);
+}));
+
+test('transfer when the conversation has no other page: the clicked page simply becomes its tab', () => run(async (w) => {
+  const v = w.newChat();
+  v.navigate(w.B[0].url);
+  assert.equal((await w.adoption.transfer({ viewId: v.id })).ok, true);
+  assert.equal(showing(w, w.B[0].conversationKey).length, 1);
+  assert.equal(tabsOf(w, w.B[0].conversationKey).length, 1);
+  assert.equal(w.manager.get(v.id).expectedKey, w.B[0].conversationKey);
+  assert.equal(w.fake.views.length, 1);
+}));
+
+test('transfer with another page but no history to go back to: the clicked page stays the tab, the other leaves the workspace (kept, not destroyed)', () => run(async (w) => {
+  w.select('w2');
+  const own = w.view(w.navigator.selectBinding({ bindingId: w.B[0].bindingId, workspaceKey: WK('w2') }).viewId);
+  own.finishLoad(w.B[0].url);
+  w.select('w1');
+  const v = w.newChat();
+  v.navigate(w.B[0].url);                                           // a fresh page: no history behind it
+  assert.equal(w.manager.get(v.id).identity.key, w.B[0].conversationKey);
+  assert.equal((await w.adoption.transfer({ viewId: v.id })).ok, true);
+  assert.equal(showing(w, w.B[0].conversationKey).length, 2, 'both pages still exist');
+  assert.equal(w.manager.get(own.id).scope, null, 'the old one is no longer a tab anywhere');
+  assert.equal(w.manager.get(v.id).scope, WK('w1'));
+  assert.equal(tabsOf(w, w.B[0].conversationKey).length, 1);
+  assert.equal(w.fake.log.some((l) => l[0] === 'destroy'), false);
+}));
+
+// ---- never two pages for one conversation ---------------------------------------------------------------------------------------------------
+test('opening, inside a conversation\'s page, another conversation of the SAME workspace that already has its tab: go to that tab, the page goes back', () => run(async (w) => {
+  const [, c2] = bindMany(w, [2]).length ? [null, w.bindings.lookup(chatUrl(2))] : [];
+  const v1 = w.view(w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') }).viewId);
+  v1.finishLoad(w.A[0].url);
+  const v2 = w.view(w.navigator.selectBinding({ bindingId: c2.bindingId, workspaceKey: WK('w1') }).viewId);
+  v2.finishLoad(c2.url);
+  w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') });      // v1 on screen
+  const before = w.fileBytes();
+  v1.navigate(c2.url);                                              // the user clicked conversation 2 in ChatGPT's sidebar
+  assert.equal(w.manager.getVisibleId(), v2.id, 'its existing tab is shown');
+  assert.equal(w.manager.get(v1.id).identity.key, w.A[0].conversationKey, 'the page went back to its own conversation');
+  assert.equal(showing(w, c2.conversationKey).length, 1, 'no second page for it');
+  assert.equal(w.manager.duplicates().length, 0);
+  assert.equal(w.fileBytes(), before, 'no binding written');
+  assert.equal(w.navigator.getState().temporaries.length, 0);
+  assert.equal(w.fake.views.length, 2);
+}));
+
+test('a new conversation page that is pointed at an already-open conversation of the workspace: that tab is shown, no duplicate', () => run(async (w) => {
+  const v1 = w.view(w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') }).viewId);
+  v1.finishLoad(w.A[0].url);
+  const fresh = w.newChat();
+  fresh.finishLoad(w.HOME);
+  fresh.navigate(w.A[0].url);
+  assert.equal(w.manager.getVisibleId(), v1.id);
+  assert.equal(showing(w, w.A[0].conversationKey).length, 1);
+  assert.equal(w.manager.duplicates().length, 0);
+  assert.equal(w.bindings.all().length, 2);
+}));
+
+test('a page with nothing to go back to leaves the workspace instead of becoming a second tab', () => run(async (w) => {
+  const v1 = w.view(w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') }).viewId);
+  v1.finishLoad(w.A[0].url);
+  const fresh = w.newChat();
+  fresh.navigate(w.A[0].url);                                       // no history behind it
+  assert.equal(w.manager.getVisibleId(), v1.id);
+  assert.equal(w.manager.get(fresh.id).scope, null);
+  assert.equal(w.manager.get(fresh.id).page !== 'destroyed', true);
+  assert.equal(w.navigator.getState().tabs.filter((t) => t.loaded).length, 1);
+}));
+
+test('a conversation of the workspace that has NO page yet is simply shown by the page it was opened in (that page becomes its tab)', () => run(async (w) => {
+  const c2 = (bindMany(w, [2]), w.bindings.lookup(chatUrl(2)));
+  const v1 = w.view(w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') }).viewId);
+  v1.finishLoad(w.A[0].url);
+  v1.navigate(c2.url);
+  assert.equal(w.manager.get(v1.id).expectedKey, c2.conversationKey);
+  assert.equal(showing(w, c2.conversationKey).length, 1);
+  assert.equal(w.fake.views.length, 1);
+}));
+
+test('a hidden page changing route onto an open conversation is left alone (passive)', () => run(async (w) => {
+  const c2 = (bindMany(w, [2]), w.bindings.lookup(chatUrl(2)));
+  const v1 = w.view(w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') }).viewId);
+  v1.finishLoad(w.A[0].url);
+  const v2 = w.view(w.navigator.selectBinding({ bindingId: c2.bindingId, workspaceKey: WK('w1') }).viewId);
+  v2.finishLoad(c2.url);
+  w.navigator.setMode('terminal');
+  v1.navigate(c2.url);
+  assert.equal(w.manager.get(v1.id).identity.key, c2.conversationKey, 'untouched while nobody looks');
+}));
+
+test('transfer from a NEW conversation page (even in an empty workspace) leaves exactly one tab: no blank "Nova conversa" behind', () => run(async (w) => {
+  w.bindings.unbind({ bindingId: w.A[0].bindingId });                // w1 has no conversations at all
+  w.select('w2');
+  const own = w.view(w.navigator.selectBinding({ bindingId: w.B[0].bindingId, workspaceKey: WK('w2') }).viewId);
+  own.finishLoad(w.B[0].url);
+  w.select('w1');
+  const fresh = w.newChat();
+  fresh.finishLoad(w.HOME);                                          // the page really loaded: it has history
+  fresh.navigate(w.B[0].url);                                        // and the user opened w2's conversation in it
+  assert.equal(w.navigator.getState().tabs.length, 0);
+  assert.equal((await w.adoption.transfer({ viewId: fresh.id })).ok, true);
+  const s = w.navigator.getState();
+  assert.equal(s.tabs.length, 1, 'one tab: the conversation');
+  assert.equal(s.temporaries.length, 0, 'and no blank new-conversation tab');
+  assert.equal(s.tabs[0].active, true);
+  assert.equal(w.manager.get(fresh.id).expectedKey, w.B[0].conversationKey);
+  assert.equal(showing(w, w.B[0].conversationKey).length, 2, 'the old page is kept, outside any workspace');
+  assert.equal(w.manager.get(own.id).scope, null);
+  assert.equal(w.navigator.getUnbound().length, 1);
+}));
+
+// ---- Projects: offer to link the Project of the page, confirmation for chats outside the linked Project ------------------------------------------------------
+function withProjectAdoption(w, { link = false } = {}) {
+  const store = createBindingsStore({ file: path.join(w.root, 'project-bindings.json'), model: projectModel });
+  w.projects = createProjectBindings({ store, session: w.session, bindings: w.bindings, observer: w.observer, selection: w.selection });
+  w.adoption = createContextAdoption({ session: w.session, navigator: w.navigator, bindings: w.bindings, selection: w.selection, projects: w.projects });
+  w.navigator.setNoteProvider((id) => w.adoption.noteOf(id));
+  w.creation = createProjectCreation({ session: w.session, navigator: w.navigator, projects: w.projects });
+  if (link) assert.equal(w.projects.link({ target: w.target('w1'), url: PROJECT_HOME, selectedAtOpen: 'w1', targetChosen: true }).ok, true);
+}
+
+test('a suspect Project workspace blocks automatic workspace-first association until identity records are reconfirmed', () => run(async (w) => {
+  withProjectAdoption(w, { link: true });
+  w.setWorkspaces([ws('w1', 'api-recreated', 'D:\\new-root'), ws('w2', 'app')]);
+  const v = w.newChat();
+  v.finishLoad(w.HOME);
+  v.navigate(inProject(9));
+  assert.equal(w.projects.forWorkspace(w.target('w1')).status, 'suspect');
+  assert.equal(w.bindings.all().some((b) => b.conversationKey === `c:${chatUrl(9).slice(-36)}`), false);
+  assert.equal(w.navigator.getState().pending.code, 'workspace_suspect');
+  const reconfirmed = w.projects.link({ target: w.target('w1'), url: PROJECT_HOME, selectedAtOpen: 'w1', targetChosen: true, replace: true });
+  assert.equal(reconfirmed.ok, true);
+  const chatRecord = w.bindings.reassign({ bindingId: w.A[0].bindingId, target: w.target('w1'), selectedAtOpen: 'w1', confirmReassign: true });
+  assert.equal(chatRecord.ok, true);
+  w.adoption.resolve();
+  assert.ok(w.bindings.all().some((b) => b.conversationKey === `c:${chatUrl(9).slice(-36)}`));
+}));
+const OTHER = 'g-p-ffffffffffffffffffffffffffffffff';
+
+test('a Project page on screen in a workspace without a Project: the app asks whether to link it (nothing is read from the page)', () => run(async (w) => {
+  withProjectAdoption(w);
+  const v = w.newChat();
+  v.finishLoad(PROJECT_HOME);
+  const p = w.navigator.getState().pending;
+  assert.deepEqual([p.kind, p.code], ['offer', 'project_offer']);
+  assert.match(p.text, /Você está no Project "Project 6ac650"\. Vincular este Project ao workspace api \(w1\)\?/);
+  assert.deepEqual(barModel(w.navigator.getState()).banner.actions.map((a) => a.action), ['link-project', 'skip']);
+  assert.equal(w.projects.all().length, 0, 'asking links nothing');
+  const r = w.adoption.linkProject({ viewId: v.id });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(w.projects.forWorkspace(w.target('w1')).projectId, 'g-p-6ac6503eb7e881919958af060b1297a5');
+  assert.equal(w.navigator.getState().pending, null, 'answered');
+}));
+
+test('the Project label is never "sem nome": the slug when the address has one, else a short form of the id; a typed name wins and is kept', () => run(async (w) => {
+  withProjectAdoption(w);
+  const link = (url, extra = {}) => w.projects.link({ target: w.target('w1'), url, selectedAtOpen: 'w1', targetChosen: true, ...extra });
+  assert.equal(link(PROJECT_HOME).record.label, 'Project 6ac650');
+  assert.equal(link(inProject(7), { label: '' }).record.label, 'system framework');
+  assert.equal(link(PROJECT_HOME, { label: 'Bicho' }).record.label, 'Bicho');
+  assert.equal(link(PROJECT_HOME).record.label, 'Bicho', 're-linking without a name keeps it');
+}));
+
+test('"Agora não" dismisses the offer for that Project (this session); no offer when the workspace has a Project', () => run(async (w) => {
+  withProjectAdoption(w);
+  const v = w.newChat();
+  v.finishLoad(PROJECT_HOME);
+  assert.equal(w.adoption.skip({ viewId: v.id }).ok, true);
+  assert.equal(w.navigator.getState().pending, null);
+  v.navigate(`https://chatgpt.com/g/${OTHER}/project`);
+  assert.equal(w.navigator.getState().pending.kind, 'offer', 'another Project is a new question');
+  v.navigate(PROJECT_HOME);
+  assert.equal(w.navigator.getState().pending, null, 'the dismissed one stays quiet');
+  assert.equal(w.projects.link({ target: w.target('w1'), url: PROJECT_HOME, selectedAtOpen: 'w1', targetChosen: true }).ok, true);
+  v.navigate(`https://chatgpt.com/g/${OTHER}/project`);
+  assert.equal(w.navigator.getState().pending, null, 'a workspace that has a Project is not offered another one');
+}));
+
+test('no offer for a Project that belongs to another workspace', () => run(async (w) => {
+  withProjectAdoption(w);
+  w.select('w2');
+  assert.equal(w.projects.link({ target: w.target('w2'), url: PROJECT_HOME, selectedAtOpen: 'w2', targetChosen: true }).ok, true);
+  w.select('w1');
+  const v = w.newChat();
+  v.finishLoad(PROJECT_HOME);
+  assert.equal(w.navigator.getState().pending, null);
+}));
+
+test('workspace with a Project: a chat OUTSIDE it (general, or another Project) asks for confirmation before binding; inside it nothing is asked', () => run(async (w) => {
+  withProjectAdoption(w, { link: true });
+  const general = w.newChat();
+  general.navigate(chatUrl(7));
+  assert.equal(w.bound(7), null, 'not bound yet');
+  const p = w.navigator.getState().pending;
+  assert.deepEqual([p.kind, p.code], ['confirm', 'outside_project']);
+  assert.match(p.text, /vinculado ao Project "Project 6ac650", mas esta conversa está fora dele\. Vincular a conversa a este workspace mesmo assim\?/);
+  assert.deepEqual(barModel(w.navigator.getState()).banner.actions.map((a) => a.label), ['Vincular', 'Voltar']);
+  assert.equal(w.adoption.retry({ viewId: general.id }).ok, true, 'confirmed');
+  assert.equal(w.bound(7).workspaceIdentity.workspaceId, 'w1');
+  const other = w.newChat();
+  other.navigate(`https://chatgpt.com/g/${OTHER}-x/c/${chatUrl(8).slice(-36)}`);
+  assert.match(w.navigator.getState().pending.text, /\(em outro Project\)/);
+  assert.equal(w.bindings.all().length, 3, 'still only the earlier bindings plus the confirmed one');
+  const inside = w.newChat();
+  inside.navigate(inProject(9));
+  assert.equal(w.bound(9, inProject(9)).workspaceIdentity.workspaceId, 'w1', 'inside the linked Project: bound without asking');
+}));
+
+test('outside the linked Project the choices are Vincular or Voltar - never a loose chat: Voltar returns the page to where it came from', () => run(async (w) => {
+  withProjectAdoption(w, { link: true });
+  const r = w.creation.start({ workspaceKey: WK('w1') });
+  const v = w.view(r.viewId);
+  v.finishLoad(PROJECT_HOME);                                       // the Project page is where the new conversation started
+  v.navigate(chatUrl(7));                                           // and the user went to a general chat
+  assert.deepEqual(barModel(w.navigator.getState()).banner.actions.map((a) => a.action), ['retry', 'back']);
+  const out = w.adoption.back({ viewId: v.id });
+  assert.equal(out.ok, true);
+  assert.equal(out.how, 'history');
+  assert.equal(w.bound(7), null, 'not bound');
+  assert.equal(w.manager.get(v.id).scope, WK('w1'), 'the page stays in the workspace, back on the Project page');
+  assert.equal(w.manager.get(v.id).identity.state, 'pending');
+  assert.equal(w.navigator.getUnbound().length, 0, 'no loose chat anywhere');
+  assert.equal(w.navigator.getState().pending, null);
+}));
+
+test('Voltar on a chat outside the Project with no history: the last active page comes back and the page leaves the workspace (kept, not destroyed)', () => run(async (w) => {
+  withProjectAdoption(w, { link: true });
+  const v1 = w.view(w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') }).viewId);
+  v1.finishLoad(w.A[0].url);
+  const fresh = w.newChat();
+  fresh.navigate(chatUrl(7));                                       // no history behind it
+  const out = w.adoption.back({ viewId: fresh.id });
+  assert.equal(out.how, 'released');
+  assert.equal(w.manager.getVisibleId(), v1.id);
+  assert.equal(w.bound(7), null);
+  assert.equal(w.fake.log.some((l) => l[0] === 'destroy'), false);
+}));
+
+
+test('a workspace without a Project never asks the outside-Project question', () => run(async (w) => {
+  withProjectAdoption(w);
+  const v = w.newChat();
+  v.navigate(chatUrl(7));
+  assert.equal(w.bound(7).workspaceIdentity.workspaceId, 'w1');
+}));
+
+// ---- answering a question must always emit the new state (a modal is closed by state, never left open) -------------------------------------------------
+test('"Agora não" / "Vincular Project" / "Deixar sem vínculo" each emit the new state, and a repeated answer is harmless', () => run(async (w) => {
+  withProjectAdoption(w);
+  const states = [];
+  w.navigator.onChange((s) => states.push(s));
+  const v = w.newChat();
+  v.finishLoad(PROJECT_HOME);
+  assert.equal(states.at(-1).pending.kind, 'offer');
+  assert.equal(w.adoption.skip({ viewId: v.id }).ok, true);
+  assert.equal(states.at(-1).pending, null, 'the state that closes the modal was emitted');
+  assert.equal(w.adoption.skip({ viewId: v.id }).ok, true, 'a second answer (Esc after the button) is not an error');
+  v.navigate(`https://chatgpt.com/g/${OTHER}/project`);
+  assert.equal(states.at(-1).pending.kind, 'offer');
+  assert.equal(w.adoption.linkProject({ viewId: v.id }).ok, true);
+  assert.equal(states.at(-1).pending, null);
+  const again = w.adoption.linkProject({ viewId: v.id });
+  assert.equal(again.ok, false, 'nothing left to link');
+  assert.equal(states.at(-1).pending, null, 'and the state is re-emitted so a stale modal closes');
+}));
+
+// ---- a page with an unsent draft is never navigated away by the app --------------------------------------------------------------------------------------
+test('Voltar on a conflict: a page with a draft is kept as it is (moved to its conversation\'s workspace), not sent back in history', () => run(async (w) => {
+  const first = w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') });
+  const v = w.view(first.viewId);
+  v.finishLoad(w.A[0].url);
+  v.navigate(w.B[0].url);
+  Object.assign(v.contents.signals, { draft: true });
+  await w.clock.advance(7000);
+  assert.equal(w.navigator.isBusy(v.id), true);
+  const r = w.adoption.back({ viewId: v.id });
+  assert.equal(r.ok, true);
+  assert.notEqual(r.how, 'history');
+  assert.equal(w.manager.get(v.id).identity.key, w.B[0].conversationKey, 'the page still shows what the user was writing in');
+  assert.equal(w.manager.get(v.id).scope, WK('w2'));
+  assert.equal(v.loads.length, 1);
+}));
+
+test('an already-open conversation reached from a page with a draft: the page is kept (leaves the workspace), the existing tab is shown', () => run(async (w) => {
+  const c2 = (bindMany(w, [2]), w.bindings.lookup(chatUrl(2)));
+  const v1 = w.view(w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') }).viewId);
+  v1.finishLoad(w.A[0].url);
+  const v2 = w.view(w.navigator.selectBinding({ bindingId: c2.bindingId, workspaceKey: WK('w1') }).viewId);
+  v2.finishLoad(c2.url);
+  w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') });
+  Object.assign(v1.contents.signals, { draft: true });
+  await w.clock.advance(7000);
+  v1.navigate(c2.url);
+  await w.clock.advance(7000);
+  assert.equal(w.manager.getVisibleId(), v2.id);
+  assert.equal(w.manager.get(v1.id).scope, null, 'kept outside any workspace, with its draft');
+  assert.equal(w.manager.get(v1.id).identity.key, c2.conversationKey, 'not navigated');
+  assert.equal(w.fake.log.some((l) => l[0] === 'destroy'), false);
+}));
+
+test('transfer from a page with a draft keeps that page as the tab and releases the other one', () => run(async (w) => {
+  w.select('w2');
+  const own = w.view(w.navigator.selectBinding({ bindingId: w.B[0].bindingId, workspaceKey: WK('w2') }).viewId);
+  own.finishLoad(w.B[0].url);
+  w.select('w1');
+  const page = w.view(w.navigator.selectBinding({ bindingId: w.A[0].bindingId, workspaceKey: WK('w1') }).viewId);
+  page.finishLoad(w.A[0].url);
+  page.navigate(w.B[0].url);
+  Object.assign(page.contents.signals, { draft: true });
+  await w.clock.advance(7000);
+  assert.equal((await w.adoption.transfer({ viewId: page.id })).ok, true);
+  assert.equal(w.manager.get(page.id).identity.key, w.B[0].conversationKey, 'the draft page was not navigated');
+  assert.equal(w.manager.get(page.id).expectedKey, w.B[0].conversationKey);
+  assert.equal(w.manager.get(own.id).scope, null);
+}));
+
+// ---- identity of the destination: nothing is bound when it is not proven ------------------------------------------------------------------------------------
+test('an orphan destination (workspace gone) never receives an automatic association; the page waits in its workspace', () => run(async (w) => {
+  const v = w.newChat();
+  v.finishLoad(w.HOME);
+  w.setWorkspaces([ws('w2', 'app')]);                                // w1 is gone
+  v.navigate(chatUrl(7));
+  assert.equal(w.bound(7), null);
+  assert.match(w.navigator.getState().pending ? w.navigator.getState().pending.text : '', /nao existe mais/);
+}));
+
+test('a reused workspace id (recreated session) is suspect: no automatic association; re-confirming it lets the pending one complete', () => run(async (w) => {
+  const v = w.newChat();
+  v.finishLoad(w.HOME);
+  w.setWorkspaces([ws('w1', 'other', 'D:/other'), ws('w2', 'app')]);
+  v.navigate(chatUrl(7));
+  assert.equal(w.bound(7), null);
+  w.bindings.reassign({ bindingId: w.A[0].bindingId, target: w.target('w1'), selectedAtOpen: 'w1', confirmReassign: true });
+  w.adoption.resolve();
+  assert.equal(w.bound(7).workspaceIdentity.workspaceId, 'w1');
+}));
+
+test('adoption never moves a binding that was reassigned meanwhile: it reports a conflict', () => run(async (w) => {
+  const v = w.newChat();
+  v.finishLoad(w.HOME);
+  w.bindings.bind({ target: w.target('w2'), url: chatUrl(7), origin: 'url', selectedAtOpen: 'w1', targetChosen: true });   // someone bound it elsewhere first
+  v.navigate(chatUrl(7));
+  assert.equal(w.bound(7).workspaceIdentity.workspaceId, 'w2');
+  assert.equal(w.navigator.getState().conflict.boundTo.id, 'w2');
+}));

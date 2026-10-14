@@ -1,0 +1,71 @@
+/* Application frame: top bar, content area, footer. Responsive rules live next to what they adapt. */
+#app { display: flex; flex-direction: column; height: 100%; }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  height: var(--topbar-h);
+  min-height: var(--topbar-h);
+  padding: 0 var(--space-6);
+  background: var(--bg-bar);
+  border-bottom: 1px solid var(--border);
+}
+
+.content {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-terminal);
+}
+#terminal-root { width: 100%; height: 100%; padding: 7px 6px 4px; }
+#terminal-root .xterm { height: 100%; }
+
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 7px var(--space-5) 5px;
+  background: var(--bg-bar);
+  border-top: 1px solid var(--border);
+}
+.footer-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-4); }
+
+/* Conversation strip (chat tab): fixed height so switching or loading never shifts the layout. */
+.chatbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: var(--chatbar-h);
+  min-height: var(--chatbar-h);
+  padding: 0 var(--space-6);
+  background: var(--bg-bar);
+  border-bottom: 1px solid var(--border);
+}
+.chatbar .btn { height: var(--control-h-sm); }
+.chatbar-ws { flex: none; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); font-weight: 600; }
+.chatbar-tabs { display: flex; flex: 1; align-items: center; gap: var(--space-2); min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.chatbar-none { font-size: var(--text-xs); color: var(--text-muted); }
+
+/* In the chat tab the terminal stays laid out (no resize) but hidden; the empty state sits where the chat view would be. */
+#app[data-mode="chat"] #terminal-root { visibility: hidden; }
+.chat-empty { position: absolute; inset: 0; z-index: var(--z-panel); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-4); padding: var(--space-6); text-align: center; background: var(--bg-app); }
+.chat-empty[hidden] { display: none; }
+
+/* Mode-dependent controls */
+#app[data-mode="terminal"] .chat-only { display: none; }
+#app[data-mode="chat"] .terminal-only { display: none; }
+
+@media (max-width: 1500px) { .topbar .unlinked { max-width: 180px; overflow: hidden; text-overflow: ellipsis; } }
+@media (max-width: 1000px) {
+  .topbar .act-label { display: none; }
+  .topbar .activity-ind { min-width: 52px; padding: 0 var(--space-3); }
+  .topbar { gap: var(--space-4); padding: 0 var(--space-4); }
+  .topbar .brand, .topbar .ws-label { display: none; }
+}
+/* Very narrow effective widths (small window at high DPI zoom): actions scroll instead of overflowing the bar. */
+@media (max-width: 700px) {
+  .topbar .view-actions { min-width: 0; flex: 1; overflow-x: auto; scrollbar-width: none; }
+  .topbar .view-actions .actions { flex-wrap: nowrap; white-space: nowrap; }
+}

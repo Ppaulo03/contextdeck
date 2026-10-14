@@ -1,0 +1,270 @@
+/* Reusable components. Built only from tokens; state is expressed with aria-* attributes or .is-* classes. */
+
+/* ---- Buttons -------------------------------------------------------------------------------- */
+.btn {
+  height: var(--control-h);
+  padding: 0 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--text);
+  background: var(--bg-button);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+.btn:hover:not(:disabled) { background: var(--bg-button-hover); }
+.btn:disabled { opacity: var(--opacity-disabled); cursor: default; }
+.btn-icon { padding: 0 9px; }
+.btn-danger.is-armed { background: var(--danger-bg); border-color: var(--danger-border-strong); }
+.actions { display: flex; gap: var(--space-3); }
+
+/* ---- Form controls (selects, inputs): one look ---------------------------------------------- */
+.control {
+  height: var(--control-h-sm);
+  padding: 0 7px;
+  font: var(--text-sm)/1.2 var(--font-mono);
+  color: var(--text);
+  background: var(--bg-control);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+.control:hover:not(:disabled) { border-color: var(--border-hover); }
+.control:disabled { opacity: var(--opacity-disabled); cursor: default; }
+.control.is-invalid { border-color: var(--danger-border-strong); color: var(--danger-soft); }
+.field { display: flex; align-items: center; gap: var(--space-3); color: var(--text-muted); font-size: var(--text-xs); }
+.resolved { font: var(--text-xs) var(--font-mono); color: var(--text-muted); white-space: nowrap; }
+
+/* ---- Every list that opens looks the same ----------------------------------------------------------------
+   The workspace menu, the Git pickers and the dropdowns inside the overlay panels share one container (surface, border,
+   radius, shadow, padding) and one set of rows (.menu / .menu-item below). Only placement and height differ. */
+.menu-panel, .picker-panel, .dd-popup {
+  padding: var(--space-3);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-popover);
+}
+.dd { position: relative; display: block; flex: 1; min-width: 120px; }
+.dd .dd-trigger { width: 100%; }
+/* Placed by dropdown.js from the trigger's rectangle (fixed: it floats above its panel, never inside its scroll area). */
+.dd-popup { position: fixed; z-index: var(--z-menu); max-width: 360px; }
+.dd-popup[hidden] { display: none; }
+.dd-popup .menu { max-height: 220px; outline: none; }
+
+/* Select-like trigger. Its width is fixed per breakpoint so label changes never move the top bar. */
+.select {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 200px;
+  max-width: 100%;
+  padding-right: 24px;
+  text-align: left;
+  cursor: pointer;
+}
+.select-text { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.select-text.is-placeholder { color: var(--text-muted); }
+.select-caret {
+  position: absolute;
+  right: 7px;
+  width: 12px;
+  height: 12px;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}
+.select-caret::before { content: "\25BE"; }
+/* Pending operation: the caret becomes the application spinner (see "Spinner" below); the label keeps the last known workspace. */
+.select[aria-busy="true"] .select-caret::before { content: ""; width: 10px; height: 10px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- Top bar pieces -------------------------------------------------------------------------- */
+.brand { font-size: var(--text-md); font-weight: 700; white-space: nowrap; }
+/* Segmented view switch: one fixed-size group, the selected segment is a quiet filled pill. */
+.segmented { display: inline-flex; flex: none; gap: var(--space-1); padding: var(--space-1); background: var(--bg-control); border: 1px solid var(--border-strong); border-radius: var(--radius-md); }
+.segment {
+  height: calc(var(--control-h-sm) - 2 * var(--space-1) - 2px);
+  min-width: 78px;
+  padding: 0 var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  transition: background var(--duration-fast), color var(--duration-fast);
+}
+.segment:hover { color: var(--text); background: var(--bg-hover); }
+.segment[aria-selected="true"] { color: var(--text-on-accent); background: var(--accent-bg); }
+.segment:focus-visible { outline-offset: -2px; }
+.ws { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.ws-label { color: var(--text-muted); font-size: var(--text-xs); }
+.toggle {
+  height: var(--control-h-sm);
+  padding: 0 var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+.toggle[aria-pressed="true"] { color: var(--success); border-color: var(--success-border); }
+.toggle:disabled { opacity: var(--opacity-disabled); cursor: default; }
+.view-actions { display: flex; }
+.unlinked { margin-left: auto; padding: var(--space-2) 7px; font: inherit; font-size: var(--text-2xs); color: var(--warning-soft); white-space: nowrap; background: transparent; cursor: pointer; border: 1px solid var(--warning-border); border-radius: var(--radius-sm); }
+.unlinked:hover, .unlinked[aria-expanded="true"] { background: var(--bg-hover); }
+.unlinked.is-success { color: var(--success); border-color: var(--success-border); }
+.unlinked.is-neutral { color: var(--text-muted); border-color: var(--border-strong); }
+
+/* ---- Conversation strip tabs ---------------------------------------------------------------- */
+.chat-tab {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 220px;
+  height: var(--control-h-sm);
+  padding: 0 var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+}
+.chat-tab:hover { color: var(--text); background: var(--bg-hover); }
+.chat-tab.is-active { color: var(--text); background: var(--accent-bg); border-color: var(--accent-border); }
+.chat-tab.is-warn { border-color: var(--warning-border); }
+.chat-tab.is-warn .chat-tab-text { color: var(--warning-soft); }
+.chat-tab.is-armed { background: var(--warning-bg); }
+.chat-tab-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-empty-title { margin: 0; font-size: var(--text-md); }
+.chat-empty-text { margin: 0; max-width: 460px; font-size: var(--text-sm); color: var(--text-muted); }
+
+/* Global activity indicator (top bar). Fixed minimum width: updates never shift the bar. */
+.activity-ind { display: inline-flex; flex: none; align-items: center; justify-content: center; min-width: 96px; height: var(--control-h-sm); padding: 0 var(--space-4); font: inherit; font-size: var(--text-xs); color: var(--text); cursor: pointer; background: transparent; border: 1px solid var(--border-strong); border-radius: var(--radius-pill); }
+.activity-ind:hover, .activity-ind[aria-expanded="true"] { background: var(--bg-hover); }
+.activity-ind.is-idle { color: var(--text-muted); border-color: var(--border); }
+.activity-ind.has-attention { border-color: var(--warning-border); }
+.activity-text { display: inline-flex; align-items: center; gap: var(--space-4); white-space: nowrap; }
+.act-part { display: inline-flex; align-items: center; gap: var(--space-2); }
+.act-ico { display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; line-height: 1; }
+.act-part.is-attention .act-ico { color: var(--warning); }
+.act-part.is-draft .act-ico { color: var(--text-muted); }
+.act-part.is-responding { color: var(--info); }
+.act-ico.is-attention { color: var(--warning); }
+.act-ico.is-draft { color: var(--text-muted); }
+
+/* ---- Spinner: ONE for the whole application ---------------------------------------------------------------
+   A thin arc whose tail fades out (conic gradient cut into a ring by a mask), instead of a flat border with one coloured
+   side. Sizes are set where it is used; the colour is --info. With reduced motion the arc stays as a static ring. */
+.select[aria-busy="true"] .select-caret::before,
+.chat-tab-spin,
+.status-ico.is-responding,
+.act-ico.is-spin,
+.act-ico.is-responding {
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 8%, var(--info));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), black calc(100% - 1.5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), black calc(100% - 1.5px));
+  animation: spin var(--duration-spin) linear infinite;
+}
+.chat-tab-spin { flex: none; width: 10px; height: 10px; }
+.select[aria-busy="true"] .select-caret::before { background: conic-gradient(from 0deg, transparent 8%, var(--accent)); }
+
+/* Indicators inside a tab: fixed slot, distinct shapes, not only colors. */
+.chat-tab-status { display: inline-flex; flex: none; align-items: center; justify-content: flex-end; gap: var(--space-2); min-width: 26px; height: 12px; }
+.status-ico { display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; font-size: var(--text-2xs); line-height: 1; }
+.status-ico.is-attention { color: var(--warning); }
+.status-ico.is-suspended { color: var(--text-muted); }
+.chat-tab.is-suspended .chat-tab-text { font-style: italic; opacity: 0.8; }
+.status-ico.is-draft { color: var(--text-muted); }
+.status-ico.is-unknown { color: var(--text-muted); border: 1px dashed var(--border-strong); border-radius: 50%; }
+.ws-activity { flex: none; margin-left: var(--space-3); font-size: var(--text-2xs); color: var(--info); white-space: nowrap; }
+.ws-activity[hidden] { display: none; }
+.badge.is-activity { min-width: 0; }
+.badge.is-responding { color: var(--info); }
+.badge.is-attention { color: var(--warning); }
+
+/* ---- Footer: Git bar and feedback ------------------------------------------------------------- */
+.git-repo { max-width: 260px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--text-sm); font-weight: 600; }
+.git-repo.is-unset { color: var(--warning-soft); font-weight: 400; }
+.status { min-height: 16px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--text-xs); color: var(--text-muted); }
+.status[data-level="error"] { color: var(--danger-soft); }
+.hint { font-size: var(--text-xs); color: var(--danger-soft); }
+
+/* ---- Badges ------------------------------------------------------------------------------------- */
+.badge { flex: none; min-width: 52px; padding: 1px var(--space-2); font-size: 9px; text-align: center; color: var(--text-muted); border: 1px solid var(--border); border-radius: 3px; }
+.badge.local, .badge.is-success { color: var(--success); }
+.badge.remote { color: var(--info); }
+.badge.tag, .badge.is-warning { color: var(--warning); }
+.badge.commit { color: var(--violet); }
+.badge.head, .badge.is-danger { color: var(--danger); }
+.badge.manual { color: var(--text); }
+
+/* ---- Menus (git pickers in the footer and the workspace menu overlay share these) ---------------- */
+.menu { margin: 0; padding: 0; list-style: none; overflow-y: auto; }
+.menu-item { display: flex; align-items: center; gap: var(--space-4); padding: 5px var(--space-4); font-size: var(--text-sm); cursor: pointer; border-radius: var(--radius-sm); }
+.menu-item[aria-disabled="true"] { opacity: var(--opacity-disabled); cursor: default; }
+.menu.is-keyboard .menu-item.is-active { outline: 2px solid var(--accent); outline-offset: -2px; }
+.menu-item.is-active { background: var(--bg-hover); }
+.menu-item.is-selected .menu-label { color: var(--accent); font-weight: 700; }
+.menu-group { padding: 7px var(--space-4) 3px; font-size: var(--text-2xs); letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); cursor: default; }
+.menu-empty { padding: 3px var(--space-4); color: var(--text-muted); cursor: default; }
+.menu-label { font-family: var(--font-mono); white-space: nowrap; }
+.menu-detail { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-muted); }
+
+.picker-panel .control { width: 100%; height: var(--control-h); background: var(--bg-bar); }
+.picker-panel .menu { margin-top: var(--space-3); max-height: min(220px, 30vh); }
+
+/* ---- Diagnostics panel (read-only), over the terminal area ---------------------------------------- */
+.diag-panel {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  z-index: var(--z-panel);
+  width: min(640px, calc(100% - 16px));
+  max-height: calc(100% - 16px);
+  overflow: auto;
+  padding: 10px var(--space-5) var(--space-5);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-popover);
+  outline: none;
+}
+.diag-title { display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-4); }
+.diag-ro { padding: 1px 5px; font-size: var(--text-2xs); color: var(--text-muted); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.diag-head { display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-3); }
+.diag-badge { padding: var(--space-1) var(--space-3); font-size: var(--text-2xs); letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.diag-badge.connected { color: var(--success); border-color: var(--success-border); }
+.diag-badge.connecting { color: var(--warning); border-color: var(--warning-border); }
+.diag-badge.disconnected { color: var(--danger); border-color: var(--danger-border); }
+.diag-row { display: flex; gap: var(--space-4); padding: 1px 0; font-size: var(--text-sm); }
+.diag-label { flex: none; width: 150px; color: var(--text-muted); }
+.diag-value { min-width: 0; overflow-wrap: anywhere; }
+.diag-active { margin: var(--space-4) 0; padding: 7px 9px; font-size: var(--text-sm); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.diag-active.known { border-color: var(--success-border); }
+.diag-active.ambiguous { background: var(--warning-bg); border-color: var(--warning-border); }
+.diag-active.unknown { border-color: var(--danger-border); }
+.diag-note { margin: var(--space-2) 0 0; font-size: var(--text-xs); color: var(--text-muted); }
+.diag-table { width: 100%; margin-top: var(--space-2); font-size: var(--text-sm); border-collapse: collapse; }
+.diag-table th { padding: 3px var(--space-3); font-weight: 500; text-align: left; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+.diag-table td { padding: 3px var(--space-3); border-bottom: 1px solid var(--border); }
+.diag-id { font-family: var(--font-mono); }
+.diag-dir { max-width: 260px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: var(--text-xs) var(--font-mono); }
+.diag-mark { width: 16px; text-align: center; color: var(--danger); }
+
+/* Narrow windows: tighter controls, no wrapping labels. */
+@media (max-width: 1000px) {
+  .select { width: 150px; }
+  .view-actions .btn { padding: 0 var(--space-4); }
+}
+
+/* Compact select used by the Git pickers: text lives directly in the button, caret via pseudo-element. */
+.select-fit { position: relative; width: auto; min-width: 96px; max-width: 190px; padding-right: 22px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left; cursor: pointer; }
+.select-fit::after { content: "\25BE"; position: absolute; right: 7px; color: var(--text-muted); }
+.select-text.is-dim { color: var(--text-muted); }
+.select-text.is-warning { color: var(--warning-soft); }

@@ -1,0 +1,210 @@
+{
+  "electron": "44.7.0",
+  "steps": {
+    "pageRetries": {
+      "1": 0,
+      "2": 0,
+      "3": 0,
+      "4": 0
+    },
+    "beforeOverlay": {
+      "processes": 9,
+      "workingSetMB": 1015,
+      "cpuPercent": 1.32
+    },
+    "indicatorUpdateMs": 1055,
+    "beforeNoticeFocus": {
+      "uiFocused": true
+    },
+    "noticeLatencyMs": 3063,
+    "centerOpenMs": 31,
+    "centerText": "Bicho · w4ArquiteturaRespondendoAbrir●Code ReviewAtividade para revisarAbrirRelayPlane · w7atualIntegraçãoRespondendoAbrir",
+    "directOpenMs": 55,
+    "idle30s": {
+      "cpuPercent": 0.1,
+      "ipcPerMinute": {
+        "activity": 2,
+        "chatnav": 0,
+        "herdr": 0
+      },
+      "metrics": {
+        "processes": 10,
+        "workingSetMB": 1089,
+        "cpuPercent": 8.59
+      }
+    },
+    "burst": {
+      "ms": 12358,
+      "activityPushes": 8,
+      "navPushes": 2
+    },
+    "memory": {
+      "base": {
+        "processes": 4,
+        "workingSetMB": 325,
+        "cpuPercent": 0
+      },
+      "beforeOverlay": {
+        "processes": 9,
+        "workingSetMB": 1015,
+        "cpuPercent": 1.32
+      },
+      "afterOverlayUsed": {
+        "processes": 10,
+        "workingSetMB": 1088,
+        "cpuPercent": 0.16
+      },
+      "afterOverlayRelease": {
+        "processes": 9,
+        "workingSetMB": 984,
+        "cpuPercent": 0.04
+      }
+    },
+    "overlayReleased": true,
+    "focusCommands": [
+      "w4",
+      "w4"
+    ]
+  },
+  "checks": [
+    {
+      "name": "page 1 holds its conversation address",
+      "ok": true,
+      "detail": "{\"1\":0}"
+    },
+    {
+      "name": "page 2 holds its conversation address",
+      "ok": true,
+      "detail": "{\"1\":0,\"2\":0}"
+    },
+    {
+      "name": "page 3 holds its conversation address",
+      "ok": true,
+      "detail": "{\"1\":0,\"2\":0,\"3\":0}"
+    },
+    {
+      "name": "page 4 holds its conversation address",
+      "ok": true,
+      "detail": "{\"1\":0,\"2\":0,\"3\":0,\"4\":0}"
+    },
+    {
+      "name": "indicator is visible on the Terminal tab, neutral, with a stable size",
+      "ok": true,
+      "detail": "{\"text\":\"○Atividade\",\"w\":96,\"h\":26,\"visible\":true,\"label\":\"Atividade dos chats: nenhuma atividade observada\"}"
+    },
+    {
+      "name": "a response in ANOTHER workspace shows in the top bar while the Terminal tab is active",
+      "ok": true,
+      "detail": "{\"text\":\"↻1\",\"w\":96,\"h\":26,\"visible\":true,\"label\":\"Atividade dos chats: 1 conversa respondendo\"}"
+    },
+    {
+      "name": "the indicator keeps its size when counts change",
+      "ok": true,
+      "detail": "96 -> 96"
+    },
+    {
+      "name": "three simultaneous responses are counted",
+      "ok": true,
+      "detail": "{\"text\":\"↻3\",\"w\":96,\"h\":26,\"visible\":true,\"label\":\"Atividade dos chats: 3 conversas respondendo\"}"
+    },
+    {
+      "name": "per-workspace counts agree with the global ones",
+      "ok": true,
+      "detail": "{\"w4\":{\"responding\":2,\"attention\":0,\"drafts\":0,\"loaded\":3,\"observed\":3},\"w7\":{\"responding\":1,\"attention\":0,\"drafts\":0,\"loaded\":1,\"observed\":1}}"
+    },
+    {
+      "name": "the end of a background response shows an in-app notice naming workspace and conversation",
+      "ok": true,
+      "detail": "● Atividade para revisarBicho · w4 · Code ReviewAbrir conversa×"
+    },
+    {
+      "name": "the notice never says the response completed",
+      "ok": true
+    },
+    {
+      "name": "the notice did not take the keyboard from the window the user was typing in",
+      "ok": true,
+      "detail": "{\"ui\":true,\"overlay\":false}"
+    },
+    {
+      "name": "the indicator shows the pending activity",
+      "ok": true
+    },
+    {
+      "name": "dismissing a notice keeps the activity pending",
+      "ok": true
+    },
+    {
+      "name": "the center lists activity of every workspace, grouped by name and id",
+      "ok": true,
+      "detail": "Bicho · w4ArquiteturaRespondendoAbrir●Code ReviewAtividade para revisarAbrirRelayPlane · w7atualIntegraçãoRespondendoAbrir"
+    },
+    {
+      "name": "the center states the semantics in words",
+      "ok": true
+    },
+    {
+      "name": "opening the center did not acknowledge anything",
+      "ok": true
+    },
+    {
+      "name": "Esc closes the center and gives focus back to the indicator",
+      "ok": true
+    },
+    {
+      "name": "direct open switched to the chat tab, the right workspace and the right conversation",
+      "ok": true,
+      "detail": "{\"mode\":\"chat\",\"ws\":\"w4\"}"
+    },
+    {
+      "name": "exactly one explicit workspace command was sent (by that click)",
+      "ok": true,
+      "detail": "[\"w4\"]"
+    },
+    {
+      "name": "the visit acknowledged the activity",
+      "ok": true
+    },
+    {
+      "name": "no conversation was reloaded or destroyed (markers intact, same page count)",
+      "ok": true,
+      "detail": "{\"Code Review\":0.8172302280667678,\"Arquitetura\":0.5304787902679391,\"Planejamento\":0.3212928184607585,\"B1\":0.29071367256912295}"
+    },
+    {
+      "name": "the indicator is visible on the ChatGPT tab too",
+      "ok": true
+    },
+    {
+      "name": "a failed workspace command is reported and nothing is shown under the wrong context",
+      "ok": true,
+      "detail": "Nao foi possivel trocar de workspace: Herdr nao respondeu. A conversa nao foi aberta."
+    },
+    {
+      "name": "a narrow window keeps an accessible, compact indicator",
+      "ok": true,
+      "detail": "{\"text\":\"↻1●1\",\"w\":66,\"h\":26,\"visible\":true,\"label\":\"Atividade dos chats: 1 conversa respondendo, 1 conversa com atividade para revisar\"}"
+    },
+    {
+      "name": "idle: no activity/status IPC when nothing changes",
+      "ok": true,
+      "detail": "{\"activity\":2,\"chatnav\":0,\"herdr\":0}"
+    },
+    {
+      "name": "bindings are byte-identical after everything",
+      "ok": true
+    },
+    {
+      "name": "every page is still alive",
+      "ok": true
+    },
+    {
+      "name": "closing the window closes every page",
+      "ok": true
+    }
+  ],
+  "errors": [],
+  "networkProbe": 200,
+  "lastCheck": "closing the window closes every page",
+  "failed": [],
+  "exitCode": 0
+}

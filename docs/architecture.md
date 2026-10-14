@@ -2,6 +2,8 @@
 
 ContextDeck is an Electron app (main process in CommonJS, local UI bundled with esbuild). It has three kinds of web content, each with a different trust level.
 
+Release-hardening audit and the manual stability checklist are tracked in [M01-R1 validation](validation/m01-r1-release-hardening.md). Persistent identifiers from M00 remain fixed until a separately reviewed migration exists.
+
 ```text
 ┌────────────────────────── Electron main process (src/main) ─────────────────────────┐
 │  index.js (bootstrap) ── window.js ──┬─ local UI window ──(preload bridge)── renderer │

@@ -37,6 +37,10 @@ Starts with M01-I1. Out of scope: automatic prompt transfer, reading conversatio
 - **M01-I3D-1 — implemented, pending manual homologation.** Git follows the selected workspace directory, displays repository/branch/source/path, and supports a persistent manual override per workspace with an explicit return to Herdr automatic discovery. Legacy global `git.repoDir` remains readable until the user returns to automatic mode. Checklist: [validation/m01-i3d-1.md](validation/m01-i3d-1.md).
 - **M01-I3C-2 — not started.** Automatic release remains out of scope pending authenticated evidence and a separate decision record.
 
+## M01-R1 — Release hardening & stability
+
+- **M01-R1 — audit complete, manual homologation pending.** No feature scope added. Automated regressions and disposable-profile startup smoke pass. The audit, risk matrix, known lifecycle limitation, manual checklist and M01-R2 Windows packaging requirements are in [validation/m01-r1-release-hardening.md](validation/m01-r1-release-hardening.md). Do not begin R2 automatically.
+
 ## M02 — Not defined yet
 
 No scope has been decided. It will be defined after M01 is homologated. Items noted during M00 that are *not* commitments:

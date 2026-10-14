@@ -1,5 +1,7 @@
 # Development (Windows)
 
+For release readiness, use the [M01-R1 audit and homologation checklist](validation/m01-r1-release-hardening.md). `npm run smoke` starts Electron against disposable `CONTEXTDECK_USER_DATA`; it does not validate ChatGPT authentication or real Herdr behavior.
+
 ## Setup
 
 ```powershell

@@ -77,13 +77,27 @@ test('panel model: rows of the destination, orphans, blocked reasons, confirmati
   assert.equal(view.panelModel(chatsState({ current: { state: 'unknown', reason: 'new' } })).canBindCurrent, false);
 });
 
-test('the panel offers only a fresh verification action for the unsent-unknown sole blocker', () => {
+test('the panel shows one concise status and offers no verification action for unknown unsent state', () => {
   const id = binding(1).bindingId;
   const life = view.panelModel(chatsState({ bindings: [binding(1)], lifecycle: { [id]: { state: 'background', eligible: false, canVerifyUnsent: true, reasons: ['unsent-unknown'] } } })).rows[0].life;
-  assert.deepEqual([life.canSuspend, life.canVerifyUnsent, life.label], [false, true, 'Verificar e suspender']);
+  assert.deepEqual([life.canSuspend, life.statusText, life.help], [false, 'Suspensão indisponível', 'Não foi possível verificar se é seguro suspender esta conversa.']);
   const panel = fs.readFileSync(path.join(SRC, 'overlay', 'chats-panel.js'), 'utf8');
-  assert.match(panel, /row\.life\.canSuspend \|\| row\.life\.canVerifyUnsent/);
-  assert.match(panel, /button\(row\.life\.label/);
+  assert.match(panel, /row\.life\.canSuspend && !orphan/);
+  assert.doesNotMatch(panel, /canVerifyUnsent/);
+  assert.match(panel, /row\.life\.statusText/);
+});
+
+test('lifecycle presentation prioritizes responding and drafts, then selected and unavailable states', () => {
+  const id = binding(1).bindingId;
+  const lifeFor = (life) => view.panelModel(chatsState({ bindings: [binding(1)], lifecycle: { [id]: life } })).rows[0].life;
+  assert.equal(lifeFor({ state: 'background', eligible: false, reasons: ['responding', 'draft', 'unsent-unknown'] }).statusText, 'Respondendo');
+  assert.equal(lifeFor({ state: 'background', eligible: false, reasons: ['draft', 'unsent-unknown'] }).statusText, 'Rascunho pendente');
+  assert.equal(lifeFor({ state: 'active', eligible: false, reasons: ['selected', 'unsent-unknown'] }).statusText, 'Em uso');
+  assert.equal(lifeFor({ state: 'background', eligible: false, reasons: ['unsent-unknown', 'draft-unknown'] }).statusText, 'Suspensão indisponível');
+  assert.equal(lifeFor({ state: 'background', eligible: true, reasons: [] }).statusText, 'Em segundo plano');
+  assert.equal(lifeFor({ state: 'suspended', eligible: false, reasons: [] }).statusText, 'Suspensa · Não monitorada');
+  assert.equal(lifeFor({ state: 'active', eligible: false, reasons: ['selected'] }).canSuspend, false, 'selected views remain protected by the input eligibility contract');
+  assert.equal(lifeFor({ state: 'background', eligible: true, reasons: ['unsent-unknown'] }).canSuspend, false);
 });
 
 test('the view-model mirrors the service rule for confirmation', () => {

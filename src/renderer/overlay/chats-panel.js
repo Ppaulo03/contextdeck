@@ -232,12 +232,12 @@ ${row.url}`;   // the row is ellipsised; the tooltip has the rest
     main.append(detailNode);
     // What the page costs and why it can (not) be released: only for a conversation that has a page (or was suspended).
     if (row.life && !orphan) {
-      const life = el('span', 'chats-item-life', row.life.canSuspend || row.life.state === 'suspended' ? row.life.stateText : `${row.life.stateText} · ${row.life.reasons.join(' ')}`);
+      const life = el('span', 'chats-item-life', row.life.statusText);
       life.title = row.life.help;
       main.append(life);
     }
     item.append(main);
-    if (row.life && (row.life.canSuspend || row.life.canVerifyUnsent) && !orphan) item.append(button(row.life.label, () => void suspend(row.bindingId), { disabled: busy, title: row.life.help, key: `suspend-${row.bindingId}` }));
+    if (row.life && row.life.canSuspend && !orphan) item.append(button(row.life.label, () => void suspend(row.bindingId), { disabled: busy, title: row.life.help, key: `suspend-${row.bindingId}` }));
     if (orphan) item.append(button('Reassociar aqui', () => void reassign(row.bindingId, m), { disabled: !m.canWrite || isStale() || !m.targetId || false, title: 'Move este vínculo para o destino escolhido acima' }));
     else item.append(button('Editar', () => { editing = row.bindingId; render(); }));
     if (unbinding === row.bindingId) {

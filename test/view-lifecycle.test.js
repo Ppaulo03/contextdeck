@@ -692,21 +692,18 @@ test('chats:suspend: residual pages are rejected even when named by view id', ()
 
 // ---- view-models --------------------------------------------------------------------------------------------------------------------------
 
-test('every reason the policy can give has words, and a page that cannot be suspended is never offered the button', () => {
+test('every internal reason has diagnostic words while lifecycle presentation stays concise', () => {
   for (const code of Object.values(REASON)) assert.ok(REASON_TEXT[code], code);
   const blocked = lifeModel({ state: 'background', eligible: false, reasons: ['draft'] });
-  assert.deepEqual([blocked.canSuspend, blocked.reasons], [false, [REASON_TEXT.draft]]);
-  assert.match(blocked.help, /rascunho/);
+  assert.deepEqual([blocked.canSuspend, blocked.statusText, blocked.help], [false, 'Rascunho pendente', '']);
   const verify = lifeModel({ state: 'background', eligible: false, canVerifyUnsent: true, reasons: ['unsent-unknown'] });
-  assert.deepEqual([verify.canSuspend, verify.canVerifyUnsent, verify.label], [false, true, 'Verificar e suspender']);
-  assert.match(verify.help, /nova leitura/);
-  assert.equal(lifeModel({ state: 'background', eligible: false, canVerifyUnsent: true, reasons: ['unsent-unknown', 'draft'] }).canVerifyUnsent, false, 'verification is offered only when this is the sole blocker');
+  assert.deepEqual([verify.canSuspend, verify.statusText, verify.help], [false, 'Suspensão indisponível', 'Não foi possível verificar se é seguro suspender esta conversa.']);
   assert.equal(lifeModel({ state: 'background', eligible: true, reasons: [] }).canSuspend, true);
   assert.equal(lifeModel({ state: 'background', eligible: true, reasons: ['draft'] }).canSuspend, false, 'a reason always wins over the flag');
   assert.equal(lifeModel({ state: 'background', eligible: true, reasons: ['made-up'] }).canSuspend, false);
   assert.equal(lifeModel(null), null);
   const suspended = lifeModel({ state: 'suspended' });
-  assert.deepEqual([suspended.canSuspend, suspended.stateText], [false, 'Suspensa (não monitorada)']);
+  assert.deepEqual([suspended.canSuspend, suspended.statusText], [false, 'Suspensa · Não monitorada']);
   assert.match(suspended.help, /não é monitorada/);
   assert.match(suspended.help, /Não se sabe/, 'it says it does not know, it never claims idle');
 });
@@ -732,7 +729,7 @@ test('the Gerenciar rows carry lifecycle reasons; the activity center keeps resi
   const stateOf = () => ({ ...w.bindings.getState({ url: '' }), lifecycle: w.lifecycle.byBinding() });
   let rows = panelModel(stateOf(), 'w1').rows;
   const r1 = rows.find((r) => r.bindingId === w.A[0].bindingId);
-  assert.deepEqual([r1.life.canSuspend, r1.life.canVerifyUnsent, r1.life.reasons], [false, false, [REASON_TEXT.draft]]);
+  assert.deepEqual([r1.life.canSuspend, r1.life.statusText], [false, 'Rascunho pendente']);
   assert.equal(rows.find((r) => r.bindingId === w.A[2].bindingId).life, null, 'never opened: nothing claimed');
   w.set(a1, { draft: false }); await w.clock.advance(6000);
   rows = panelModel(stateOf(), 'w1').rows;

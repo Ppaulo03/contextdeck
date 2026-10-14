@@ -1,15 +1,13 @@
 'use strict';
 
-// Words for the view lifecycle (M01-I3C-1): what a conversation's page is doing with its resources and, when it cannot be released, WHY.
-// Pure data and no DOM. The codes are the contract with src/main/chat-views/lifecycle.js (REASON); nothing here decides anything - main
-// judges again, from fresh state and a fresh reading, when the user asks.
+// Concise lifecycle presentation. Detailed reason codes remain in main-process diagnostics; main owns all safety decisions.
 
 const STATE_TEXT = {
   created: 'Carregando',
   restoring: 'Restaurando',
   active: 'Em uso',
   background: 'Em segundo plano',
-  suspended: 'Suspensa (não monitorada)'
+  suspended: 'Suspensa · Não monitorada'
 };
 
 const REASON_TEXT = {
@@ -43,28 +41,30 @@ const REASON_TEXT = {
 };
 
 const SUSPEND_LABEL = 'Suspender conversa';
-const VERIFY_SUSPEND_LABEL = 'Verificar e suspender';
 const SUSPEND_HELP = 'Libera a memória desta página após uma verificação. A conversa vinculada é recarregada quando você a abrir; anexos não enviados, rolagem e estado visual não são preservados.';
 const SUSPENDED_HELP = 'Suspensa: a página foi liberada e não é monitorada. Não se sabe se está respondendo ou ociosa. Abra para restaurar.';
-const VERIFY_SUSPEND_HELP = 'Faz uma nova leitura do compositor antes de liberar a página. Se a ausência de conteúdo não enviado continuar inconclusiva, a conversa permanece aberta.';
+const UNAVAILABLE_HELP = 'Não foi possível verificar se é seguro suspender esta conversa.';
 
 // `life` is { state, eligible, reasons } as main reports it, or null/undefined when the conversation has no page (never opened).
-// A page that cannot be suspended is never offered a button: it gets the reasons instead.
+// A page that cannot be suspended is never offered a button; its row gets one concise status.
 function lifeModel(life) {
   if (!life || typeof life !== 'object') return null;
-  const reasons = (Array.isArray(life.reasons) ? life.reasons : []).map((r) => REASON_TEXT[r] || 'Não pode ser suspensa agora.');
-  if (life.state === 'suspended') return { state: 'suspended', stateText: STATE_TEXT.suspended, canSuspend: false, reasons: [], help: SUSPENDED_HELP };
-  const canSuspend = life.eligible === true && reasons.length === 0;
-  const canVerifyUnsent = life.canVerifyUnsent === true && life.reasons?.length === 1 && life.reasons[0] === 'unsent-unknown';
+  const codes = Array.isArray(life.reasons) ? life.reasons : [];
+  if (life.state === 'suspended') return { state: 'suspended', stateText: STATE_TEXT.suspended, statusText: STATE_TEXT.suspended, canSuspend: false, help: SUSPENDED_HELP };
+  const canSuspend = life.eligible === true && codes.length === 0;
+  const statusText = codes.includes('responding') || codes.includes('uncertain') ? 'Respondendo'
+    : codes.includes('draft') ? 'Rascunho pendente'
+      : life.state === 'active' ? STATE_TEXT.active
+        : life.state === 'created' || life.state === 'restoring' ? (STATE_TEXT[life.state] || 'Suspensão indisponível')
+          : canSuspend ? STATE_TEXT[life.state] || 'Suspensão indisponível' : 'Suspensão indisponível';
   return {
     state: life.state,
     stateText: STATE_TEXT[life.state] || '',
+    statusText,
     canSuspend,
-    canVerifyUnsent,
-    label: canVerifyUnsent ? VERIFY_SUSPEND_LABEL : SUSPEND_LABEL,
-    reasons,
-    help: canVerifyUnsent ? VERIFY_SUSPEND_HELP : canSuspend ? SUSPEND_HELP : `Não pode ser suspensa agora: ${reasons.join(' ')}`.trim()
+    label: SUSPEND_LABEL,
+    help: canSuspend ? SUSPEND_HELP : (statusText === 'Respondendo' || statusText === 'Rascunho pendente' ? '' : UNAVAILABLE_HELP)
   };
 }
 
-module.exports = { lifeModel, STATE_TEXT, REASON_TEXT, SUSPEND_LABEL, VERIFY_SUSPEND_LABEL, SUSPEND_HELP, SUSPENDED_HELP, VERIFY_SUSPEND_HELP };
+module.exports = { lifeModel, STATE_TEXT, REASON_TEXT, SUSPEND_LABEL, SUSPEND_HELP, SUSPENDED_HELP, UNAVAILABLE_HELP };
